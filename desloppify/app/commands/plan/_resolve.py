@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from desloppify.engine._plan.schema import PlanModel
+from desloppify.engine.plan import PlanModel
 from desloppify.state import StateModel, match_findings
 
 

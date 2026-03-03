@@ -529,12 +529,19 @@ def clear_focus(plan: PlanModel) -> None:
 # ---------------------------------------------------------------------------
 
 def reset_plan(plan: PlanModel) -> None:
-    """Reset plan to empty state, preserving version and created timestamp."""
+    """Reset plan to empty state, preserving version and created timestamp.
+
+    Sets ``plan_start_scores`` to a sentinel so the next scan seeds real
+    scores instead of incorrectly treating the reset as a completed cycle.
+    """
     created = plan.get("created", utc_now())
     plan.clear()
     for k, v in empty_plan().items():
         plan[k] = v
     plan["created"] = created
+    # Sentinel: truthy so ``not plan.get("plan_start_scores")`` is False,
+    # but recognized by _seed_plan_start_scores as needing replacement.
+    plan["plan_start_scores"] = {"reset": True}
 
 
 def purge_ids(plan: PlanModel, finding_ids: list[str]) -> int:

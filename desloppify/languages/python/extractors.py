@@ -29,15 +29,6 @@ def _find_signature_end(lines: list[str], start: int) -> int | None:
     return None
 
 
-def _extract_py_return_annotation(sig_text: str) -> str | None:
-    """Extract normalized return annotation from a Python signature."""
-    m = re.search(r"\)\s*->\s*(.*?)\s*:", sig_text, re.DOTALL)
-    if not m:
-        return None
-    annotation = " ".join(m.group(1).split())
-    return annotation or None
-
-
 def extract_py_functions(filepath: str) -> list[FunctionInfo]:
     """Extract function bodies from a Python file using indentation-based boundaries."""
     content = read_file(filepath)

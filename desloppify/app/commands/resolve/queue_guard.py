@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from desloppify.core.output_api import colorize
 from desloppify.engine.plan import has_living_plan, load_plan
-from desloppify.engine._work_queue.core import QueueBuildOptions, build_work_queue
+from desloppify.engine.work_queue import QueueBuildOptions, build_work_queue
 
 
 def _check_queue_order_guard(

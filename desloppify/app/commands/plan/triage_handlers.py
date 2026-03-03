@@ -33,22 +33,20 @@ from desloppify.app.commands.plan.triage_playbook import (
 from desloppify.app.commands.plan.triage.shared import _unenriched_clusters
 from desloppify.app.commands.helpers.display import short_finding_id
 from desloppify.core.output_api import colorize
-from desloppify.engine._plan.epic_triage import (
+from desloppify.engine.plan import (
+    TRIAGE_IDS,
+    TRIAGE_STAGE_IDS,
+    append_log_entry,
     build_triage_prompt,
     collect_triage_input,
     detect_recurring_patterns,
     extract_finding_citations,
-)
-from desloppify.engine._plan.operations import append_log_entry
-from desloppify.engine._plan.stale_dimensions import review_finding_snapshot_hash
-from desloppify.engine._state.schema import utc_now
-from desloppify.engine.plan import (
-    TRIAGE_IDS,
-    TRIAGE_STAGE_IDS,
     load_plan,
     purge_ids,
+    review_finding_snapshot_hash,
     save_plan,
 )
+from desloppify.state import utc_now
 
 
 _STAGE_ORDER = ["observe", "reflect", "organize"]
@@ -945,7 +943,7 @@ def _cmd_triage_complete(args: argparse.Namespace) -> None:
         print(colorize(f"    Observe: {obs.get('finding_count', '?')} findings analysed", "dim"))
     if "reflect" in stages:
         ref = stages["reflect"]
-        recurring = ref.get("recurring_dims", ref.get("recurring_dimensions", []))
+        recurring = ref.get("recurring_dims", [])
         if recurring:
             print(colorize(f"    Reflect: {len(recurring)} recurring dimension(s)", "dim"))
         else:

@@ -8,17 +8,17 @@ import pytest
 
 import desloppify.languages.typescript.test_coverage as ts_cov
 from desloppify.engine.detectors.coverage.mapping import (
-    _analyze_test_quality,
-    _get_test_files_for_prod,
-    _import_based_mapping,
+    analyze_test_quality,
+    get_test_files_for_prod,
+    import_based_mapping,
     _infer_lang_name,
     _map_test_to_source,
-    _naming_based_mapping,
+    naming_based_mapping,
     _parse_test_imports,
     _resolve_barrel_reexports,
     _resolve_import,
     _strip_test_markers,
-    _transitive_coverage,
+    transitive_coverage,
 )
 from desloppify.engine.detectors.test_coverage import detect_test_coverage
 from desloppify.engine.detectors.test_coverage.heuristics import _has_testable_logic
@@ -187,7 +187,7 @@ class TestImportBasedMapping:
         }
         test_files = {"tests/test_foo.py"}
         production_files = {"src/foo.py", "src/bar.py", "src/baz.py"}
-        result = _import_based_mapping(graph, test_files, production_files)
+        result = import_based_mapping(graph, test_files, production_files)
         assert result == {"src/foo.py", "src/bar.py"}
 
     def test_test_imports_non_production_excluded(self):
@@ -196,7 +196,7 @@ class TestImportBasedMapping:
         }
         test_files = {"tests/test_foo.py"}
         production_files = {"src/foo.py"}
-        result = _import_based_mapping(graph, test_files, production_files)
+        result = import_based_mapping(graph, test_files, production_files)
         assert result == set()
 
     def test_test_not_in_graph_skipped(self):
@@ -205,7 +205,7 @@ class TestImportBasedMapping:
         production_files = {"src/foo.py"}
         # The test file isn't in graph, so it falls through to _parse_test_imports
         # which tries to read the file — nonexistent file returns empty set
-        result = _import_based_mapping(graph, test_files, production_files)
+        result = import_based_mapping(graph, test_files, production_files)
         assert result == set()
 
     def test_external_test_file_parsed(self, tmp_path):
@@ -225,7 +225,7 @@ class TestImportBasedMapping:
         graph = {}
         test_files = {test_file}
         production_files = {prod_file}
-        result = _import_based_mapping(graph, test_files, production_files)
+        result = import_based_mapping(graph, test_files, production_files)
         assert prod_file in result
 
     def test_multiple_test_files(self):
@@ -235,7 +235,7 @@ class TestImportBasedMapping:
         }
         test_files = {"tests/test_a.py", "tests/test_b.py"}
         production_files = {"src/a.py", "src/b.py", "src/c.py"}
-        result = _import_based_mapping(graph, test_files, production_files)
+        result = import_based_mapping(graph, test_files, production_files)
         assert result == {"src/a.py", "src/b.py"}
 
     def test_typescript_parses_dynamic_imports_even_when_graph_entry_exists(self, tmp_path):
@@ -254,7 +254,7 @@ class TestImportBasedMapping:
             test_file: {"imports": set()},
             prod_file: {"imports": set(), "importer_count": 0},
         }
-        result = _import_based_mapping(graph, {test_file}, {prod_file}, "typescript")
+        result = import_based_mapping(graph, {test_file}, {prod_file}, "typescript")
         assert prod_file in result
 
 
@@ -314,7 +314,7 @@ class TestGetTestFilesForProd:
             ),
         )
         graph = {test_file: {"imports": set()}}
-        related = _get_test_files_for_prod(prod_file, {test_file}, graph, "typescript")
+        related = get_test_files_for_prod(prod_file, {test_file}, graph, "typescript")
         assert test_file in related
 
 
@@ -331,7 +331,7 @@ class TestTransitiveCoverage:
         }
         production = {"a.py", "b.py", "c.py"}
         directly_tested = {"a.py"}
-        result = _transitive_coverage(directly_tested, graph, production)
+        result = transitive_coverage(directly_tested, graph, production)
         assert result == {"b.py", "c.py"}
 
     def test_stops_at_non_production(self):
@@ -342,7 +342,7 @@ class TestTransitiveCoverage:
         }
         production = {"a.py", "b.py"}
         directly_tested = {"a.py"}
-        result = _transitive_coverage(directly_tested, graph, production)
+        result = transitive_coverage(directly_tested, graph, production)
         assert "vendor/lib.py" not in result
         assert result == {"b.py"}
 
@@ -354,12 +354,12 @@ class TestTransitiveCoverage:
         }
         production = {"a.py", "b.py"}
         directly_tested = {"a.py"}
-        result = _transitive_coverage(directly_tested, graph, production)
+        result = transitive_coverage(directly_tested, graph, production)
         assert "a.py" not in result
         assert result == {"b.py"}
 
     def test_empty_graph(self):
-        result = _transitive_coverage({"a.py"}, {}, {"a.py", "b.py"})
+        result = transitive_coverage({"a.py"}, {}, {"a.py", "b.py"})
         assert result == set()
 
     def test_diamond_dependency(self):
@@ -372,13 +372,13 @@ class TestTransitiveCoverage:
         }
         production = {"a.py", "b.py", "c.py", "d.py"}
         directly_tested = {"a.py"}
-        result = _transitive_coverage(directly_tested, graph, production)
+        result = transitive_coverage(directly_tested, graph, production)
         assert result == {"b.py", "c.py", "d.py"}
 
     def test_no_directly_tested(self):
         """Empty directly_tested → empty transitive."""
         graph = {"a.py": {"imports": {"b.py"}}}
-        result = _transitive_coverage(set(), graph, {"a.py", "b.py"})
+        result = transitive_coverage(set(), graph, {"a.py", "b.py"})
         assert result == set()
 
 
@@ -398,7 +398,7 @@ class TestAnalyzeTestQuality:
             "    assert 4 == 4\n"
         )
         tf = _write_file(tmp_path, "test_thorough.py", content)
-        result = _analyze_test_quality({tf}, "python")
+        result = analyze_test_quality({tf}, "python")
         assert tf in result
         assert result[tf]["quality"] == "thorough"
         assert result[tf]["assertions"] >= 4
@@ -407,13 +407,13 @@ class TestAnalyzeTestQuality:
     def test_python_adequate(self, tmp_path):
         content = "def test_a():\n    assert 1 == 1\n    assert 2 == 2\n"
         tf = _write_file(tmp_path, "test_adequate.py", content)
-        result = _analyze_test_quality({tf}, "python")
+        result = analyze_test_quality({tf}, "python")
         assert result[tf]["quality"] in ("thorough", "adequate")
 
     def test_python_assertion_free(self, tmp_path):
         content = "def test_a():\n    pass\n"
         tf = _write_file(tmp_path, "test_noassert.py", content)
-        result = _analyze_test_quality({tf}, "python")
+        result = analyze_test_quality({tf}, "python")
         assert result[tf]["quality"] == "assertion_free"
         assert result[tf]["assertions"] == 0
         assert result[tf]["test_functions"] == 1
@@ -429,7 +429,7 @@ class TestAnalyzeTestQuality:
             "@mock.patch('module.third')\n"
         )
         tf = _write_file(tmp_path, "test_mocked.py", content)
-        result = _analyze_test_quality({tf}, "python")
+        result = analyze_test_quality({tf}, "python")
         assert result[tf]["quality"] == "over_mocked"
         assert result[tf]["mocks"] > result[tf]["assertions"]
 
@@ -445,7 +445,7 @@ class TestAnalyzeTestQuality:
             "    pass\n"
         )
         tf = _write_file(tmp_path, "test_multi.py", content)
-        result = _analyze_test_quality({tf}, "python")
+        result = analyze_test_quality({tf}, "python")
         assert result[tf]["test_functions"] == 3
         assert result[tf]["quality"] == "smoke"
 
@@ -458,7 +458,7 @@ class TestAnalyzeTestQuality:
             "});\n"
         )
         tf = _write_file(tmp_path, "utils.test.ts", content)
-        result = _analyze_test_quality({tf}, "typescript")
+        result = analyze_test_quality({tf}, "typescript")
         assert result[tf]["quality"] == "snapshot_heavy"
         assert result[tf]["snapshots"] >= 3
 
@@ -471,7 +471,7 @@ class TestAnalyzeTestQuality:
             "expect(foo).toBe(1);\n"
         )
         tf = _write_file(tmp_path, "smoke.test.ts", content)
-        result = _analyze_test_quality({tf}, "typescript")
+        result = analyze_test_quality({tf}, "typescript")
         # 1 assertion across 3 test functions → ratio < 1 → smoke
         assert result[tf]["quality"] == "smoke"
 
@@ -486,7 +486,7 @@ class TestAnalyzeTestQuality:
             "});\n"
         )
         tf = _write_file(tmp_path, "placeholder.test.ts", content)
-        result = _analyze_test_quality({tf}, "typescript")
+        result = analyze_test_quality({tf}, "typescript")
         assert result[tf]["quality"] == "placeholder_smoke"
         assert result[tf]["placeholder"] is True
 
@@ -504,18 +504,18 @@ class TestAnalyzeTestQuality:
             "});\n"
         )
         tf = _write_file(tmp_path, "moduleCoverage.test.ts", content)
-        result = _analyze_test_quality({tf}, "typescript")
+        result = analyze_test_quality({tf}, "typescript")
         assert result[tf]["quality"] == "placeholder_smoke"
         assert result[tf]["placeholder"] is True
 
     def test_no_test_functions(self, tmp_path):
         content = "# just a comment\nprint('hello')\n"
         tf = _write_file(tmp_path, "test_empty.py", content)
-        result = _analyze_test_quality({tf}, "python")
+        result = analyze_test_quality({tf}, "python")
         assert result[tf]["quality"] == "no_tests"
 
     def test_nonexistent_file_skipped(self):
-        result = _analyze_test_quality({"/no/such/file.py"}, "python")
+        result = analyze_test_quality({"/no/such/file.py"}, "python")
         assert "/no/such/file.py" not in result
 
     def test_typescript_adequate(self, tmp_path):
@@ -526,7 +526,7 @@ class TestAnalyzeTestQuality:
             "});\n"
         )
         tf = _write_file(tmp_path, "foo.test.ts", content)
-        result = _analyze_test_quality({tf}, "typescript")
+        result = analyze_test_quality({tf}, "typescript")
         assert result[tf]["quality"] in ("thorough", "adequate")
 
 
@@ -942,38 +942,38 @@ class TestNamingBasedMapping:
     def test_python_test_prefix(self):
         test_files = {"src/test_utils.py"}
         production_files = {"src/utils.py"}
-        result = _naming_based_mapping(test_files, production_files, "python")
+        result = naming_based_mapping(test_files, production_files, "python")
         assert result == {"src/utils.py"}
 
     def test_python_test_suffix(self):
         test_files = {"src/utils_test.py"}
         production_files = {"src/utils.py"}
-        result = _naming_based_mapping(test_files, production_files, "python")
+        result = naming_based_mapping(test_files, production_files, "python")
         assert result == {"src/utils.py"}
 
     def test_typescript_test_marker(self):
         test_files = {"src/utils.test.ts"}
         production_files = {"src/utils.ts"}
-        result = _naming_based_mapping(test_files, production_files, "typescript")
+        result = naming_based_mapping(test_files, production_files, "typescript")
         assert result == {"src/utils.ts"}
 
     def test_typescript_spec_marker(self):
         test_files = {"src/utils.spec.tsx"}
         production_files = {"src/utils.tsx"}
-        result = _naming_based_mapping(test_files, production_files, "typescript")
+        result = naming_based_mapping(test_files, production_files, "typescript")
         assert result == {"src/utils.tsx"}
 
     def test_no_match(self):
         test_files = {"src/test_foo.py"}
         production_files = {"src/bar.py"}
-        result = _naming_based_mapping(test_files, production_files, "python")
+        result = naming_based_mapping(test_files, production_files, "python")
         assert result == set()
 
     def test_fuzzy_basename_fallback(self):
         """Fuzzy basename matching when _map_test_to_source fails (different dir)."""
         test_files = {"completely/different/test_utils.py"}
         production_files = {"src/deep/utils.py"}
-        result = _naming_based_mapping(test_files, production_files, "python")
+        result = naming_based_mapping(test_files, production_files, "python")
         # _strip_test_markers("test_utils.py") → "utils.py"
         # prod_by_basename["utils.py"] → "src/deep/utils.py"
         assert result == {"src/deep/utils.py"}
@@ -981,7 +981,7 @@ class TestNamingBasedMapping:
     def test_go_non_test_file_does_not_map(self):
         test_files = {"tests/helpers.go"}
         production_files = {"pkg/helpers.go"}
-        result = _naming_based_mapping(test_files, production_files, "go")
+        result = naming_based_mapping(test_files, production_files, "go")
         assert result == set()
 
 
@@ -1117,7 +1117,7 @@ class TestResolveBarrelReexports:
         )
         production = {utils, helpers, barrel}
         graph = {}
-        result = _import_based_mapping(graph, {test}, production)
+        result = import_based_mapping(graph, {test}, production)
         assert barrel in result
         assert utils in result
         assert helpers in result
@@ -1133,7 +1133,7 @@ class TestCommentStripping:
             'it("a", () => {\n  // expect(foo).toBe(1);\n  expect(bar).toBe(2);\n});\n'
         )
         tf = _write_file(tmp_path, "foo.test.ts", content)
-        result = _analyze_test_quality({tf}, "typescript")
+        result = analyze_test_quality({tf}, "typescript")
         assert result[tf]["assertions"] == 1
 
     def test_ts_block_comment_not_counted(self, tmp_path):
@@ -1145,7 +1145,7 @@ class TestCommentStripping:
             "});\n"
         )
         tf = _write_file(tmp_path, "bar.test.ts", content)
-        result = _analyze_test_quality({tf}, "typescript")
+        result = analyze_test_quality({tf}, "typescript")
         assert result[tf]["assertions"] == 1
 
     def test_py_comment_not_counted(self, tmp_path):
@@ -1158,7 +1158,7 @@ class TestCommentStripping:
             "    assert True\n"
         )
         tf = _write_file(tmp_path, "test_commented.py", content)
-        result = _analyze_test_quality({tf}, "python")
+        result = analyze_test_quality({tf}, "python")
         assert result[tf]["assertions"] == 3
 
     def test_py_comment_in_string_not_stripped(self):
@@ -1178,7 +1178,7 @@ class TestRTLPatterns:
     def test_getby_counted(self, tmp_path):
         content = "it(\"renders\", () => {\n  screen.getByText('hello');\n});\n"
         tf = _write_file(tmp_path, "comp.test.tsx", content)
-        result = _analyze_test_quality({tf}, "typescript")
+        result = analyze_test_quality({tf}, "typescript")
         assert result[tf]["assertions"] >= 1
 
     def test_findby_counted(self, tmp_path):
@@ -1186,13 +1186,13 @@ class TestRTLPatterns:
             "it(\"finds\", async () => {\n  await screen.findByRole('button');\n});\n"
         )
         tf = _write_file(tmp_path, "comp2.test.tsx", content)
-        result = _analyze_test_quality({tf}, "typescript")
+        result = analyze_test_quality({tf}, "typescript")
         assert result[tf]["assertions"] >= 1
 
     def test_waitfor_counted(self, tmp_path):
         content = 'it("waits", async () => {\n  await waitFor(() => {});\n});\n'
         tf = _write_file(tmp_path, "comp3.test.tsx", content)
-        result = _analyze_test_quality({tf}, "typescript")
+        result = analyze_test_quality({tf}, "typescript")
         assert result[tf]["assertions"] >= 1
 
     def test_jest_dom_matchers(self, tmp_path):
@@ -1205,7 +1205,7 @@ class TestRTLPatterns:
             "});\n"
         )
         tf = _write_file(tmp_path, "dom.test.tsx", content)
-        result = _analyze_test_quality({tf}, "typescript")
+        result = analyze_test_quality({tf}, "typescript")
         # Each line matches at least one pattern; any() per line → 4
         assert result[tf]["assertions"] == 4
 
@@ -1213,7 +1213,7 @@ class TestRTLPatterns:
         """expect(el).toBeVisible() should count as 1, not 2."""
         content = 'it("check", () => {\n  expect(el).toBeVisible();\n});\n'
         tf = _write_file(tmp_path, "dbl.test.tsx", content)
-        result = _analyze_test_quality({tf}, "typescript")
+        result = analyze_test_quality({tf}, "typescript")
         assert result[tf]["assertions"] == 1
 
     def test_destructured_queries(self, tmp_path):
@@ -1225,7 +1225,7 @@ class TestRTLPatterns:
             "});\n"
         )
         tf = _write_file(tmp_path, "destr.test.tsx", content)
-        result = _analyze_test_quality({tf}, "typescript")
+        result = analyze_test_quality({tf}, "typescript")
         # getByText( appears on both lines but 2nd is the assertion
         assert result[tf]["assertions"] >= 1
 
@@ -1238,7 +1238,7 @@ class TestRTLPatterns:
             "});\n"
         )
         tf = _write_file(tmp_path, "rtl.test.tsx", content)
-        result = _analyze_test_quality({tf}, "typescript")
+        result = analyze_test_quality({tf}, "typescript")
         assert result[tf]["quality"] in ("adequate", "thorough")
 
 

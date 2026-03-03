@@ -14,6 +14,10 @@ import hashlib
 from dataclasses import dataclass, field
 
 from desloppify.engine._plan.schema import PlanModel, ensure_plan_defaults
+from desloppify.engine._plan.subjective_policy import (
+    NON_OBJECTIVE_DETECTORS,
+    SubjectiveVisibility,
+)
 from desloppify.engine._state.schema import StateModel
 
 SUBJECTIVE_PREFIX = "subjective::"
@@ -28,14 +32,9 @@ TRIAGE_STAGE_IDS = (
 )
 TRIAGE_IDS = set(TRIAGE_STAGE_IDS)
 WORKFLOW_CREATE_PLAN_ID = "workflow::create-plan"
+WORKFLOW_SCORE_CHECKPOINT_ID = "workflow::score-checkpoint"
 WORKFLOW_PREFIX = "workflow::"
 SYNTHETIC_PREFIXES = ("triage::", "workflow::", "subjective::")
-
-# Detectors whose findings are NOT objective mechanical work.
-# Used to decide when the objective backlog is drained.
-NON_OBJECTIVE_DETECTORS: frozenset[str] = frozenset({
-    "review", "concerns", "subjective_review", "subjective_assessment",
-})
 
 
 # ---------------------------------------------------------------------------
@@ -74,7 +73,7 @@ def _current_stale_ids(state: StateModel) -> set[str]:
     """Return the set of ``subjective::<slug>`` IDs that are currently stale."""
     from desloppify.engine._work_queue.helpers import slugify
     from desloppify.engine.planning.scorecard_projection import (
-        scorecard_subjective_entries,
+        all_subjective_entries,
     )
 
     dim_scores = state.get("dimension_scores", {}) or {}
@@ -82,7 +81,7 @@ def _current_stale_ids(state: StateModel) -> set[str]:
         return set()
 
     stale: set[str] = set()
-    for entry in scorecard_subjective_entries(state, dim_scores=dim_scores):
+    for entry in all_subjective_entries(state, dim_scores=dim_scores):
         if not entry.get("stale"):
             continue
         dim_key = entry.get("dimension_key", "")
@@ -150,7 +149,7 @@ def current_under_target_ids(
     """
     from desloppify.engine._work_queue.helpers import slugify
     from desloppify.engine.planning.scorecard_projection import (
-        scorecard_subjective_entries,
+        all_subjective_entries,
     )
 
     dim_scores = state.get("dimension_scores", {}) or {}
@@ -161,7 +160,7 @@ def current_under_target_ids(
     unscored_ids = current_unscored_ids(state)
 
     under_target: set[str] = set()
-    for entry in scorecard_subjective_entries(state, dim_scores=dim_scores):
+    for entry in all_subjective_entries(state, dim_scores=dim_scores):
         if entry.get("placeholder") or entry.get("stale"):
             continue
         strict_val = float(entry.get("strict", entry.get("score", 100.0)))
@@ -248,46 +247,83 @@ def sync_unscored_dimensions(
 def sync_stale_dimensions(
     plan: PlanModel,
     state: StateModel,
+    *,
+    policy: SubjectiveVisibility | None = None,
+    cycle_just_completed: bool = False,
 ) -> StaleDimensionSyncResult:
-    """Keep the plan queue in sync with stale subjective dimensions.
+    """Keep the plan queue in sync with stale and under-target subjective dimensions.
 
     1. Remove any ``subjective::*`` IDs from ``queue_order`` that are no
-       longer stale and not unscored (avoids pruning IDs owned by
-       ``sync_unscored_dimensions``).
-    2. If no objective items remain after cleanup, inject all currently-stale
-       dimension IDs so the plan surfaces them as actionable work.
+       longer stale/under-target and not unscored (avoids pruning IDs owned
+       by ``sync_unscored_dimensions``).
+    2. Inject stale and under-target dimension IDs when either:
+       a. No objective items remain (mid-cycle: append to back), OR
+       b. A cycle just completed (post-cycle: insert at front so subjective
+          review takes priority over new objective findings).
     """
     ensure_plan_defaults(plan)
     result = StaleDimensionSyncResult()
     stale_ids = _current_stale_ids(state)
+    under_target_ids = current_under_target_ids(state)
+    injectable_ids = stale_ids | under_target_ids
     unscored_ids = current_unscored_ids(state)
     order: list[str] = plan["queue_order"]
 
     # --- Cleanup: prune resolved subjective IDs --------------------------
-    # Only prune IDs that are neither stale nor unscored.
+    # Only prune IDs that are no longer injectable and not unscored.
     to_remove: list[str] = [
         fid for fid in order
         if fid.startswith(SUBJECTIVE_PREFIX)
-        and fid not in stale_ids
+        and fid not in injectable_ids
         and fid not in unscored_ids
     ]
     for fid in to_remove:
         order.remove(fid)
         result.pruned.append(fid)
 
-    # --- Inject: populate when no objective items remain -----------------
-    has_real_items = any(
-        f.get("status") == "open"
-        and f.get("detector") not in NON_OBJECTIVE_DETECTORS
-        and not f.get("suppressed")
-        for f in state.get("findings", {}).values()
-    )
-    if not has_real_items and stale_ids:
+    # --- Inject or evict stale + under-target dimensions -----------------
+    if policy is not None:
+        has_real_items = policy.has_objective_backlog
+    else:
+        has_real_items = any(
+            f.get("status") == "open"
+            and f.get("detector") not in NON_OBJECTIVE_DETECTORS
+            and not f.get("suppressed")
+            for f in state.get("findings", {}).values()
+        )
+
+    should_inject = not has_real_items or cycle_just_completed
+
+    if not should_inject:
+        # Mid-cycle with objective backlog: evict any stale/under-target IDs
+        # that are present in the queue.  They may have been grandfathered from
+        # the unscored phase and should not be visible until the objective
+        # backlog clears or a cycle completes.
+        to_evict = [
+            fid for fid in order
+            if fid.startswith(SUBJECTIVE_PREFIX)
+            and fid in injectable_ids
+        ]
+        for fid in to_evict:
+            order.remove(fid)
+            result.pruned.append(fid)
+
+    if should_inject and injectable_ids:
         existing = set(order)
-        for sid in sorted(stale_ids):
-            if sid not in existing:
-                order.append(sid)
-                result.injected.append(sid)
+        if cycle_just_completed and has_real_items:
+            # Post-cycle: front-of-queue after promoted items so subjective
+            # review happens before the new objective cycle begins.
+            insert_at = _after_promoted(order, plan)
+            for sid in reversed(sorted(injectable_ids)):
+                if sid not in existing:
+                    order.insert(insert_at, sid)
+                    result.injected.append(sid)
+        else:
+            # Mid-cycle or no objective backlog: append to back.
+            for sid in sorted(injectable_ids):
+                if sid not in existing:
+                    order.append(sid)
+                    result.injected.append(sid)
 
     return result
 
@@ -382,6 +418,58 @@ def sync_triage_needed(
 
 
 @dataclass
+class ScoreCheckpointSyncResult:
+    """What changed during a score-checkpoint sync."""
+
+    injected: bool = False
+
+    @property
+    def changes(self) -> int:
+        return int(self.injected)
+
+
+def sync_score_checkpoint_needed(
+    plan: PlanModel,
+    state: StateModel,
+    *,
+    policy: SubjectiveVisibility | None = None,
+) -> ScoreCheckpointSyncResult:
+    """Inject ``workflow::score-checkpoint`` when all initial reviews complete.
+
+    Injects when:
+    - No unscored (placeholder) subjective dimensions remain
+    - ``workflow::score-checkpoint`` is not already in the queue
+
+    Positioned after subjective items but before triage/create-plan
+    so the user sees their updated strict score right after reviews finish.
+    """
+    ensure_plan_defaults(plan)
+    result = ScoreCheckpointSyncResult()
+    order: list[str] = plan["queue_order"]
+
+    if WORKFLOW_SCORE_CHECKPOINT_ID in order:
+        return result
+
+    # Check that no unscored dimensions remain
+    if policy is not None:
+        if policy.unscored_ids:
+            return result
+    else:
+        unscored = current_unscored_ids(state)
+        if unscored:
+            return result
+
+    # Insert after any subjective items, before triage/workflow/findings
+    insert_at = 0
+    for i, fid in enumerate(order):
+        if fid.startswith(SUBJECTIVE_PREFIX):
+            insert_at = i + 1
+    order.insert(insert_at, WORKFLOW_SCORE_CHECKPOINT_ID)
+    result.injected = True
+    return result
+
+
+@dataclass
 class CreatePlanSyncResult:
     """What changed during a create-plan sync."""
 
@@ -395,6 +483,8 @@ class CreatePlanSyncResult:
 def sync_create_plan_needed(
     plan: PlanModel,
     state: StateModel,
+    *,
+    policy: SubjectiveVisibility | None = None,
 ) -> CreatePlanSyncResult:
     """Inject ``workflow::create-plan`` when reviews complete + objective backlog exists.
 
@@ -416,24 +506,28 @@ def sync_create_plan_needed(
         return result
 
     # Check that no unscored dimensions remain
-    unscored = current_unscored_ids(state)
-    if unscored:
-        return result
-
-    # Check that objective findings exist
-    findings = state.get("findings", {})
-    has_objective = any(
-        f.get("status") == "open"
-        and f.get("detector") not in NON_OBJECTIVE_DETECTORS
-        for f in findings.values()
-    )
+    if policy is not None:
+        if policy.unscored_ids:
+            return result
+        has_objective = policy.has_objective_backlog
+    else:
+        unscored = current_unscored_ids(state)
+        if unscored:
+            return result
+        findings = state.get("findings", {})
+        has_objective = any(
+            f.get("status") == "open"
+            and f.get("detector") not in NON_OBJECTIVE_DETECTORS
+            for f in findings.values()
+        )
     if not has_objective:
         return result
 
-    # Insert after any subjective items, before findings
+    # Insert after any subjective/workflow items, at the end of the
+    # synthetic block (so create-plan comes after score-checkpoint).
     insert_at = 0
     for i, fid in enumerate(order):
-        if fid.startswith(SUBJECTIVE_PREFIX) or fid.startswith(TRIAGE_PREFIX):
+        if fid.startswith(SUBJECTIVE_PREFIX) or fid.startswith(TRIAGE_PREFIX) or fid.startswith(WORKFLOW_PREFIX):
             insert_at = i + 1
     order.insert(insert_at, WORKFLOW_CREATE_PLAN_ID)
     result.injected = True
@@ -498,7 +592,9 @@ __all__ = [
     "SYNTHETIC_PREFIXES",
     "WORKFLOW_CREATE_PLAN_ID",
     "WORKFLOW_PREFIX",
+    "WORKFLOW_SCORE_CHECKPOINT_ID",
     "CreatePlanSyncResult",
+    "ScoreCheckpointSyncResult",
     "StaleDimensionSyncResult",
     "TriageSyncResult",
     "UnscoredDimensionSyncResult",
@@ -508,6 +604,7 @@ __all__ = [
     "is_triage_stale",
     "review_finding_snapshot_hash",
     "sync_create_plan_needed",
+    "sync_score_checkpoint_needed",
     "sync_stale_dimensions",
     "sync_triage_needed",
     "sync_unscored_dimensions",

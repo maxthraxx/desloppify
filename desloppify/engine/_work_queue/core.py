@@ -5,11 +5,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TypedDict
 
-from desloppify.engine._plan.stale_dimensions import NON_OBJECTIVE_DETECTORS
+from desloppify.engine._plan.subjective_policy import (
+    SubjectiveVisibility,
+    compute_subjective_visibility,
+)
 from desloppify.engine._work_queue.helpers import (
     ALL_STATUSES,
     ATTEST_EXAMPLE,
     build_create_plan_item,
+    build_score_checkpoint_item,
     build_subjective_items,
     build_triage_stage_items,
     scope_matches,
@@ -45,6 +49,7 @@ class QueueBuildOptions:
     include_skipped: bool = False
     cluster: str | None = None
     collapse_clusters: bool = True
+    policy: SubjectiveVisibility | None = None
 
 
 class WorkQueueResult(TypedDict):
@@ -83,11 +88,8 @@ def build_work_queue(
 
     all_items = list(finding_items)
 
-    # Count open objective findings for stale-subjective gating
-    objective_count = sum(
-        1 for item in finding_items
-        if item.get("detector") not in NON_OBJECTIVE_DETECTORS
-    )
+    # Resolve subjective visibility policy for gating
+    policy = resolved_options.policy or compute_subjective_visibility(state)
 
     if (
         resolved_options.include_subjective
@@ -99,13 +101,21 @@ def build_work_queue(
             state.get("findings", {}),
             threshold=subjective_threshold_value,
         )
+        # When a plan explicitly includes a subjective item in queue_order,
+        # surface it regardless of policy — the plan is authoritative.
+        plan_queue_set: set[str] = (
+            set(resolved_options.plan.get("queue_order", []))
+            if resolved_options.plan
+            else set()
+        )
         for item in subjective_items:
             if not scope_matches(item, resolved_options.scope):
                 continue
             # Non-initial subjective items only surface when objective
-            # backlog is drained — stale reruns AND under-target dims
-            # should wait until all mechanical work is done.
-            if not item.get("initial_review") and objective_count > 0:
+            # backlog is drained — unless the plan explicitly queued them
+            # (e.g. stale dims injected after a completed cycle).
+            item_id = item.get("id", "")
+            if not policy.should_surface(item) and item_id not in plan_queue_set:
                 continue
             all_items.append(item)
 
@@ -113,6 +123,9 @@ def build_work_queue(
     if resolved_options.plan and status in {"open", "all"}:
         synth_items = build_triage_stage_items(resolved_options.plan, state)
         all_items.extend(synth_items)
+        checkpoint_item = build_score_checkpoint_item(resolved_options.plan, state)
+        if checkpoint_item is not None:
+            all_items.append(checkpoint_item)
         plan_item = build_create_plan_item(resolved_options.plan)
         if plan_item is not None:
             all_items.append(plan_item)

@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from desloppify.engine._plan.reconcile import ReviewImportSyncResult
+    from desloppify.engine.plan import ReviewImportSyncResult
 
 from desloppify import state as state_mod
 from desloppify.app.commands.helpers.query import write_query
@@ -178,6 +178,7 @@ def _sync_plan_after_review_change(state: dict, diff: dict) -> None:
             save_plan,
             sync_create_plan_needed,
             sync_plan_after_review_import,
+            sync_score_checkpoint_needed,
         )
 
         if not has_living_plan():
@@ -187,7 +188,7 @@ def _sync_plan_after_review_change(state: dict, diff: dict) -> None:
         result = sync_plan_after_review_import(plan, state)
 
         # Auto-resolve subjective dimension items that are no longer unscored
-        from desloppify.engine._plan.stale_dimensions import current_unscored_ids
+        from desloppify.engine.plan import current_unscored_ids
         still_unscored = current_unscored_ids(state)
         order = plan.get("queue_order", [])
         subjective_in_queue = [
@@ -200,11 +201,17 @@ def _sync_plan_after_review_change(state: dict, diff: dict) -> None:
         if covered_ids:
             purge_ids(plan, covered_ids)
 
-        # Check if create-plan item should be injected
+        # Check if score checkpoint and create-plan items should be injected
+        checkpoint_result = sync_score_checkpoint_needed(plan, state)
         create_plan_result = sync_create_plan_needed(plan, state)
-        if create_plan_result.injected:
+        if checkpoint_result.injected or create_plan_result.injected:
+            parts = []
+            if checkpoint_result.injected:
+                parts.append("`workflow::score-checkpoint`")
+            if create_plan_result.injected:
+                parts.append("`workflow::create-plan`")
             print(colorize(
-                "  Plan: reviews complete — `workflow::create-plan` queued. Run `desloppify plan`.",
+                f"  Plan: reviews complete — {' and '.join(parts)} queued. Run `desloppify next`.",
                 "cyan",
             ))
 

@@ -297,7 +297,7 @@ def _cmd_cluster_update(args: argparse.Namespace) -> None:
             print(colorize("  Warning: only 1 step stored and it's quite long. Check shell quoting.", "yellow"))
     cluster["user_modified"] = True
 
-    from desloppify.engine._state.schema import utc_now
+    from desloppify.state import utc_now
 
     cluster["updated_at"] = utc_now()
     append_log_entry(

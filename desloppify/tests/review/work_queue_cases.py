@@ -873,3 +873,70 @@ def test_collapse_clusters_preserves_order():
     assert result[1]["kind"] == "cluster"
     assert result[1]["id"] == "auto/unused"
     assert len(result) == 2  # other + cluster
+
+
+# -- Plan-ordered subjective items surface despite objective backlog --------
+
+
+def test_plan_ordered_stale_subjective_surfaces_with_objective_backlog():
+    """Stale subjective items in plan queue_order surface even with objective backlog.
+
+    After a completed cycle, stale dims are injected into queue_order by
+    sync_stale_dimensions.  The work queue must respect the plan's explicit
+    ordering and surface them even though should_surface() would normally
+    filter them.
+    """
+    from desloppify.engine._plan.schema import empty_plan
+
+    objective_findings = [
+        _finding(f"smells::src/{c}.py::x", detector="smells", tier=3)
+        for c in "abcd"
+    ]
+    state = _state(
+        objective_findings,
+        dimension_scores={
+            "Naming quality": {
+                "score": 70.0,
+                "strict": 70.0,
+                "issues": 1,
+                "detectors": {
+                    "subjective_assessment": {"dimension_key": "naming_quality"},
+                },
+            },
+        },
+    )
+    state["subjective_assessments"] = {
+        "naming_quality": {
+            "score": 70.0,
+            "needs_review_refresh": True,
+            "stale_since": "2026-01-01T00:00:00+00:00",
+        }
+    }
+
+    # Without plan: stale subjective item is gated (existing behavior)
+    queue_no_plan = build_work_queue(state, count=None, include_subjective=True)
+    subj_no_plan = [
+        i["id"] for i in queue_no_plan["items"] if i["id"].startswith("subjective::")
+    ]
+    assert len(subj_no_plan) == 0
+
+    # With plan that includes the stale dim in queue_order: surfaces
+    plan = empty_plan()
+    plan["queue_order"] = [
+        "subjective::naming_quality",
+        "smells::src/a.py::x",
+        "smells::src/b.py::x",
+        "smells::src/c.py::x",
+        "smells::src/d.py::x",
+    ]
+    queue_with_plan = build_work_queue(
+        state, count=None, include_subjective=True, plan=plan,
+    )
+    subj_with_plan = [
+        i["id"] for i in queue_with_plan["items"] if i["id"].startswith("subjective::")
+    ]
+    assert len(subj_with_plan) == 1
+    assert "subjective::naming_quality" in subj_with_plan
+
+    # And it should be first in the queue (plan order respected)
+    assert queue_with_plan["items"][0]["id"] == "subjective::naming_quality"

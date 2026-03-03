@@ -408,7 +408,7 @@ def _blocked_triage_stages(plan: dict) -> dict[str, list[str]]:
     no state needed, no queue item construction.
     """
     from desloppify.app.commands.plan.triage_playbook import TRIAGE_STAGE_DEPENDENCIES
-    from desloppify.engine._plan.stale_dimensions import TRIAGE_IDS, TRIAGE_STAGE_IDS
+    from desloppify.engine.plan import TRIAGE_IDS, TRIAGE_STAGE_IDS
 
     order_set = set(plan.get("queue_order", []))
     present = order_set & TRIAGE_IDS

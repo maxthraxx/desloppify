@@ -113,9 +113,9 @@ def cmd_status(args: argparse.Namespace) -> None:
     print_scan_completeness(state)
 
     # Compute objective backlog once for consistent subjective actionability gating
-    _objective_backlog = 0
-    if _breakdown is not None:
-        _objective_backlog = max(0, _breakdown.queue_total - _breakdown.subjective)
+    from desloppify.engine.plan import compute_subjective_visibility
+    _policy = compute_subjective_visibility(state, target_strict=target_strict_score)
+    _objective_backlog = _policy.objective_count
 
     if dim_scores:
         show_dimension_table(state, dim_scores, objective_backlog=_objective_backlog)

@@ -34,14 +34,15 @@ from desloppify.app.commands.scan.scan_wontfix import (
 from desloppify.core.text_api import PROJECT_ROOT
 from desloppify.engine import work_queue as issues_mod
 from desloppify.engine import planning as plan_mod
-from desloppify.engine._plan.auto_cluster import auto_cluster_findings
 from desloppify.engine.planning.scan import PlanScanOptions
-from desloppify.engine._plan.operations import append_log_entry
 from desloppify.engine.plan import (
+    append_log_entry,
+    auto_cluster_findings,
     load_plan,
     reconcile_plan_after_scan,
     save_plan,
     sync_create_plan_needed,
+    sync_score_checkpoint_needed,
     sync_stale_dimensions,
     sync_triage_needed,
     sync_unscored_dimensions,
@@ -135,7 +136,7 @@ def _sync_stale_dimensions(plan: dict[str, object], state: state_mod.StateModel,
     if sync.injected:
         print(
             colorize(
-                f"  Plan: {len(sync.injected)} stale subjective dimension(s) queued for refresh.",
+                f"  Plan: {len(sync.injected)} subjective dimension(s) queued for review.",
                 "cyan",
             )
         )
@@ -147,14 +148,25 @@ def _sync_auto_clusters(
     state: state_mod.StateModel,
     *,
     target_strict: float = 95.0,
+    policy=None,
+    cycle_just_completed: bool = False,
 ) -> bool:
     """Regenerate automatic task clusters after scan merge."""
-    return bool(auto_cluster_findings(plan, state, target_strict=target_strict))
+    return bool(auto_cluster_findings(
+        plan, state,
+        target_strict=target_strict,
+        policy=policy,
+        cycle_just_completed=cycle_just_completed,
+    ))
 
 
 def _seed_plan_start_scores(plan: dict[str, object], state: state_mod.StateModel) -> bool:
     """Set plan_start_scores when beginning a new queue cycle."""
-    if plan.get("plan_start_scores"):
+    existing = plan.get("plan_start_scores")
+    if existing and not isinstance(existing, dict):
+        return False
+    # Seed when empty OR when it's the reset sentinel ({"reset": True})
+    if existing and not existing.get("reset"):
         return False
     scores = state_mod.score_snapshot(state)
     if scores.strict is None:
@@ -205,17 +217,33 @@ def _reconcile_plan_post_scan(runtime: "ScanRuntime") -> None:
             append_log_entry(plan, "sync_unscored", actor="system",
                              detail={"changes": True})
 
-        stale_changed = _sync_stale_dimensions(plan, runtime.state, sync_stale_dimensions)
+        from desloppify.app.commands.helpers.score import target_strict_score_from_config
+        _target_strict = target_strict_score_from_config(runtime.config, fallback=95.0)
+
+        # Compute subjective visibility policy once for consistent gating
+        from desloppify.engine.plan import compute_subjective_visibility
+        _policy = compute_subjective_visibility(runtime.state, target_strict=_target_strict)
+
+        # Detect cycle completion: plan_start_scores is empty when the
+        # previous cycle drained the queue and revealed scores.  In that
+        # case stale subjective dimensions should be prioritized over new
+        # objective findings so the user reviews before a new cycle begins.
+        _cycle_just_completed = not plan.get("plan_start_scores")
+
+        stale_changed = _sync_stale_dimensions(
+            plan, runtime.state,
+            lambda p, s: sync_stale_dimensions(
+                p, s, policy=_policy, cycle_just_completed=_cycle_just_completed,
+            ),
+        )
         if stale_changed:
             dirty = True
             append_log_entry(plan, "sync_stale", actor="system",
                              detail={"changes": True})
 
-        from desloppify.app.commands.helpers.score import target_strict_score_from_config
-        _target_strict = target_strict_score_from_config(runtime.config, fallback=95.0)
-
         auto_changed = _sync_auto_clusters(
-            plan, runtime.state, target_strict=_target_strict,
+            plan, runtime.state, target_strict=_target_strict, policy=_policy,
+            cycle_just_completed=_cycle_just_completed,
         )
         if auto_changed:
             dirty = True
@@ -235,7 +263,13 @@ def _reconcile_plan_post_scan(runtime: "ScanRuntime") -> None:
                 append_log_entry(plan, "sync_triage", actor="system",
                                  detail={"injected": True})
 
-        create_plan_sync = sync_create_plan_needed(plan, runtime.state)
+        checkpoint_sync = sync_score_checkpoint_needed(plan, runtime.state, policy=_policy)
+        if checkpoint_sync.changes:
+            dirty = True
+            append_log_entry(plan, "sync_score_checkpoint", actor="system",
+                             detail={"injected": True})
+
+        create_plan_sync = sync_create_plan_needed(plan, runtime.state, policy=_policy)
         if create_plan_sync.changes:
             dirty = True
             if create_plan_sync.injected:

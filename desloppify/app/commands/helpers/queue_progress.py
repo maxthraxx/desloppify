@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 from desloppify.core.exception_sets import PLAN_LOAD_EXCEPTIONS
 from desloppify.core.output_api import colorize
-from desloppify.engine._work_queue.helpers import is_subjective_queue_item
+from desloppify.engine.work_queue import is_subjective_queue_item
 
 
 # ---------------------------------------------------------------------------

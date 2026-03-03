@@ -9,7 +9,7 @@ from desloppify.app.commands.scan.scan_helpers import format_delta
 from desloppify.app.commands.status_parts.strict_target import (
     format_strict_target_progress,
 )
-from desloppify.app.commands.helpers.score_update import _print_strict_target_nudge
+from desloppify.app.commands.helpers.score_update import print_strict_target_nudge
 from desloppify.app.commands.scan.scan_reporting_llm import _is_agent_environment
 from desloppify.core.output_api import colorize
 from desloppify.engine.concerns import generate_concerns
@@ -170,7 +170,7 @@ def show_score_delta(
 
     # Show strict target progress
     if target_strict is not None and new.strict is not None:
-        _print_strict_target_nudge(new.strict, target_strict, show_next=False)
+        print_strict_target_nudge(new.strict, target_strict, show_next=False)
 
     integrity = state.get("subjective_integrity", {})
     if isinstance(integrity, dict):

@@ -11,7 +11,8 @@ import re
 import sys
 
 from desloppify.core.output_api import colorize
-from desloppify.engine._work_queue.core import QueueBuildOptions, build_work_queue
+from desloppify.engine.plan import compute_subjective_visibility
+from desloppify.engine.work_queue import QueueBuildOptions, build_work_queue
 from desloppify.state import StateModel, save_state
 
 from .helpers import parse_dimensions
@@ -67,6 +68,7 @@ def _count_open_subjective_queue_items(
     state: StateModel,
     *,
     dimensions: set[str] | None = None,
+    policy=None,
 ) -> int:
     """Count open synthetic subjective queue items for rerun gating."""
     normalized_dims = (
@@ -80,6 +82,7 @@ def _count_open_subjective_queue_items(
             status="open",
             include_subjective=True,
             count=None,
+            policy=policy,
         ),
     )
     count = 0
@@ -122,18 +125,12 @@ def _objective_and_subjective_backlog(
     *,
     blocking_dims: list[str],
 ) -> tuple[int, int]:
-    objective_result = build_work_queue(
-        state,
-        options=QueueBuildOptions(
-            status="open",
-            include_subjective=False,
-            count=None,
-        ),
-    )
-    objective_total = objective_result["total"]
+    policy = compute_subjective_visibility(state)
+    objective_total = policy.objective_count
     subjective_total = _count_open_subjective_queue_items(
         state,
         dimensions=set(blocking_dims),
+        policy=policy,
     )
     return objective_total, subjective_total
 

@@ -1,0 +1,126 @@
+"""Unified subjective-visibility policy.
+
+A single frozen dataclass computed once per operation replaces the scattered
+``has_objective_items`` / ``objective_count`` computations in
+``stale_dimensions``, ``auto_cluster``, and ``_work_queue/core``.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from desloppify.engine._state.schema import StateModel
+
+# Detectors whose findings are NOT objective mechanical work.
+# Canonical definition — re-exported by stale_dimensions for back-compat.
+NON_OBJECTIVE_DETECTORS: frozenset[str] = frozenset({
+    "review", "concerns", "subjective_review", "subjective_assessment",
+})
+
+
+@dataclass(frozen=True)
+class SubjectiveVisibility:
+    """Immutable snapshot of the subjective-vs-objective balance."""
+
+    has_objective_backlog: bool  # any open non-subjective findings?
+    objective_count: int  # how many
+    unscored_ids: frozenset[str]  # subjective::* IDs needing initial review
+    stale_ids: frozenset[str]  # subjective::* IDs needing re-review
+    under_target_ids: frozenset[str]  # below target, not stale/unscored
+
+    def should_surface(self, item: dict) -> bool:
+        """Should this subjective queue item appear in the work queue?
+
+        Unscored (initial_review) -> always.  All others -> only when drained.
+        """
+        if item.get("initial_review"):
+            return True
+        return not self.has_objective_backlog
+
+    def should_inject_to_plan(self, fid: str) -> bool:
+        """Should this subjective ID be injected into plan queue_order?"""
+        if fid in self.unscored_ids:
+            return True  # unconditional
+        if fid in self.stale_ids:
+            return not self.has_objective_backlog
+        if fid in self.under_target_ids:
+            return not self.has_objective_backlog
+        return False
+
+    def should_evict_from_plan(self, fid: str) -> bool:
+        """Should this subjective ID be removed from plan queue_order?"""
+        if fid in self.unscored_ids:
+            return False  # never evict unscored
+        if fid in self.stale_ids or fid in self.under_target_ids:
+            return self.has_objective_backlog
+        return False
+
+    @property
+    def backlog_blocks_rerun(self) -> bool:
+        """Preflight: should reruns be blocked?"""
+        return self.has_objective_backlog
+
+
+def _is_evidence_only(finding: dict) -> bool:
+    """Return True if the finding is below its detector's standalone threshold."""
+    from desloppify.core.registry import DETECTORS
+    from desloppify.engine.planning.common import CONFIDENCE_ORDER
+
+    detector = finding.get("detector", "")
+    meta = DETECTORS.get(detector)
+    if meta and meta.standalone_threshold:
+        threshold_rank = CONFIDENCE_ORDER.get(meta.standalone_threshold, 9)
+        finding_rank = CONFIDENCE_ORDER.get(finding.get("confidence", "low"), 9)
+        if finding_rank > threshold_rank:
+            return True
+    return False
+
+
+def compute_subjective_visibility(
+    state: StateModel,
+    *,
+    target_strict: float = 95.0,
+) -> SubjectiveVisibility:
+    """Build the policy snapshot from current state.
+
+    Imports building-block helpers from ``stale_dimensions`` so the
+    source-of-truth logic stays in one place.
+    """
+    from desloppify.engine._plan.stale_dimensions import (
+        _current_stale_ids,
+        current_under_target_ids,
+        current_unscored_ids,
+    )
+
+    findings = state.get("findings", {})
+
+    # Count open, non-suppressed, objective findings.
+    # Evidence-only findings (below standalone confidence threshold) are
+    # excluded — they still affect scores but are not actionable queue items.
+    objective_count = sum(
+        1
+        for f in findings.values()
+        if f.get("status") == "open"
+        and f.get("detector") not in NON_OBJECTIVE_DETECTORS
+        and not f.get("suppressed")
+        and not _is_evidence_only(f)
+    )
+
+    unscored = current_unscored_ids(state)
+    stale = _current_stale_ids(state)
+    under_target = current_under_target_ids(state, target_strict=target_strict)
+
+    return SubjectiveVisibility(
+        has_objective_backlog=objective_count > 0,
+        objective_count=objective_count,
+        unscored_ids=frozenset(unscored),
+        stale_ids=frozenset(stale),
+        under_target_ids=frozenset(under_target),
+    )
+
+
+__all__ = [
+    "NON_OBJECTIVE_DETECTORS",
+    "SubjectiveVisibility",
+    "compute_subjective_visibility",
+]

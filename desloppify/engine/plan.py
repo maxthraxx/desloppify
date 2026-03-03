@@ -95,12 +95,27 @@ from desloppify.engine._plan.stale_dimensions import (
     UnscoredDimensionSyncResult,
     TriageSyncResult,
     compute_new_finding_ids,
+    current_unscored_ids,
     is_triage_stale,
     review_finding_snapshot_hash,
     sync_create_plan_needed,
+    sync_score_checkpoint_needed,
     sync_stale_dimensions,
     sync_triage_needed,
     sync_unscored_dimensions,
+)
+
+# --- epic triage ------------------------------------------------------------
+from desloppify.engine._plan.epic_triage import (
+    build_triage_prompt,
+    collect_triage_input,
+    detect_recurring_patterns,
+    extract_finding_citations,
+)
+
+# --- subjective policy ------------------------------------------------------
+from desloppify.engine._plan.subjective_policy import (
+    compute_subjective_visibility,
 )
 
 def triage_phase_banner(plan: PlanModel) -> str:
@@ -195,12 +210,21 @@ __all__ = [
     "TriageSyncResult",
     "UnscoredDimensionSyncResult",
     "compute_new_finding_ids",
+    "current_unscored_ids",
     "is_triage_stale",
     "review_finding_snapshot_hash",
     "sync_create_plan_needed",
+    "sync_score_checkpoint_needed",
     "sync_stale_dimensions",
     "sync_triage_needed",
     "sync_unscored_dimensions",
+    # epic triage
+    "build_triage_prompt",
+    "collect_triage_input",
+    "detect_recurring_patterns",
+    "extract_finding_citations",
+    # subjective policy
+    "compute_subjective_visibility",
     # triage
     "triage_phase_banner",
 ]

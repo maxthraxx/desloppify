@@ -44,7 +44,7 @@ def _infer_lang_name(test_files: set[str], production_files: set[str]) -> str | 
     return None
 
 
-def _import_based_mapping(
+def import_based_mapping(
     graph: dict,
     test_files: set[str],
     production_files: set[str],
@@ -206,7 +206,7 @@ def _map_test_to_source(
     return None
 
 
-def _naming_based_mapping(
+def naming_based_mapping(
     test_files: set[str],
     production_files: set[str],
     lang_name: str,
@@ -243,7 +243,7 @@ def _strip_test_markers(basename: str, lang_name: str) -> str | None:
     return None
 
 
-def _transitive_coverage(
+def transitive_coverage(
     directly_tested: set[str],
     graph: dict,
     production_files: set[str],
@@ -265,7 +265,7 @@ def _transitive_coverage(
     return visited - directly_tested
 
 
-def _analyze_test_quality(
+def analyze_test_quality(
     test_files: set[str],
     lang_name: str,
 ) -> dict[str, dict]:
@@ -354,7 +354,7 @@ def _analyze_test_quality(
     return quality_map
 
 
-def _get_test_files_for_prod(
+def get_test_files_for_prod(
     prod_file: str,
     test_files: set[str],
     graph: dict,
@@ -390,7 +390,7 @@ def _get_test_files_for_prod(
     return result
 
 
-def _build_test_import_index(
+def build_test_import_index(
     test_files: set[str],
     production_files: set[str],
     lang_name: str,

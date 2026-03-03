@@ -1,7 +1,7 @@
 """C# branches in test coverage mapping should be safe and usable."""
 
 from desloppify.engine.detectors.coverage.mapping import (
-    _analyze_test_quality,
+    analyze_test_quality,
     _map_test_to_source,
 )
 
@@ -27,6 +27,6 @@ public class AuthTests
 }
 """
     )
-    result = _analyze_test_quality({str(test_file)}, "csharp")
+    result = analyze_test_quality({str(test_file)}, "csharp")
     quality = result[str(test_file)]["quality"]
     assert quality in {"adequate", "thorough", "smoke"}

@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import logging
 
-from desloppify.app.commands.helpers.score_update import _print_strict_target_nudge
+from desloppify.app.commands.helpers.score_update import print_strict_target_nudge
 from desloppify.app.commands.resolve.render_support import (
     print_post_resolve_guidance,
     print_strict_gap_note,
@@ -92,7 +92,7 @@ def _print_score_movement(
         )
     )
     if target_strict is not None:
-        _print_strict_target_nudge(new.strict, target_strict, show_next=False)
+        print_strict_target_nudge(new.strict, target_strict, show_next=False)
     print_strict_gap_note(status, overall=new.overall, strict=new.strict)
     print_post_resolve_guidance(
         status=status,

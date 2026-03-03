@@ -16,78 +16,30 @@ from pathlib import Path
 from typing import Any
 
 from desloppify.core.path_io_api import safe_write_text
+from .runner_failures import (
+    TRANSIENT_RUNNER_PHRASES as _TRANSIENT_RUNNER_PHRASES,
+    _CODEX_BACKEND_HOST_HINT,
+    _CODEX_BACKEND_PATH_HINT,
+    _SANDBOX_PATH_WARNING_PHRASES,
+    _USAGE_LIMIT_PHRASES,
+)
 from .runner_packets import (
+    _BLIND_PACKET_DROP_KEYS,
     _sanitize_blind_config,
     build_batch_import_provenance,
     prepare_run_artifacts,
     selected_batch_indexes,
     write_packet_snapshot,
 )
+from .runner_parallel import (
+    _RUNNER_CALLBACK_EXCEPTIONS,
+    _RUNNER_TASK_EXCEPTIONS,
+)
 from .runner_process import (
     _run_via_popen,
     _run_via_subprocess,
     _write_live_snapshot,
     codex_batch_command,
-)
-
-_BLIND_PACKET_DROP_KEYS = {
-    "narrative",
-    "next_command",
-    "score_snapshot",
-    "strict_target",
-    "strict_target_progress",
-    "subjective_at_target",
-}
-
-_BLIND_CONFIG_SCORE_HINT_KEYS = {
-    "target_strict_score",
-    "strict_target_score",
-    "target_score",
-    "strict_score",
-    "objective_score",
-    "overall_score",
-    "verified_strict_score",
-}
-
-_TRANSIENT_RUNNER_PHRASES = (
-    "stream disconnected before completion",
-    "error sending request for url",
-    "connection reset by peer",
-    "connection reset",
-    "connection aborted",
-    "temporarily unavailable",
-    "network is unreachable",
-    "connection refused",
-    "timed out while",
-    "no last agent message; wrote empty content",
-)
-_CODEX_BACKEND_PATH_HINT = "/backend-api/codex/responses"
-_CODEX_BACKEND_HOST_HINT = "chatgpt.com"
-_SANDBOX_PATH_WARNING_PHRASES = (
-    "could not update path: operation not permitted",
-    "operation not permitted (os error 1)",
-)
-_USAGE_LIMIT_PHRASES = (
-    "you've hit your usage limit",
-    "you have hit your usage limit",
-    "codex/settings/usage",
-)
-
-_RUNNER_CALLBACK_EXCEPTIONS = (
-    OSError,
-    RuntimeError,
-    TypeError,
-    ValueError,
-    AssertionError,
-    KeyError,
-)
-_RUNNER_TASK_EXCEPTIONS = (
-    OSError,
-    RuntimeError,
-    TypeError,
-    ValueError,
-    AssertionError,
-    subprocess.SubprocessError,
 )
 
 

@@ -1,0 +1,316 @@
+"""Tests for the unified SubjectiveVisibility policy."""
+
+from __future__ import annotations
+
+from desloppify.engine._plan.subjective_policy import (
+    NON_OBJECTIVE_DETECTORS,
+    SubjectiveVisibility,
+    compute_subjective_visibility,
+)
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _finding(fid: str, detector: str = "unused", status: str = "open",
+             suppressed: bool = False) -> dict:
+    f: dict = {"id": fid, "detector": detector, "status": status}
+    if suppressed:
+        f["suppressed"] = True
+    return f
+
+
+def _state_with_findings(*findings: dict) -> dict:
+    return {
+        "findings": {f["id"]: f for f in findings},
+        "scan_count": 5,
+    }
+
+
+def _unscored_state(*dim_keys: str) -> dict:
+    dim_scores: dict = {}
+    assessments: dict = {}
+    for dk in dim_keys:
+        dim_scores[dk] = {
+            "score": 0, "strict": 0, "checks": 1, "issues": 0,
+            "detectors": {
+                "subjective_assessment": {"dimension_key": dk, "placeholder": True},
+            },
+        }
+        assessments[dk] = {"score": 0.0, "placeholder": True}
+    return {
+        "findings": {},
+        "scan_count": 1,
+        "dimension_scores": dim_scores,
+        "subjective_assessments": assessments,
+    }
+
+
+def _stale_state(*dim_keys: str, score: float = 50.0) -> dict:
+    dim_scores: dict = {}
+    assessments: dict = {}
+    for dk in dim_keys:
+        dim_scores[dk] = {
+            "score": score, "strict": score, "checks": 1, "issues": 0,
+            "detectors": {
+                "subjective_assessment": {"dimension_key": dk, "placeholder": False},
+            },
+        }
+        assessments[dk] = {
+            "score": score,
+            "needs_review_refresh": True,
+            "stale_since": "2025-01-01T00:00:00+00:00",
+        }
+    return {
+        "findings": {},
+        "scan_count": 5,
+        "dimension_scores": dim_scores,
+        "subjective_assessments": assessments,
+    }
+
+
+def _under_target_state(*dim_keys: str, score: float = 70.0) -> dict:
+    dim_scores: dict = {}
+    assessments: dict = {}
+    for dk in dim_keys:
+        dim_scores[dk] = {
+            "score": score, "strict": score, "checks": 1, "issues": 0,
+            "detectors": {
+                "subjective_assessment": {"dimension_key": dk, "placeholder": False},
+            },
+        }
+        assessments[dk] = {"score": score}
+    return {
+        "findings": {},
+        "scan_count": 5,
+        "dimension_scores": dim_scores,
+        "subjective_assessments": assessments,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Factory: basic counting
+# ---------------------------------------------------------------------------
+
+def test_empty_state_has_no_backlog():
+    policy = compute_subjective_visibility({})
+    assert policy.has_objective_backlog is False
+    assert policy.objective_count == 0
+    assert policy.unscored_ids == frozenset()
+    assert policy.stale_ids == frozenset()
+    assert policy.under_target_ids == frozenset()
+
+
+def test_objective_findings_counted():
+    state = _state_with_findings(
+        _finding("u1", "unused"),
+        _finding("u2", "unused"),
+        _finding("r1", "review"),  # non-objective
+    )
+    policy = compute_subjective_visibility(state)
+    assert policy.has_objective_backlog is True
+    assert policy.objective_count == 2
+
+
+def test_suppressed_findings_excluded():
+    state = _state_with_findings(
+        _finding("u1", "unused", suppressed=True),
+    )
+    policy = compute_subjective_visibility(state)
+    assert policy.has_objective_backlog is False
+    assert policy.objective_count == 0
+
+
+def test_closed_findings_excluded():
+    state = _state_with_findings(
+        _finding("u1", "unused", status="resolved"),
+    )
+    policy = compute_subjective_visibility(state)
+    assert policy.has_objective_backlog is False
+
+
+def test_non_objective_detectors_excluded():
+    state = _state_with_findings(
+        _finding("r1", "review"),
+        _finding("c1", "concerns"),
+        _finding("sr1", "subjective_review"),
+        _finding("sa1", "subjective_assessment"),
+    )
+    policy = compute_subjective_visibility(state)
+    assert policy.has_objective_backlog is False
+    assert policy.objective_count == 0
+
+
+# ---------------------------------------------------------------------------
+# Factory: subjective ID sets
+# ---------------------------------------------------------------------------
+
+def test_unscored_ids_populated():
+    state = _unscored_state("design_coherence", "error_consistency")
+    policy = compute_subjective_visibility(state)
+    assert "subjective::design_coherence" in policy.unscored_ids
+    assert "subjective::error_consistency" in policy.unscored_ids
+
+
+def test_stale_ids_populated():
+    state = _stale_state("design_coherence")
+    policy = compute_subjective_visibility(state)
+    assert "subjective::design_coherence" in policy.stale_ids
+
+
+def test_under_target_ids_populated():
+    state = _under_target_state("design_coherence", score=70.0)
+    policy = compute_subjective_visibility(state, target_strict=95.0)
+    assert "subjective::design_coherence" in policy.under_target_ids
+
+
+# ---------------------------------------------------------------------------
+# should_surface
+# ---------------------------------------------------------------------------
+
+def test_should_surface_initial_review_always():
+    policy = SubjectiveVisibility(
+        has_objective_backlog=True,
+        objective_count=5,
+        unscored_ids=frozenset(),
+        stale_ids=frozenset(),
+        under_target_ids=frozenset(),
+    )
+    assert policy.should_surface({"initial_review": True}) is True
+
+
+def test_should_surface_non_initial_blocked_by_backlog():
+    policy = SubjectiveVisibility(
+        has_objective_backlog=True,
+        objective_count=5,
+        unscored_ids=frozenset(),
+        stale_ids=frozenset(),
+        under_target_ids=frozenset(),
+    )
+    assert policy.should_surface({"initial_review": False}) is False
+    assert policy.should_surface({}) is False
+
+
+def test_should_surface_non_initial_ok_when_drained():
+    policy = SubjectiveVisibility(
+        has_objective_backlog=False,
+        objective_count=0,
+        unscored_ids=frozenset(),
+        stale_ids=frozenset(),
+        under_target_ids=frozenset(),
+    )
+    assert policy.should_surface({"initial_review": False}) is True
+    assert policy.should_surface({}) is True
+
+
+# ---------------------------------------------------------------------------
+# should_inject_to_plan / should_evict_from_plan
+# ---------------------------------------------------------------------------
+
+def test_inject_unscored_always():
+    policy = SubjectiveVisibility(
+        has_objective_backlog=True,
+        objective_count=5,
+        unscored_ids=frozenset({"subjective::foo"}),
+        stale_ids=frozenset(),
+        under_target_ids=frozenset(),
+    )
+    assert policy.should_inject_to_plan("subjective::foo") is True
+    assert policy.should_evict_from_plan("subjective::foo") is False
+
+
+def test_inject_stale_only_when_drained():
+    with_backlog = SubjectiveVisibility(
+        has_objective_backlog=True, objective_count=3,
+        unscored_ids=frozenset(), stale_ids=frozenset({"subjective::bar"}),
+        under_target_ids=frozenset(),
+    )
+    assert with_backlog.should_inject_to_plan("subjective::bar") is False
+    assert with_backlog.should_evict_from_plan("subjective::bar") is True
+
+    without_backlog = SubjectiveVisibility(
+        has_objective_backlog=False, objective_count=0,
+        unscored_ids=frozenset(), stale_ids=frozenset({"subjective::bar"}),
+        under_target_ids=frozenset(),
+    )
+    assert without_backlog.should_inject_to_plan("subjective::bar") is True
+    assert without_backlog.should_evict_from_plan("subjective::bar") is False
+
+
+def test_inject_under_target_only_when_drained():
+    with_backlog = SubjectiveVisibility(
+        has_objective_backlog=True, objective_count=3,
+        unscored_ids=frozenset(), stale_ids=frozenset(),
+        under_target_ids=frozenset({"subjective::baz"}),
+    )
+    assert with_backlog.should_inject_to_plan("subjective::baz") is False
+    assert with_backlog.should_evict_from_plan("subjective::baz") is True
+
+    without_backlog = SubjectiveVisibility(
+        has_objective_backlog=False, objective_count=0,
+        unscored_ids=frozenset(), stale_ids=frozenset(),
+        under_target_ids=frozenset({"subjective::baz"}),
+    )
+    assert without_backlog.should_inject_to_plan("subjective::baz") is True
+    assert without_backlog.should_evict_from_plan("subjective::baz") is False
+
+
+def test_unknown_id_never_injected_or_evicted():
+    policy = SubjectiveVisibility(
+        has_objective_backlog=True, objective_count=3,
+        unscored_ids=frozenset(), stale_ids=frozenset(),
+        under_target_ids=frozenset(),
+    )
+    assert policy.should_inject_to_plan("subjective::unknown") is False
+    assert policy.should_evict_from_plan("subjective::unknown") is False
+
+
+# ---------------------------------------------------------------------------
+# backlog_blocks_rerun
+# ---------------------------------------------------------------------------
+
+def test_backlog_blocks_rerun():
+    with_backlog = SubjectiveVisibility(
+        has_objective_backlog=True, objective_count=3,
+        unscored_ids=frozenset(), stale_ids=frozenset(),
+        under_target_ids=frozenset(),
+    )
+    assert with_backlog.backlog_blocks_rerun is True
+
+    without_backlog = SubjectiveVisibility(
+        has_objective_backlog=False, objective_count=0,
+        unscored_ids=frozenset(), stale_ids=frozenset(),
+        under_target_ids=frozenset(),
+    )
+    assert without_backlog.backlog_blocks_rerun is False
+
+
+# ---------------------------------------------------------------------------
+# Back-compat: NON_OBJECTIVE_DETECTORS re-exported from stale_dimensions
+# ---------------------------------------------------------------------------
+
+def test_non_objective_detectors_reexported():
+    from desloppify.engine._plan.stale_dimensions import (
+        NON_OBJECTIVE_DETECTORS as from_stale,
+    )
+    assert from_stale is NON_OBJECTIVE_DETECTORS
+
+
+# ---------------------------------------------------------------------------
+# Frozen dataclass
+# ---------------------------------------------------------------------------
+
+def test_policy_is_frozen():
+    import dataclasses
+    policy = SubjectiveVisibility(
+        has_objective_backlog=False, objective_count=0,
+        unscored_ids=frozenset(), stale_ids=frozenset(),
+        under_target_ids=frozenset(),
+    )
+    assert dataclasses.is_dataclass(policy)
+    try:
+        policy.objective_count = 99  # type: ignore[misc]
+        assert False, "Should be frozen"
+    except (AttributeError, dataclasses.FrozenInstanceError):
+        pass

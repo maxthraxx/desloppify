@@ -7,7 +7,6 @@ import sys
 
 from desloppify.core.output_api import colorize
 from desloppify.engine.plan import (
-    add_uncommitted_findings,
     append_log_entry,
     commit_tracking_summary,
     filter_finding_ids_by_pattern,

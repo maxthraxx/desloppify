@@ -550,27 +550,6 @@ def _should_merge_findings(existing: dict[str, Any], incoming: dict[str, Any]) -
     return not existing_summary or not incoming_summary
 
 
-def _accumulate_batch_findings(
-    result: dict[str, Any],
-    finding_map: dict[str, dict[str, Any]],
-) -> None:
-    """Deduplicate and accumulate findings from one batch into finding_map."""
-    suffix_counter: dict[str, int] = {}
-    for finding in result.get("findings", []):
-        dedupe_key = _finding_identity_key(finding)
-        existing = finding_map.get(dedupe_key)
-        if existing is None:
-            finding_map[dedupe_key] = finding
-            continue
-        if _should_merge_findings(existing, finding):
-            _merge_finding_payload(existing, finding)
-        else:
-            # Distinct finding with reused identifier — assign unique key
-            count = suffix_counter.get(dedupe_key, 0) + 1
-            suffix_counter[dedupe_key] = count
-            finding_map[f"{dedupe_key}##dup{count}"] = finding
-
-
 def _accumulate_batch_quality(
     result: dict[str, Any],
     *,

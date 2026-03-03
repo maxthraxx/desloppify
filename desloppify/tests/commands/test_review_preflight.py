@@ -35,6 +35,7 @@ def _state_with_prior_review() -> dict:
 
 
 _BUILD_WQ = "desloppify.app.commands.review.preflight.build_work_queue"
+_COMPUTE_SV = "desloppify.app.commands.review.preflight.compute_subjective_visibility"
 
 
 def _wq_result(items: list[dict]) -> dict:
@@ -45,16 +46,25 @@ def _wq_result(items: list[dict]) -> dict:
     }
 
 
+def _mock_policy(objective_count: int = 0) -> SimpleNamespace:
+    """Create a mock SubjectiveVisibility policy with the given objective count."""
+    return SimpleNamespace(
+        has_objective_backlog=objective_count > 0,
+        objective_count=objective_count,
+    )
+
+
 def test_blocked_when_open_objective_items(capsys):
     """Preflight blocks when open objective findings exist."""
     state = _state_with_prior_review()
     items = [
         {"id": f"f{i}", "summary": f"Finding {i}"} for i in range(3)
     ]
-    with patch(_BUILD_WQ, return_value=_wq_result(items)):
-        with pytest.raises(SystemExit) as exc:
-            review_rerun_preflight(state, _make_args())
-        assert exc.value.code == 1
+    with patch(_COMPUTE_SV, return_value=_mock_policy(objective_count=3)):
+        with patch(_BUILD_WQ, return_value=_wq_result(items)):
+            with pytest.raises(SystemExit) as exc:
+                review_rerun_preflight(state, _make_args())
+            assert exc.value.code == 1
 
     err = capsys.readouterr().err
     assert "Open objective finding(s): 3" in err
@@ -71,13 +81,14 @@ def test_blocked_when_open_subjective_queue_items(capsys):
             "detail": {"dimension": "naming_quality"},
         }
     ]
-    with patch(
-        _BUILD_WQ,
-        side_effect=[_wq_result([]), _wq_result(subjective_items)],
-    ):
-        with pytest.raises(SystemExit) as exc:
-            review_rerun_preflight(state, _make_args())
-        assert exc.value.code == 1
+    with patch(_COMPUTE_SV, return_value=_mock_policy(objective_count=0)):
+        with patch(
+            _BUILD_WQ,
+            return_value=_wq_result(subjective_items),
+        ):
+            with pytest.raises(SystemExit) as exc:
+                review_rerun_preflight(state, _make_args())
+            assert exc.value.code == 1
 
     err = capsys.readouterr().err
     assert "objective: 0, subjective: 1" in err
@@ -91,9 +102,10 @@ def test_blocked_message_is_concise(capsys):
     items = [
         {"id": f"f{i}", "summary": f"Finding {i}"} for i in range(8)
     ]
-    with patch(_BUILD_WQ, return_value=_wq_result(items)):
-        with pytest.raises(SystemExit):
-            review_rerun_preflight(state, _make_args())
+    with patch(_COMPUTE_SV, return_value=_mock_policy(objective_count=8)):
+        with patch(_BUILD_WQ, return_value=_wq_result(items)):
+            with pytest.raises(SystemExit):
+                review_rerun_preflight(state, _make_args())
 
     err = capsys.readouterr().err
     assert "Open objective finding(s): 8" in err
@@ -105,9 +117,10 @@ def test_blocked_message_is_concise(capsys):
 def test_allowed_when_queue_empty():
     """Preflight passes silently when no open objective items remain."""
     state = _state_with_prior_review()
-    with patch(_BUILD_WQ, return_value=_wq_result([])):
-        # Should not raise
-        review_rerun_preflight(state, _make_args())
+    with patch(_COMPUTE_SV, return_value=_mock_policy(objective_count=0)):
+        with patch(_BUILD_WQ, return_value=_wq_result([])):
+            # Should not raise
+            review_rerun_preflight(state, _make_args())
 
 
 def test_force_review_rerun_bypasses_check(capsys):
@@ -151,10 +164,11 @@ def test_prior_subjective_scores_enforces_gate(capsys):
     """When a dimension has a nonzero score, the gate is active."""
     state = _state_with_prior_review()
     items = [{"id": "f1", "summary": "Finding 1"}]
-    with patch(_BUILD_WQ, return_value=_wq_result(items)):
-        with pytest.raises(SystemExit) as exc:
-            review_rerun_preflight(state, _make_args())
-        assert exc.value.code == 1
+    with patch(_COMPUTE_SV, return_value=_mock_policy(objective_count=1)):
+        with patch(_BUILD_WQ, return_value=_wq_result(items)):
+            with pytest.raises(SystemExit) as exc:
+                review_rerun_preflight(state, _make_args())
+            assert exc.value.code == 1
 
     err = capsys.readouterr().err
     assert "Scored dimensions:" in err
@@ -226,9 +240,10 @@ def test_blocked_message_no_tip_without_dimensions_flag(capsys):
     """Without --dimensions, the Tip line does not appear."""
     state = _state_with_prior_review()
     items = [{"id": "f1", "summary": "Finding 1"}]
-    with patch(_BUILD_WQ, return_value=_wq_result(items)):
-        with pytest.raises(SystemExit):
-            review_rerun_preflight(state, _make_args())
+    with patch(_COMPUTE_SV, return_value=_mock_policy(objective_count=1)):
+        with patch(_BUILD_WQ, return_value=_wq_result(items)):
+            with pytest.raises(SystemExit):
+                review_rerun_preflight(state, _make_args())
 
     err = capsys.readouterr().err
     assert "Tip:" not in err
@@ -239,9 +254,10 @@ def test_blocked_message_no_tip_when_all_targeted_are_scored(capsys):
     state = _state_with_prior_review()
     items = [{"id": "f1", "summary": "Finding 1"}]
     args = _make_args(dimensions="naming_quality,logic_clarity")
-    with patch(_BUILD_WQ, return_value=_wq_result(items)):
-        with pytest.raises(SystemExit):
-            review_rerun_preflight(state, args)
+    with patch(_COMPUTE_SV, return_value=_mock_policy(objective_count=1)):
+        with patch(_BUILD_WQ, return_value=_wq_result(items)):
+            with pytest.raises(SystemExit):
+                review_rerun_preflight(state, args)
 
     err = capsys.readouterr().err
     assert "Tip:" not in err
@@ -275,10 +291,11 @@ def test_targeting_scored_dim_enforces_gate(capsys):
     }
     args = _make_args(dimensions="naming_quality")
     items = [{"id": "f1", "summary": "Finding 1"}]
-    with patch(_BUILD_WQ, return_value=_wq_result(items)):
-        with pytest.raises(SystemExit) as exc:
-            review_rerun_preflight(state, args)
-        assert exc.value.code == 1
+    with patch(_COMPUTE_SV, return_value=_mock_policy(objective_count=1)):
+        with patch(_BUILD_WQ, return_value=_wq_result(items)):
+            with pytest.raises(SystemExit) as exc:
+                review_rerun_preflight(state, args)
+            assert exc.value.code == 1
 
     err = capsys.readouterr().err
     assert "naming_quality" in err
@@ -295,9 +312,10 @@ def test_targeting_mix_of_scored_and_unscored_blocks_and_suggests(capsys):
     }
     args = _make_args(dimensions="naming_quality,logic_clarity,design_coherence")
     items = [{"id": "f1", "summary": "Finding 1"}]
-    with patch(_BUILD_WQ, return_value=_wq_result(items)):
-        with pytest.raises(SystemExit):
-            review_rerun_preflight(state, args)
+    with patch(_COMPUTE_SV, return_value=_mock_policy(objective_count=1)):
+        with patch(_BUILD_WQ, return_value=_wq_result(items)):
+            with pytest.raises(SystemExit):
+                review_rerun_preflight(state, args)
 
     err = capsys.readouterr().err
     assert "naming_quality" in err
@@ -338,9 +356,10 @@ def test_no_dimensions_flag_blocks_on_any_scored(capsys):
         }
     }
     items = [{"id": "f1", "summary": "Finding 1"}]
-    with patch(_BUILD_WQ, return_value=_wq_result(items)):
-        with pytest.raises(SystemExit):
-            review_rerun_preflight(state, _make_args())
+    with patch(_COMPUTE_SV, return_value=_mock_policy(objective_count=1)):
+        with patch(_BUILD_WQ, return_value=_wq_result(items)):
+            with pytest.raises(SystemExit):
+                review_rerun_preflight(state, _make_args())
 
 
 # -- parse_dimensions ----------------------------------------------------------

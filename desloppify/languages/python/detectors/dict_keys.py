@@ -111,21 +111,6 @@ def _get_str_key(node: ast.expr) -> str | None:
     return None
 
 
-def _read_and_parse_python_file(filepath: str, *, purpose: str) -> tuple[Path, ast.AST] | None:
-    try:
-        file_path = Path(filepath) if Path(filepath).is_absolute() else PROJECT_ROOT / filepath
-        source = file_path.read_text()
-    except (OSError, UnicodeDecodeError) as exc:
-        logger.debug("Skipping unreadable file during %s scan: %s", purpose, filepath, exc_info=exc)
-        return None
-    try:
-        tree = ast.parse(source, filename=filepath)
-    except SyntaxError as exc:
-        logger.debug("Skipping unparsable file during %s scan: %s", purpose, filepath, exc_info=exc)
-        return None
-    return file_path, tree
-
-
 # ── Pass 1: Single-scope dict key analysis ────────────────
 
 

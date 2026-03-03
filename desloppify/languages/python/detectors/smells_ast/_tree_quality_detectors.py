@@ -21,64 +21,10 @@ from desloppify.languages.python.detectors.smells_ast._tree_quality_detectors_ty
 __all__ = [
     "_detect_annotation_quality",
     "_detect_constant_return",
-    "_detect_mutable_class_var",
     "_detect_noop_function",
     "_detect_optional_param_sprawl",
     "_detect_unreachable_code",
 ]
-
-
-def _detect_mutable_class_var(
-    filepath: str,
-    tree: ast.Module,
-    smell_counts: dict[str, list],
-    *,
-    all_nodes: tuple[ast.AST, ...] | None = None,
-):
-    """Flag class-level mutable defaults (shared across all instances).
-
-    Detects: class Foo: data = [] / data = {} / data: list = []
-    Skips dataclasses (which use field(default_factory=...)) and __init__ assignments.
-    """
-    for node in _iter_nodes(tree, all_nodes, ast.ClassDef):
-        # Skip dataclasses (they handle mutable defaults via field())
-        is_dataclass = any(
-            (isinstance(d, ast.Name) and d.id == "dataclass")
-            or (
-                isinstance(d, ast.Call)
-                and isinstance(d.func, ast.Name)
-                and d.func.id == "dataclass"
-            )
-            or (isinstance(d, ast.Attribute) and d.attr == "dataclass")
-            for d in node.decorator_list
-        )
-        if is_dataclass:
-            continue
-
-        for stmt in node.body:
-            # Plain assignment: data = [] or data = {}
-            if isinstance(stmt, ast.Assign):
-                if isinstance(stmt.value, ast.List | ast.Dict | ast.Set):
-                    names = [t.id for t in stmt.targets if isinstance(t, ast.Name)]
-                    for name in names:
-                        smell_counts["mutable_class_var"].append(
-                            {
-                                "file": filepath,
-                                "line": stmt.lineno,
-                                "content": f"{node.name}.{name} = {ast.dump(stmt.value)[:40]}",
-                            }
-                        )
-            # Annotated assignment: data: list = []
-            elif isinstance(stmt, ast.AnnAssign) and stmt.value is not None:
-                if isinstance(stmt.value, ast.List | ast.Dict | ast.Set):
-                    name = stmt.target.id if isinstance(stmt.target, ast.Name) else "?"
-                    smell_counts["mutable_class_var"].append(
-                        {
-                            "file": filepath,
-                            "line": stmt.lineno,
-                            "content": f"{node.name}.{name}: ... = {ast.dump(stmt.value)[:40]}",
-                        }
-                    )
 
 
 def _detect_unreachable_code(

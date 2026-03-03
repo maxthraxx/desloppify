@@ -8,11 +8,15 @@ from collections import defaultdict
 from desloppify.core.registry import DETECTORS, DetectorMeta
 from desloppify.engine._plan.schema import Cluster, PlanModel, ensure_plan_defaults
 from desloppify.engine._plan.stale_dimensions import (
-    NON_OBJECTIVE_DETECTORS,
     SUBJECTIVE_PREFIX,
     _current_stale_ids,
     current_under_target_ids,
     current_unscored_ids,
+)
+from desloppify.engine._plan.subjective_policy import (
+    NON_OBJECTIVE_DETECTORS,
+    SubjectiveVisibility,
+    compute_subjective_visibility,
 )
 from desloppify.engine._state.schema import StateModel, utc_now
 
@@ -414,6 +418,8 @@ def _sync_subjective_clusters(
     now: str,
     *,
     target_strict: float,
+    policy: SubjectiveVisibility | None = None,
+    cycle_just_completed: bool = False,
 ) -> int:
     """Sync unscored, stale, and under-target subjective dimension clusters."""
     changes = 0
@@ -422,11 +428,17 @@ def _sync_subjective_clusters(
         fid for fid in plan.get("queue_order", [])
         if fid.startswith(SUBJECTIVE_PREFIX)
     )
-    unscored_state_ids = current_unscored_ids(state)
+
+    if policy is not None:
+        unscored_state_ids = policy.unscored_ids
+        stale_state_ids = policy.stale_ids
+    else:
+        unscored_state_ids = current_unscored_ids(state)
+        stale_state_ids = _current_stale_ids(state)
+
     unscored_queue_ids = sorted(
         fid for fid in all_subjective_ids if fid in unscored_state_ids
     )
-    stale_state_ids = _current_stale_ids(state)
     stale_queue_ids = sorted(
         fid for fid in all_subjective_ids
         if fid in stale_state_ids and fid not in unscored_state_ids
@@ -468,7 +480,10 @@ def _sync_subjective_clusters(
         )
 
     # -- Under-target review cluster (optional, current but below target) ----
-    under_target_ids = current_under_target_ids(state, target_strict=target_strict)
+    if policy is not None:
+        under_target_ids = policy.under_target_ids
+    else:
+        under_target_ids = current_under_target_ids(state, target_strict=target_strict)
     under_target_queue_ids = sorted(under_target_ids)
 
     # Prune: remove IDs that were previously in the under-target cluster
@@ -489,12 +504,15 @@ def _sync_subjective_clusters(
 
     # Guard: only inject under-target items when no objective findings
     # remain open — mirror the guard used by sync_stale_dimensions().
-    has_objective_items = any(
-        f.get("status") == "open"
-        and f.get("detector") not in NON_OBJECTIVE_DETECTORS
-        and not f.get("suppressed")
-        for f in findings.values()
-    )
+    if policy is not None:
+        has_objective_items = policy.has_objective_backlog
+    else:
+        has_objective_items = any(
+            f.get("status") == "open"
+            and f.get("detector") not in NON_OBJECTIVE_DETECTORS
+            and not f.get("suppressed")
+            for f in findings.values()
+        )
 
     if not has_objective_items and len(under_target_queue_ids) >= _MIN_CLUSTER_SIZE:
         active_auto_keys.add(_UNDER_TARGET_KEY)
@@ -525,8 +543,9 @@ def _sync_subjective_clusters(
             if fid not in existing_order:
                 order.append(fid)
 
-    # Evict under-target IDs from queue when objective backlog has returned.
-    if has_objective_items:
+    # Evict under-target IDs from queue when objective backlog has returned
+    # — but NOT after a completed cycle, where they should stay for review.
+    if has_objective_items and not cycle_just_completed:
         _objective_evict = [
             fid for fid in order
             if fid in under_target_ids
@@ -584,6 +603,8 @@ def auto_cluster_findings(
     state: StateModel,
     *,
     target_strict: float = 95.0,
+    policy: SubjectiveVisibility | None = None,
+    cycle_just_completed: bool = False,
 ) -> int:
     """Regenerate auto-clusters from current open findings.
 
@@ -612,6 +633,8 @@ def auto_cluster_findings(
     changes += _sync_subjective_clusters(
         plan, state, findings, clusters, existing_by_key, active_auto_keys, now,
         target_strict=target_strict,
+        policy=policy,
+        cycle_just_completed=cycle_just_completed,
     )
     changes += _prune_stale_clusters(
         plan, findings, clusters, active_auto_keys, now,

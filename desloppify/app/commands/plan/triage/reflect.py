@@ -121,7 +121,7 @@ def cmd_stage_reflect(args: argparse.Namespace) -> None:
         report=validated_report,
         cited_ids=[],
         finding_count=finding_count,
-        extra={"recurring_dimensions": recurring_dims},
+        extra={"recurring_dims": recurring_dims},
     )
 
     print(

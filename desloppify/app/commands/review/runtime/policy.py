@@ -18,7 +18,7 @@ from desloppify.core.coercions_api import (
     coerce_positive_int as _coerce_positive_int,
 )
 
-DEFAULT_BATCH_STALL_KILL_SECONDS = 120
+DEFAULT_BATCH_STALL_KILL_SECONDS = 360
 
 
 @dataclass(frozen=True)

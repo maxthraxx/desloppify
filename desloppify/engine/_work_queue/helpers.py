@@ -8,7 +8,7 @@ from fnmatch import fnmatch
 from desloppify.core.enums import finding_status_tokens
 from desloppify.core.registry import DETECTORS
 from desloppify.engine.planning.scorecard_projection import (
-    scorecard_subjective_entries,
+    all_subjective_entries,
 )
 from desloppify.intelligence.integrity import (
     is_holistic_subjective_finding,
@@ -254,6 +254,43 @@ def build_triage_stage_items(plan: dict, state: dict) -> list[dict]:
     return items
 
 
+def build_score_checkpoint_item(plan: dict, state: dict) -> dict | None:
+    """Build a synthetic work item for ``workflow::score-checkpoint`` if it's in the queue.
+
+    Returns ``None`` when the item is not pending.
+    """
+    from desloppify.engine._plan.stale_dimensions import WORKFLOW_SCORE_CHECKPOINT_ID
+
+    if WORKFLOW_SCORE_CHECKPOINT_ID not in plan.get("queue_order", []):
+        return None
+
+    from desloppify import state as state_mod
+
+    snapshot = state_mod.score_snapshot(state)
+    strict = snapshot.strict if snapshot.strict is not None else 0.0
+    plan_start = (plan.get("plan_start_scores") or {}).get("strict")
+    delta = round(strict - plan_start, 1) if plan_start is not None else None
+    delta_str = f" ({'+' if delta > 0 else ''}{delta:.1f})" if delta else ""
+
+    return {
+        "id": WORKFLOW_SCORE_CHECKPOINT_ID,
+        "tier": 1,
+        "confidence": "high",
+        "detector": "workflow",
+        "file": ".",
+        "kind": "workflow_action",
+        "summary": f"Score checkpoint: strict {strict:.1f}/100{delta_str}",
+        "detail": {
+            "strict": strict,
+            "plan_start_strict": plan_start,
+            "delta": delta,
+        },
+        "primary_command": f'desloppify plan done "{WORKFLOW_SCORE_CHECKPOINT_ID}" --note "Reviewed score checkpoint" --confirm',
+        "blocked_by": [],
+        "is_blocked": False,
+    }
+
+
 def build_create_plan_item(plan: dict) -> dict | None:
     """Build a synthetic work item for ``workflow::create-plan`` if it's in the queue.
 
@@ -284,7 +321,7 @@ def subjective_strict_scores(state: dict) -> dict[str, float]:
     if not dim_scores:
         return {}
 
-    entries = scorecard_subjective_entries(state, dim_scores=dim_scores)
+    entries = all_subjective_entries(state, dim_scores=dim_scores)
     scores: dict[str, float] = {}
     for entry in entries:
         name = str(entry.get("name", "")).strip()
@@ -306,41 +343,6 @@ def subjective_strict_scores(state: dict) -> dict[str, float]:
     return scores
 
 
-def _unassessed_entries_from_dim_scores(dim_scores: dict) -> list[dict]:
-    """Build scorecard-like entries for unassessed placeholder dimensions.
-
-    ``scorecard_subjective_entries`` goes through the scorecard pipeline which
-    intentionally hides placeholders from display.  This function reads
-    ``dimension_scores`` directly so initial-review items are never lost.
-    """
-    entries: list[dict] = []
-    for name, data in dim_scores.items():
-        if not isinstance(data, dict):
-            continue
-        detectors = data.get("detectors", {})
-        meta = detectors.get("subjective_assessment")
-        if not isinstance(meta, dict):
-            continue
-        if not meta.get("placeholder"):
-            continue
-        dim_key = meta.get("dimension_key", "")
-        entries.append(
-            {
-                "name": name,
-                "score": float(data.get("score", 0.0)),
-                "strict": float(data.get("strict", 0.0)),
-                "checks": int(data.get("checks", 0) or 0),
-                "issues": int(data.get("issues", 0) or 0),
-                "tier": int(data.get("tier", 4) or 4),
-                "placeholder": True,
-                "stale": False,
-                "dimension_key": dim_key,
-                "cli_keys": [dim_key] if dim_key else [],
-            }
-        )
-    return entries
-
-
 def build_subjective_items(
     state: dict, findings: dict, *, threshold: float = 100.0
 ) -> list[dict]:
@@ -350,21 +352,7 @@ def build_subjective_items(
         return []
     threshold = max(0.0, min(100.0, float(threshold)))
 
-    subjective_entries = scorecard_subjective_entries(state, dim_scores=dim_scores)
-
-    # The scorecard pipeline hides unassessed placeholders from display.
-    # Merge them in so initial-review items always appear in the queue.
-    seen_dims: set[str] = {
-        str(e.get("dimension_key", "")).lower()
-        for e in subjective_entries
-        if e.get("dimension_key")
-    }
-    for entry in _unassessed_entries_from_dim_scores(dim_scores):
-        dk = str(entry.get("dimension_key", "")).lower()
-        if dk and dk not in seen_dims:
-            subjective_entries.append(entry)
-            seen_dims.add(dk)
-
+    subjective_entries = all_subjective_entries(state, dim_scores=dim_scores)
     if not subjective_entries:
         return []
     unassessed_dims = {
@@ -457,6 +445,7 @@ __all__ = [
     "ALL_STATUSES",
     "ATTEST_EXAMPLE",
     "build_create_plan_item",
+    "build_score_checkpoint_item",
     "build_subjective_items",
     "build_triage_stage_items",
     "detail_dict",

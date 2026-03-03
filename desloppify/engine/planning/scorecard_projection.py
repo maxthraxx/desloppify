@@ -67,12 +67,83 @@ def scorecard_dimension_cli_keys(name: str, data: dict) -> list[str]:
     return ordered
 
 
+def all_subjective_entries(
+    state: dict,
+    *,
+    dim_scores: dict | None = None,
+) -> list[dict]:
+    """Return ALL subjective dimension entries, bypassing the display pipeline.
+
+    Unlike ``scorecard_subjective_entries`` this reads ``dimension_scores``
+    directly — no elegance collapsing, no row-count limit, no placeholder
+    hiding.  Use this for *enumeration* (work-queue construction, stale/
+    under-target detection) where every individual dimension must be visible.
+    """
+    if dim_scores is None:
+        dim_scores = state.get("dimension_scores", {}) or {}
+    if not isinstance(dim_scores, dict) or not dim_scores:
+        return []
+
+    assessments = state.get("subjective_assessments") or {}
+    subjective_display_names = {display.lower() for display in DISPLAY_NAMES.values()}
+
+    entries: list[dict] = []
+    for name, data in dim_scores.items():
+        if not isinstance(data, dict):
+            continue
+        detectors = data.get("detectors", {})
+        is_subjective = (
+            "subjective_assessment" in detectors
+            or str(name).strip().lower() in subjective_display_names
+        )
+        if not is_subjective:
+            continue
+        score = float(data.get("score", 0.0))
+        strict = float(data.get("strict", score))
+        assessment_meta = detectors.get("subjective_assessment", {})
+        placeholder = bool(
+            assessment_meta.get("placeholder")
+            or (
+                data.get("score", 0) == 0
+                and data.get("issues", 0) == 0
+                and data.get("checks", 0) == 0
+            )
+        )
+        dim_key = assessment_meta.get("dimension_key", "")
+        stale = bool(
+            dim_key
+            and isinstance(assessments.get(dim_key), dict)
+            and assessments[dim_key].get("needs_review_refresh")
+        )
+        entries.append(
+            {
+                "name": name,
+                "score": score,
+                "strict": strict,
+                "checks": int(data.get("checks", 0) or 0),
+                "issues": int(data.get("issues", 0) or 0),
+                "tier": int(data.get("tier", 4) or 4),
+                "placeholder": placeholder,
+                "stale": stale,
+                "dimension_key": dim_key,
+                "cli_keys": scorecard_dimension_cli_keys(name, data),
+            }
+        )
+    return entries
+
+
 def scorecard_subjective_entries(
     state: dict,
     *,
     dim_scores: dict | None = None,
 ) -> list[dict]:
-    """Return scorecard-subjective entries with score/strict/placeholder metadata."""
+    """Return scorecard-subjective entries with score/strict/placeholder metadata.
+
+    WARNING: This function routes through the scorecard *display* pipeline
+    (elegance collapsing, 20-row cap, placeholder hiding).  For enumeration
+    of all individual dimensions (work-queue, stale/under-target detection),
+    use ``all_subjective_entries`` instead.
+    """
     rows = scorecard_dimension_rows(state, dim_scores=dim_scores)
     assessments = state.get("subjective_assessments") or {}
     subjective_display_names = {display.lower() for display in DISPLAY_NAMES.values()}
@@ -157,6 +228,7 @@ def scorecard_dimensions_payload(
 
 
 __all__ = [
+    "all_subjective_entries",
     "dimension_cli_key",
     "scorecard_dimension_cli_keys",
     "scorecard_dimension_rows",

@@ -5,12 +5,12 @@ from __future__ import annotations
 import os
 
 from desloppify.engine.detectors.coverage.mapping import (
-    _analyze_test_quality,
-    _build_test_import_index,
-    _get_test_files_for_prod,
-    _import_based_mapping,
-    _naming_based_mapping,
-    _transitive_coverage,
+    analyze_test_quality,
+    build_test_import_index,
+    get_test_files_for_prod,
+    import_based_mapping,
+    naming_based_mapping,
+    transitive_coverage,
 )
 from desloppify.engine.policy.zones import FileZoneMap
 
@@ -52,19 +52,19 @@ def detect_test_coverage(
         entries = _no_tests_findings(scorable, graph, lang_name, complexity_map)
         return entries, potential
 
-    directly_tested = _import_based_mapping(
+    directly_tested = import_based_mapping(
         graph,
         test_files,
         production_files,
         lang_name,
     )
 
-    name_tested = _naming_based_mapping(test_files, production_files, lang_name)
+    name_tested = naming_based_mapping(test_files, production_files, lang_name)
     directly_tested |= name_tested
 
-    transitively_tested = _transitive_coverage(directly_tested, graph, production_files)
+    transitively_tested = transitive_coverage(directly_tested, graph, production_files)
 
-    test_quality = _analyze_test_quality(test_files, lang_name)
+    test_quality = analyze_test_quality(test_files, lang_name)
 
     entries = _generate_findings(
         scorable,
@@ -92,7 +92,7 @@ def _generate_findings(
     cmap = complexity_map or {}
     test_files = set(test_quality.keys())
     production_scope = set(scorable) | set(directly_tested) | set(transitively_tested)
-    parsed_imports_by_test = _build_test_import_index(
+    parsed_imports_by_test = build_test_import_index(
         test_files,
         production_scope,
         lang_name,
@@ -104,7 +104,7 @@ def _generate_findings(
         loc_weight = _loc_weight(loc)
 
         if filepath in directly_tested:
-            related_tests = _get_test_files_for_prod(
+            related_tests = get_test_files_for_prod(
                 filepath,
                 test_files,
                 graph,

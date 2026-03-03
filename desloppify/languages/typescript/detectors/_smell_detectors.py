@@ -27,25 +27,6 @@ def _find_block_end(content: str, brace_start: int, max_scan: int) -> int | None
     return None
 
 
-def _line_no_and_preview(content: str, match_start: int) -> tuple[int, str]:
-    line_no = content[:match_start].count("\n") + 1
-    line_start = content.rfind("\n", 0, match_start) + 1
-    line_end = content.find("\n", match_start)
-    if line_end == -1:
-        line_end = len(content)
-    return line_no, content[line_start:line_end].strip()[:100]
-
-
-def _extract_returned_object_body(body: str) -> str | None:
-    return_obj = re.search(r"\breturn\s*\{", body)
-    if not return_obj:
-        return None
-    obj_start = body.find("{", return_obj.start())
-    obj_end = _find_block_end(body, obj_start, len(body))
-    if obj_end is None:
-        return None
-    return body[obj_start + 1:obj_end]
-
 def _find_function_start(line: str, next_lines: list[str]) -> str | None:
     """Return function name for declarations/assignments, else None."""
     stripped = line.strip()

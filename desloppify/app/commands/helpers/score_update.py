@@ -67,10 +67,10 @@ def print_score_update(
         config = config_mod.load_config()
 
     target = target_strict_score_from_config(config, fallback=95.0)
-    _print_strict_target_nudge(new.strict, target)
+    print_strict_target_nudge(new.strict, target)
 
 
-def _print_strict_target_nudge(
+def print_strict_target_nudge(
     strict: float, target: float, *, show_next: bool = True,
 ) -> None:
     """Print a one-liner with strict→target and optional next-command nudge."""
@@ -82,4 +82,4 @@ def _print_strict_target_nudge(
         print(colorize(f"  Strict {strict:.1f} — target {target:.1f} reached!", "green"))
 
 
-__all__ = ["print_score_update", "_print_strict_target_nudge"]
+__all__ = ["print_score_update", "print_strict_target_nudge"]

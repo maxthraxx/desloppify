@@ -96,19 +96,6 @@ def _parse_param_names(param_str: str) -> list[str]:
     return names
 
 
-def _extract_ts_return_annotation(sig: str) -> str | None:
-    """Extract normalized return annotation from TS/TSX function signatures."""
-    # function foo(...): Type {
-    m = re.search(r"\)\s*:\s*(.+?)\s*\{", sig, re.DOTALL)
-    if not m:
-        # const foo = (...): Type =>
-        m = re.search(r"\)\s*:\s*(.+?)\s*=>", sig, re.DOTALL)
-    if not m:
-        return None
-    annotation = " ".join(m.group(1).split())
-    return annotation or None
-
-
 def extract_ts_functions(filepath: str) -> list[FunctionInfo]:
     """Extract function/component bodies from a TS/TSX file.
 
