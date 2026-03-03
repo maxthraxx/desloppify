@@ -41,6 +41,7 @@ from desloppify.languages._framework.base.structural import (
 )
 from desloppify.languages._framework.base.types import (
     DetectorCoverageStatus,
+    LangRuntimeContract,
 )
 from desloppify.languages._framework.issue_factories import (
     make_cycle_issues,
@@ -48,7 +49,6 @@ from desloppify.languages._framework.issue_factories import (
     make_orphaned_issues,
     make_single_use_issues,
 )
-from desloppify.languages._framework.runtime import LangRuntimeContract
 from desloppify.state import Issue, make_issue
 from desloppify.core.output_api import log
 

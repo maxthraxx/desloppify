@@ -10,7 +10,6 @@ from desloppify.engine.planning.scorecard_projection import (
     all_subjective_entries,
 )
 from desloppify.intelligence.integrity import (
-    is_holistic_subjective_issue,
     unassessed_subjective_dimensions,
 )
 from desloppify.scoring import DISPLAY_NAMES

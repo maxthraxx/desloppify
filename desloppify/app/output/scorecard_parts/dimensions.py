@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-from desloppify.app.output.scorecard_parts.dimension_policy import (
+from desloppify.engine.planning.scorecard_policy import (
     _DEFAULT_ELEGANCE_COMPONENTS,
     _ELEGANCE_COMPONENTS_BY_LANG,
+    _SCORECARD_MAX_DIMENSIONS as SCORECARD_MAX_DIMENSIONS,
     _SUBJECTIVE_SCORECARD_ORDER_BY_LANG,
     _SUBJECTIVE_SCORECARD_ORDER_DEFAULT,
-)
-from desloppify.app.output.scorecard_parts.dimension_policy import (
-    _SCORECARD_MAX_DIMENSIONS as SCORECARD_MAX_DIMENSIONS,
 )
 
 

@@ -6,7 +6,6 @@ REQUIRED_FILES: tuple[str, ...] = (
     "commands.py",
     "extractors.py",
     "phases.py",
-    "move.py",
     "review.py",
     "test_coverage.py",
 )

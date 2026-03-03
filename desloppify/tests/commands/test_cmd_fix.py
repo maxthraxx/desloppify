@@ -1,7 +1,5 @@
 """Tests for fix command helpers."""
 
-import pytest
-
 import desloppify.app.commands.fix.apply_flow as fix_apply_mod
 from desloppify.app.commands.fix.apply_flow import (
     _SKIP_REASON_LABELS,

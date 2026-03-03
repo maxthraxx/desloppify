@@ -223,42 +223,32 @@ def _as_non_negative_int(value: Any, default: int = 0) -> int:
     return parsed if parsed >= 0 else 0
 
 
+def _rename_key(d: dict, old: str, new: str) -> bool:
+    if old not in d:
+        return False
+    d.setdefault(new, d.pop(old))
+    return True
+
+
 def migrate_state_keys(state: dict) -> None:
     """Migrate legacy key names in-place.
 
     - ``"findings"`` → ``"issues"``
     - ``dimension_scores[dim]["issues"]`` → ``"failing"``
     """
-    # Legacy "findings" key → "issues"
-    if "findings" in state and "issues" not in state:
-        state["issues"] = state.pop("findings")
-    elif "findings" in state:
-        # Both present — prefer "issues", drop legacy key
-        state.pop("findings", None)
+    _rename_key(state, "findings", "issues")
 
-    # Legacy dimension_scores "issues" → "failing"
     for ds in state.get("dimension_scores", {}).values():
-        if isinstance(ds, dict) and "issues" in ds and "failing" not in ds:
-            ds["failing"] = ds.pop("issues")
-        elif isinstance(ds, dict) and "issues" in ds:
-            ds.pop("issues", None)
+        if isinstance(ds, dict):
+            _rename_key(ds, "issues", "failing")
 
-    # Also migrate inside scan_history entries
     for entry in state.get("scan_history", []):
         if not isinstance(entry, dict):
             continue
-        # Legacy "raw_findings" → "raw_issues"
-        if "raw_findings" in entry and "raw_issues" not in entry:
-            entry["raw_issues"] = entry.pop("raw_findings")
-        elif "raw_findings" in entry:
-            entry.pop("raw_findings", None)
-        dim_scores = entry.get("dimension_scores")
-        if isinstance(dim_scores, dict):
-            for ds in dim_scores.values():
-                if isinstance(ds, dict) and "issues" in ds and "failing" not in ds:
-                    ds["failing"] = ds.pop("issues")
-                elif isinstance(ds, dict) and "issues" in ds:
-                    ds.pop("issues", None)
+        _rename_key(entry, "raw_findings", "raw_issues")
+        for ds in (entry.get("dimension_scores") or {}).values():
+            if isinstance(ds, dict):
+                _rename_key(ds, "issues", "failing")
 
 
 def ensure_state_defaults(state: StateModel | dict) -> None:

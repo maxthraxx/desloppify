@@ -11,7 +11,7 @@ import desloppify.app.commands.review.batch_merge as batch_merge_mod
 import desloppify.app.commands.review.batches_runtime as batches_runtime_mod
 import desloppify.app.commands.review.batches_scope as batches_scope_mod
 import desloppify.app.commands.review.coordinator as coordinator_mod
-import desloppify.app.commands.review.import_modes as import_modes_mod
+import desloppify.app.commands.review.importing.modes as import_modes_mod
 import desloppify.app.commands.review.packet_build as packet_build_mod
 import desloppify.app.commands.review.runner_failures as runner_failures_mod
 import desloppify.app.commands.review.runner_packets as runner_packets_mod

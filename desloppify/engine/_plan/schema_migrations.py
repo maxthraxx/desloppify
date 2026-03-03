@@ -7,6 +7,13 @@ from typing import Any
 from desloppify.engine._state.schema import utc_now
 
 
+def _rename_key(d: dict, old: str, new: str) -> bool:
+    if old not in d:
+        return False
+    d.setdefault(new, d.pop(old))
+    return True
+
+
 def ensure_container_types(plan: dict[str, Any]) -> None:
     if not isinstance(plan.get("queue_order"), list):
         plan["queue_order"] = []
@@ -28,19 +35,10 @@ def ensure_container_types(plan: dict[str, Any]) -> None:
         plan["execution_log"] = []
     if not isinstance(plan.get("epic_triage_meta"), dict):
         plan["epic_triage_meta"] = {}
-    # Legacy "finding_snapshot_hash" → "issue_snapshot_hash" in epic_triage_meta
-    _meta = plan["epic_triage_meta"]
-    if "finding_snapshot_hash" in _meta and "issue_snapshot_hash" not in _meta:
-        _meta["issue_snapshot_hash"] = _meta.pop("finding_snapshot_hash")
-    elif "finding_snapshot_hash" in _meta:
-        _meta.pop("finding_snapshot_hash", None)
+    _rename_key(plan["epic_triage_meta"], "finding_snapshot_hash", "issue_snapshot_hash")
     if not isinstance(plan.get("commit_log"), list):
         plan["commit_log"] = []
-    # Legacy "uncommitted_findings" → "uncommitted_issues"
-    if "uncommitted_findings" in plan and "uncommitted_issues" not in plan:
-        plan["uncommitted_issues"] = plan.pop("uncommitted_findings")
-    elif "uncommitted_findings" in plan:
-        plan.pop("uncommitted_findings", None)
+    _rename_key(plan, "uncommitted_findings", "uncommitted_issues")
     if not isinstance(plan.get("uncommitted_issues"), list):
         plan["uncommitted_issues"] = []
     if "commit_tracking_branch" not in plan:

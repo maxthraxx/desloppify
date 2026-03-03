@@ -317,7 +317,7 @@ def print_llm_summary(
     print("─" * 60)
 
 
-def _llm_summary_empty(scores: _LoadedScores, dim_scores: dict[str, Any]) -> bool:
+def _llm_summary_empty(scores: state_mod.ScoreSnapshot, dim_scores: dict[str, Any]) -> bool:
     return (
         scores.overall is None
         and scores.objective is None
@@ -328,6 +328,11 @@ def _llm_summary_empty(scores: _LoadedScores, dim_scores: dict[str, Any]) -> boo
 
 
 def _print_llm_header() -> None:
+    """Print the LLM instruction block header for agent-facing scan output.
+
+    Side-effect only: prints framing text that tells LLM agents how to
+    present scan results. Called from print_llm_summary.
+    """
     print("─" * 60)
     print("INSTRUCTIONS FOR LLM")
     print("IMPORTANT: ALWAYS present ALL scores to the user after a scan.")

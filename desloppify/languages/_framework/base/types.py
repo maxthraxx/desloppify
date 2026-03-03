@@ -6,13 +6,12 @@ import copy
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, TypedDict
+from typing import TYPE_CHECKING, Any, Literal, Protocol, TypedDict
 
 from desloppify.engine.detectors.base import FunctionInfo
 
 if TYPE_CHECKING:
     from desloppify.engine.policy.zones import FileZoneMap, ZoneRule
-    from desloppify.languages._framework.runtime import LangRun
 
 # ---------------------------------------------------------------------------
 # Type aliases for complex Callable signatures used in LangConfig fields
@@ -37,7 +36,7 @@ class DetectorPhase:
     """
 
     label: str
-    run: Callable[[Path, LangRun], tuple[list[dict[str, Any]], dict[str, int]]]
+    run: Callable[[Path, LangRuntimeContract], tuple[list[dict[str, Any]], dict[str, int]]]
     slow: bool = False
 
 
@@ -96,6 +95,46 @@ class LangSecurityResult:
     entries: list[dict]
     files_scanned: int
     coverage: DetectorCoverageStatus | None = None
+
+
+class LangRuntimeContract(Protocol):
+    """Explicit runtime interface consumed by detector phases.
+
+    This Protocol lives here (rather than in runtime.py) to avoid an import
+    cycle: runtime.py imports concrete types from this module, and
+    DetectorPhase.run references LangRuntimeContract in its signature.
+    """
+
+    name: str
+    extensions: list[str]
+    entry_patterns: list[str]
+    barrel_names: set[str]
+    external_test_dirs: list[str]
+    test_file_extensions: list[str]
+    review_low_value_pattern: object | None
+    file_finder: FileFinder | None
+    extract_functions: FunctionExtractor | None
+    get_area: Callable[[str], str] | None
+    build_dep_graph: DepGraphBuilder
+    detect_lang_security_detailed: Callable[[list[str], FileZoneMap | None], LangSecurityResult]
+    detect_private_imports: Callable[[dict, FileZoneMap | None], tuple[list[dict], int]]
+    large_threshold: int
+    complexity_threshold: int
+    props_threshold: int
+
+    zone_map: FileZoneMap | None
+    dep_graph: dict[str, dict[str, Any]] | None
+    complexity_map: dict[str, float]
+    review_cache: dict[str, Any]
+    review_max_age_days: int
+    detector_coverage: dict[str, DetectorCoverageRecord]
+    coverage_warnings: list[DetectorCoverageRecord]
+
+    def runtime_setting(self, key: str, default: Any = None) -> Any: ...
+
+    def runtime_option(self, key: str, default: Any = None) -> Any: ...
+
+    def scan_coverage_prerequisites(self) -> list[DetectorCoverageStatus]: ...
 
 
 @dataclass
@@ -357,6 +396,7 @@ __all__ = [
     "FixResult",
     "FunctionExtractor",
     "LangConfig",
+    "LangRuntimeContract",
     "ScanCoverageRecord",
     "LangSecurityResult",
     "LangValueSpec",

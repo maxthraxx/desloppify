@@ -14,6 +14,13 @@ from desloppify.core.discovery_api import safe_write_text
 from desloppify.core.paths_api import get_project_root
 
 
+def _rename_key(d: dict, old: str, new: str) -> bool:
+    if old not in d:
+        return False
+    d.setdefault(new, d.pop(old))
+    return True
+
+
 def _default_config_file() -> Path:
     """Resolve config path from the active runtime project root."""
     return get_project_root() / ".desloppify" / "config.json"
@@ -145,17 +152,9 @@ def load_config(path: Path | None = None) -> dict[str, Any]:
     changed = False
 
     # Migrate legacy config key names (finding → issue)
-    _CONFIG_KEY_RENAMES = {
-        "finding_noise_budget": "issue_noise_budget",
-        "finding_noise_global_budget": "issue_noise_global_budget",
-    }
-    for old_key, new_key in _CONFIG_KEY_RENAMES.items():
-        if old_key in config and new_key not in config:
-            config[new_key] = config.pop(old_key)
-            changed = True
-        elif old_key in config:
-            config.pop(old_key)
-            changed = True
+    for old, new in (("finding_noise_budget", "issue_noise_budget"),
+                     ("finding_noise_global_budget", "issue_noise_global_budget")):
+        changed |= _rename_key(config, old, new)
 
     # Fill missing keys with defaults
     for key, schema in CONFIG_SCHEMA.items():

@@ -41,7 +41,6 @@ from desloppify.app.commands.scan.scan_reporting_summary import (  # noqa: F401
     show_strict_target_progress,
 )
 from desloppify.app.commands.scan.scan_orchestrator import ScanOrchestrator
-from desloppify.app.commands.scan import scan_preflight as scan_preflight_mod
 from desloppify.app.commands.scan.scan_workflow import (
     ScanStateContractError,
     merge_scan_results,
@@ -69,7 +68,12 @@ def _print_scan_complete_banner() -> None:
 
 
 def _show_scan_visibility(noise, effective_include_slow: bool) -> None:
-    """Print fast-scan and noise budget visibility hints."""
+    """Print fast-scan and noise budget visibility hints.
+
+    Side-effect only: conditionally prints scan-mode warnings to stdout.
+    All branches may be skipped (full scan, no noise budget hit, no hidden
+    issues), so the function can legitimately produce no output.
+    """
     if not effective_include_slow:
         print(colorize("  * Fast scan — slow phases (duplicates) skipped", "yellow"))
     if noise.budget_warning:
@@ -114,6 +118,9 @@ def _print_plan_workflow_nudge(state: dict) -> None:
 
 def cmd_scan(args: argparse.Namespace) -> None:
     """Run all detectors, update persistent state, show diff."""
+    # Lazy import to break scan/__init__.py <-> scan/scan.py import cycle.
+    from desloppify.app.commands.scan import scan_preflight as scan_preflight_mod
+
     scan_preflight_mod.scan_queue_preflight(args)
     try:
         runtime = prepare_scan_runtime(args)

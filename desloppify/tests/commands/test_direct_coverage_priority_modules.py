@@ -19,7 +19,7 @@ import desloppify.app.commands.show.dimension_views as show_dimension_views_mod
 import desloppify.app.commands.status_parts.render_dimensions as status_render_dimensions_mod
 import desloppify.app.commands.status_parts.render_io as status_render_io_mod
 import desloppify.app.commands.status_parts.render_structural as status_render_structural_mod
-import desloppify.app.output.scorecard_parts.dimension_policy as dimension_policy_mod
+import desloppify.engine.planning.scorecard_policy as dimension_policy_mod
 import desloppify.core.compatibility as compatibility_mod
 import desloppify.core.grep as grep_mod
 import desloppify.core.output as output_mod

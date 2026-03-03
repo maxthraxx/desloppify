@@ -3,18 +3,13 @@
 from __future__ import annotations
 
 import copy
-from collections.abc import Callable
 from dataclasses import dataclass, field, fields
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any
 
 from desloppify.languages._framework.base.types import (
-    DepGraphBuilder,
-    DetectorCoverageStatus,
     DetectorCoverageRecord,
-    FileFinder,
-    FunctionExtractor,
     LangConfig,
-    LangSecurityResult,
+    LangRuntimeContract,
 )
 
 if TYPE_CHECKING:
@@ -121,39 +116,8 @@ _FORWARDED_CONFIG_ATTRS = frozenset(
 )
 
 
-class LangRuntimeContract(Protocol):
-    """Explicit runtime interface consumed by detector phases."""
-
-    name: str
-    extensions: list[str]
-    entry_patterns: list[str]
-    barrel_names: set[str]
-    external_test_dirs: list[str]
-    test_file_extensions: list[str]
-    review_low_value_pattern: object | None
-    file_finder: FileFinder | None
-    extract_functions: FunctionExtractor | None
-    get_area: Callable[[str], str] | None
-    build_dep_graph: DepGraphBuilder
-    detect_lang_security_detailed: Callable[[list[str], FileZoneMap | None], LangSecurityResult]
-    detect_private_imports: Callable[[dict, FileZoneMap | None], tuple[list[dict], int]]
-    large_threshold: int
-    complexity_threshold: int
-    props_threshold: int
-
-    zone_map: FileZoneMap | None
-    dep_graph: dict[str, dict[str, Any]] | None
-    complexity_map: dict[str, float]
-    review_cache: dict[str, Any]
-    review_max_age_days: int
-    detector_coverage: dict[str, DetectorCoverageRecord]
-    coverage_warnings: list[DetectorCoverageRecord]
-
-    def runtime_setting(self, key: str, default: Any = None) -> Any: ...
-
-    def runtime_option(self, key: str, default: Any = None) -> Any: ...
-
-    def scan_coverage_prerequisites(self) -> list[DetectorCoverageStatus]: ...
+# LangRuntimeContract is defined in base.types to avoid an import cycle.
+# Re-exported here for backward compatibility.
 
 
 @dataclass

@@ -39,7 +39,11 @@ def _render_workflow_stage(item: dict) -> None:
 
 
 def _render_workflow_action(item: dict) -> None:
-    """Render a workflow action item (e.g. create-plan)."""
+    """Render a workflow action item (e.g. create-plan).
+
+    Side-effect only: prints a formatted card to stdout for terminal display.
+    Called from _render_item when item kind is 'workflow_action'.
+    """
     print(colorize("  (Workflow step)", "bold"))
     print(colorize("  " + "─" * 60, "dim"))
     print(f"  {colorize(item.get('summary', ''), 'yellow')}")

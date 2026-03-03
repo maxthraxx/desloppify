@@ -16,7 +16,6 @@ from desloppify.engine._plan.stale_dimensions import (
 from desloppify.engine._plan.subjective_policy import (
     NON_OBJECTIVE_DETECTORS,
     SubjectiveVisibility,
-    compute_subjective_visibility,
 )
 from desloppify.engine._state.schema import StateModel, utc_now
 

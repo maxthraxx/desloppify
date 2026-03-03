@@ -9,7 +9,6 @@ from types import ModuleType
 from desloppify import languages as lang_mod
 from desloppify.app.commands.helpers.lang import resolve_lang
 from desloppify.core.exception_sets import CommandError
-from desloppify.core.output_api import colorize
 
 
 def _build_ext_to_lang_map() -> dict[str, str]:
@@ -69,10 +68,19 @@ def supported_ext_hint() -> str:
 
 
 def load_lang_move_module(lang_name: str) -> ModuleType:
-    """Load language-specific move helpers from ``lang/<name>/move.py``."""
+    """Load language-specific move helpers from ``lang/<name>/move.py``.
+
+    Falls back to the shared scaffold move module when a language does not
+    provide its own ``move.py``.
+    """
     module_name = f"desloppify.languages.{lang_name}.move"
     try:
         return importlib.import_module(module_name)
+    except ImportError:
+        pass
+    # Fall back to the scaffold move module that provides default stubs.
+    try:
+        return importlib.import_module("desloppify.languages._framework.scaffold_move")
     except ImportError as ex:
         raise CommandError(
             f"Move not yet supported for language: {lang_name} ({ex})"

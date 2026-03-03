@@ -6,7 +6,6 @@ from pathlib import Path
 import pytest
 
 import desloppify.core._internal.text_utils as utils_text_mod
-import desloppify.core.discovery_api as discovery_api_mod
 import desloppify.core.paths_api as paths_api_mod
 from desloppify.core.discovery_api import (
     clear_source_file_cache_for_tests,

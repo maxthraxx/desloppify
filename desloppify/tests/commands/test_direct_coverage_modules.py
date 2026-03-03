@@ -9,7 +9,6 @@ import desloppify.app.commands.move.move_directory as move_directory
 import desloppify.app.commands.move.move_reporting as move_reporting
 import desloppify.app.commands.move.move as move_cmd_mod
 import desloppify.app.commands.next_parts.output as next_output
-import desloppify.app.commands.next_parts.render as next_render
 import desloppify.app.commands.next_parts.render_support as next_render_support
 import desloppify.app.commands.plan_cmd as plan_cmd
 import desloppify.app.commands.registry as cmd_registry
@@ -49,12 +48,12 @@ import desloppify.languages.csharp.extractors as csharp_extractors
 import desloppify.languages.csharp.extractors_classes as csharp_extractors_classes
 import desloppify.languages.dart.commands as dart_commands
 import desloppify.languages.dart.extractors as dart_extractors
-import desloppify.languages.dart.move as dart_move
+import desloppify.languages._framework.scaffold_move as dart_move
 import desloppify.languages.dart.phases as dart_phases
 import desloppify.languages.dart.review as dart_review
 import desloppify.languages.gdscript.commands as gdscript_commands
 import desloppify.languages.gdscript.extractors as gdscript_extractors
-import desloppify.languages.gdscript.move as gdscript_move
+import desloppify.languages._framework.scaffold_move as gdscript_move
 import desloppify.languages.gdscript.phases as gdscript_phases
 import desloppify.languages.gdscript.review as gdscript_review
 import desloppify.languages.python.detectors.private_imports as private_imports

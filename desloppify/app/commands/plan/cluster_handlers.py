@@ -27,7 +27,11 @@ _LEADING_NUM_RE = re.compile(r'^\d+\.\s*')
 
 
 def _print_pattern_hints() -> None:
-    """Print valid pattern format hints after a no-match error."""
+    """Print valid pattern format hints after a no-match error.
+
+    Side-effect only: prints help text to stdout when pattern resolution
+    returns zero matches, guiding the user toward valid pattern syntax.
+    """
     print(colorize("  Valid patterns:", "dim"))
     print(colorize("    f41b3eb7              (8-char hash suffix from dashboard)", "dim"))
     print(colorize("    review::path::name    (ID prefix)", "dim"))

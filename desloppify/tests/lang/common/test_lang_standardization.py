@@ -16,7 +16,6 @@ TOP_LEVEL_MODULES = (
     "commands",
     "extractors",
     "phases",
-    "move",
     "review",
     "test_coverage",
 )
