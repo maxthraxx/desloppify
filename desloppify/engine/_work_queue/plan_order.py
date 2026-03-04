@@ -49,6 +49,7 @@ def enrich_plan_metadata(items: list[WorkQueueItem], plan: dict) -> None:
                 "name": cluster_name,
                 "description": cluster_data.get("description"),
                 "total_items": len(cluster_data.get("issue_ids", [])),
+                "action_steps": cluster_data.get("action_steps") or [],
             }
 
 

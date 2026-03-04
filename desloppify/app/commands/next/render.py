@@ -83,7 +83,7 @@ def _render_subjective_dimension(item: dict, *, explain: bool) -> None:
         print(colorize(f"  explain: {reason}", "dim"))
 
 
-def _render_issue_detail(item: dict) -> dict:
+def _render_issue_detail(item: dict, *, single_item: bool = False) -> dict:
     """Render plan overrides, file info, and detail fields. Returns parsed detail dict."""
     if item.get("plan_description"):
         print(colorize(f"  → {item['plan_description']}", "cyan"))
@@ -94,6 +94,12 @@ def _render_issue_detail(item: dict) -> dict:
         total = plan_cluster.get("total_items", 0)
         desc_str = f' — "{cluster_desc}"' if cluster_desc else ""
         print(colorize(f"  Cluster: {cluster_name}{desc_str} ({total} items)", "dim"))
+        if single_item:
+            steps = plan_cluster.get("action_steps") or []
+            if steps:
+                print(colorize("\n  Steps:", "dim"))
+                for i, step in enumerate(steps, 1):
+                    print(colorize(f"    {i}. {step}", "dim"))
     if item.get("plan_note"):
         print(colorize(f"  Note: {item['plan_note']}", "dim"))
 
@@ -284,6 +290,7 @@ def _render_item_explain(
 def _render_item(
     item: dict, dim_scores: dict, issues_scoped: dict, explain: bool,
     potentials: dict | None = None,
+    single_item: bool = False,
 ) -> None:
     kind = item.get("kind")
     kind_renderer = _KIND_RENDERERS.get(kind)
@@ -301,7 +308,7 @@ def _render_item(
         _render_subjective_dimension(item, explain=explain)
         return
 
-    detail = _render_issue_detail(item)
+    detail = _render_issue_detail(item, single_item=single_item)
     _render_score_impact(item, dim_scores, potentials)
     _render_auto_fix_batch_hint(item, issues_scoped)
     if explain:
@@ -355,7 +362,10 @@ def render_terminal_items(
             continue
         label = _item_label(item, idx, len(items))
         print(colorize(label, "bold"))
-        _render_item(item, dim_scores, issues_scoped, explain=explain, potentials=potentials)
+        _render_item(
+            item, dim_scores, issues_scoped, explain=explain, potentials=potentials,
+            single_item=len(items) == 1,
+        )
 
 
 __all__ = [

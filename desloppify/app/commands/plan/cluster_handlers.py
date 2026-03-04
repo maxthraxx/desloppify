@@ -235,6 +235,11 @@ def _cmd_cluster_show(args: argparse.Namespace) -> None:
     action = cluster.get("action") or ""
     if action:
         print(colorize(f"  Action: {action}", "dim"))
+    steps = cluster.get("action_steps") or []
+    if steps:
+        print(colorize(f"  Steps ({len(steps)}):", "dim"))
+        for i, step in enumerate(steps, 1):
+            print(colorize(f"    {i}. {step}", "dim"))
 
     # Members
     issue_ids = cluster.get("issue_ids", [])

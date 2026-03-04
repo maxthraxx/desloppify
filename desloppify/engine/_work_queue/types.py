@@ -19,6 +19,7 @@ class PlanClusterRef(TypedDict, total=False):
     name: str
     description: str | None
     total_items: int
+    action_steps: list[str]
 
 
 class WorkQueueItem(TypedDict, total=False):
