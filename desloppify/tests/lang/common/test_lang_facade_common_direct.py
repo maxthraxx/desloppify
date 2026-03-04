@@ -7,38 +7,38 @@ still allowing explicit overrides for broader scans.
 from __future__ import annotations
 
 from desloppify.languages._framework.facade_common import (
-    _facade_tier_confidence,
+    facade_tier_confidence,
     detect_reexport_facades_common,
 )
 
-# ── _facade_tier_confidence ──────────────────────────────
+# ── facade_tier_confidence ──────────────────────────────
 
 
 class TestFacadeTierConfidence:
     """Tier and confidence assignment based on importer count."""
 
     def test_low_importers_tier_2_high(self):
-        tier, conf = _facade_tier_confidence(0)
+        tier, conf = facade_tier_confidence(0)
         assert tier == 2
         assert conf == "high"
 
     def test_five_importers_tier_2_high(self):
-        tier, conf = _facade_tier_confidence(5)
+        tier, conf = facade_tier_confidence(5)
         assert tier == 2
         assert conf == "high"
 
     def test_six_importers_tier_3_medium(self):
-        tier, conf = _facade_tier_confidence(6)
+        tier, conf = facade_tier_confidence(6)
         assert tier == 3
         assert conf == "medium"
 
     def test_twenty_importers_tier_3_medium(self):
-        tier, conf = _facade_tier_confidence(20)
+        tier, conf = facade_tier_confidence(20)
         assert tier == 3
         assert conf == "medium"
 
     def test_over_twenty_importers_tier_4_medium(self):
-        tier, conf = _facade_tier_confidence(21)
+        tier, conf = facade_tier_confidence(21)
         assert tier == 4
         assert conf == "medium"
 

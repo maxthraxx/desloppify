@@ -40,30 +40,30 @@ class TestBuildStringLineSet:
             '"""',
             'eval("real")',
         ]
-        string_lines = smells_mod._build_string_line_set(lines)
+        string_lines = smells_mod.build_string_line_set(lines)
         assert 1 in string_lines  # inside triple-quote
         assert 3 not in string_lines  # outside triple-quote
 
     def test_same_line_triple_quote(self):
         lines = ['x = """hello"""', 'eval("real")']
-        string_lines = smells_mod._build_string_line_set(lines)
+        string_lines = smells_mod.build_string_line_set(lines)
         assert 0 not in string_lines  # closed on same line
         assert 1 not in string_lines
 
 
 class TestMatchIsInString:
     def test_match_outside_string(self):
-        assert not smells_mod._match_is_in_string('eval("code")', 0)
+        assert not smells_mod.match_is_in_string('eval("code")', 0)
 
     def test_match_inside_string(self):
         line = '"eval(x)" + stuff'
         idx = line.index("eval")
-        assert smells_mod._match_is_in_string(line, idx)
+        assert smells_mod.match_is_in_string(line, idx)
 
     def test_match_in_comment(self):
         line = "x = 1  # eval(x)"
         idx = line.index("eval")
-        assert smells_mod._match_is_in_string(line, idx)
+        assert smells_mod.match_is_in_string(line, idx)
 
 
 # ── Clean code produces no high-severity smells ──────────

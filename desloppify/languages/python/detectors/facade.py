@@ -7,7 +7,7 @@ from pathlib import Path
 
 from desloppify.base.discovery.file_paths import count_lines
 from desloppify.languages._framework.facade_common import (
-    _facade_tier_confidence,
+    facade_tier_confidence,
     detect_reexport_facades_common,
 )
 
@@ -92,7 +92,7 @@ def _detect_facade_directories(
             continue
 
         dir_importers = graph[init_file].get("importer_count", 0)
-        tier, confidence = _facade_tier_confidence(dir_importers)
+        tier, confidence = facade_tier_confidence(dir_importers)
         total_loc = sum(count_lines(Path(f)) for f in files if Path(f).exists())
 
         entries.append(

@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from desloppify.engine._state.schema import StateModel, utc_now
-from desloppify.intelligence.review.importing.contracts import ReviewImportPayload
+from desloppify.intelligence.review.importing.contracts_types import ReviewImportPayload
 
 from desloppify.intelligence.integrity import (
     is_holistic_subjective_issue,

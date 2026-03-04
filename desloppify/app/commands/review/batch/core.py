@@ -15,8 +15,10 @@ from desloppify.intelligence.review.feedback_contract import (
     LOW_SCORE_ISSUE_THRESHOLD,
     REVIEW_QUALITY_HIGH_SCORE_MISSING_ISSUES_KEY,
 )
-from desloppify.intelligence.review.importing.contracts import (
+from desloppify.intelligence.review.importing.contracts_types import (
     ReviewIssuePayload,
+)
+from desloppify.intelligence.review.importing.contracts_validation import (
     validate_review_issue_payload,
 )
 from desloppify.intelligence.review.importing.payload import (

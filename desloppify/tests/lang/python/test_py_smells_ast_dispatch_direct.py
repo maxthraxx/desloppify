@@ -5,7 +5,7 @@ from __future__ import annotations
 from desloppify.languages.python.detectors.smells_ast._dispatch import (
     NODE_DETECTORS,
     TREE_DETECTORS,
-    _detect_ast_smells,
+    detect_ast_smells,
 )
 
 
@@ -28,7 +28,7 @@ def alpha():
 """
     smell_counts: dict[str, list[dict]] = {"dead_function": []}
 
-    _detect_ast_smells("file.py", source, smell_counts)
+    detect_ast_smells("file.py", source, smell_counts)
 
     lines = [match["line"] for match in smell_counts["dead_function"]]
     assert lines == sorted(lines)

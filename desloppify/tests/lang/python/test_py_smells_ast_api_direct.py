@@ -7,13 +7,13 @@ import importlib
 import pytest
 
 from desloppify.languages.python.detectors.smells_ast._dispatch import (
-    _detect_ast_smells,
+    detect_ast_smells,
 )
 from desloppify.languages.python.detectors.smells_ast._source_detectors import (
-    _collect_module_constants,
-    _detect_duplicate_constants,
-    _detect_star_import_no_all,
-    _detect_vestigial_parameter,
+    collect_module_constants,
+    detect_duplicate_constants,
+    detect_star_import_no_all,
+    detect_vestigial_parameter,
 )
 
 smells_ast_pkg = importlib.import_module("desloppify.languages.python.detectors.smells_ast")
@@ -25,11 +25,11 @@ def test_smells_ast_package_is_namespace_only():
 
 
 def test_smells_ast_source_modules_expose_detectors():
-    assert callable(_detect_ast_smells)
-    assert callable(_collect_module_constants)
-    assert callable(_detect_duplicate_constants)
-    assert callable(_detect_star_import_no_all)
-    assert callable(_detect_vestigial_parameter)
+    assert callable(detect_ast_smells)
+    assert callable(collect_module_constants)
+    assert callable(detect_duplicate_constants)
+    assert callable(detect_star_import_no_all)
+    assert callable(detect_vestigial_parameter)
 
 
 def test_smells_ast_legacy_exports_are_unavailable_on_package():

@@ -11,8 +11,10 @@ from desloppify.intelligence.review.feedback_contract import (
     ASSESSMENT_FEEDBACK_THRESHOLD,
     LOW_SCORE_ISSUE_THRESHOLD,
 )
-from desloppify.intelligence.review.importing.contracts import (
+from desloppify.intelligence.review.importing.contracts_models import (
     AssessmentImportPolicyModel,
+)
+from desloppify.intelligence.review.importing.contracts_types import (
     ReviewImportPayload,
 )
 

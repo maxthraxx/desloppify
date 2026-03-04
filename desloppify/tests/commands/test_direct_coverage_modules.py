@@ -164,10 +164,10 @@ def test_smoke_engine():
     _assert_all_callables(
         private_imports.detect_private_imports,
         private_imports._is_dunder,
-        smells_ast_dispatch._detect_ast_smells,
+        smells_ast_dispatch.detect_ast_smells,
         smells_ast_shared._looks_like_path_var,
-        smells_ast_source_detectors._detect_duplicate_constants,
-        smells_ast_source_detectors._detect_vestigial_parameter,
+        smells_ast_source_detectors.detect_duplicate_constants,
+        smells_ast_source_detectors.detect_vestigial_parameter,
         smells_ast_tree_context_detectors._detect_hardcoded_path_sep,
         smells_ast_tree_quality_detectors._detect_optional_param_sprawl,
         smells_ast_tree_quality_detectors_types._detect_optional_param_sprawl,

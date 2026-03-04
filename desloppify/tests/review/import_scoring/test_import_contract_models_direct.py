@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from desloppify.intelligence.review.importing.contracts import (
+from desloppify.intelligence.review.importing.contracts_models import (
     AssessmentImportPolicyModel,
     AssessmentProvenanceModel,
 )

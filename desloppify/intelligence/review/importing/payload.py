@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from desloppify.intelligence.review.importing.contracts import (
+from desloppify.intelligence.review.importing.contracts_types import (
     ReviewImportPayload,
     ReviewIssuePayload,
 )

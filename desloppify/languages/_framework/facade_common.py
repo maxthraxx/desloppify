@@ -7,7 +7,7 @@ from collections.abc import Callable
 DEFAULT_MAX_IMPORTERS = 20
 
 
-def _facade_tier_confidence(importer_count: int) -> tuple[int, str]:
+def facade_tier_confidence(importer_count: int) -> tuple[int, str]:
     """Determine tier and confidence for a facade based on importer count.
 
     ≤5 importers: tier 2, confidence high   (easy removal)
@@ -46,7 +46,7 @@ def detect_reexport_facades_common(
         if importer_count > max_importers:
             continue
 
-        tier, confidence = _facade_tier_confidence(importer_count)
+        tier, confidence = facade_tier_confidence(importer_count)
 
         entries.append(
             {
@@ -65,6 +65,6 @@ def detect_reexport_facades_common(
 
 __all__ = [
     "DEFAULT_MAX_IMPORTERS",
-    "_facade_tier_confidence",
+    "facade_tier_confidence",
     "detect_reexport_facades_common",
 ]

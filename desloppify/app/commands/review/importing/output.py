@@ -7,9 +7,11 @@ import sys
 from typing import Any
 
 from desloppify.engine._state.schema import StateModel
-from desloppify.intelligence.review.importing.contracts import (
-    AssessmentImportPolicy,
+from desloppify.intelligence.review.importing.contracts_models import (
     AssessmentImportPolicyModel,
+)
+from desloppify.intelligence.review.importing.contracts_types import (
+    AssessmentImportPolicy,
 )
 
 from .policy import (

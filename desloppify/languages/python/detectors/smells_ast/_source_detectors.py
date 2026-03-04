@@ -19,7 +19,7 @@ def _is_within(root: Path, candidate: Path) -> bool:
         return False
 
 
-def _collect_module_constants(
+def collect_module_constants(
     filepath: str,
     content: str,
     constants_by_key: dict[tuple[str, str], list[tuple[str, int]]],
@@ -61,7 +61,7 @@ def _collect_module_constants(
                     constants_by_key.setdefault(key, []).append((filepath, node.lineno))
 
 
-def _detect_duplicate_constants(
+def detect_duplicate_constants(
     constants_by_key: dict[tuple[str, str], list[tuple[str, int]]],
     smell_counts: dict[str, list],
 ):
@@ -84,7 +84,7 @@ def _detect_duplicate_constants(
             )
 
 
-def _detect_star_import_no_all(
+def detect_star_import_no_all(
     filepath: str,
     content: str,
     scan_root: Path,
@@ -195,7 +195,7 @@ _VESTIGIAL_KEYWORDS = re.compile(
 )
 
 
-def _detect_vestigial_parameter(
+def detect_vestigial_parameter(
     filepath: str,
     content: str,
     lines: list[str],

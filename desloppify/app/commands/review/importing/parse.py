@@ -15,10 +15,14 @@ from desloppify.intelligence.review.feedback_contract import (
     score_requires_dimension_issue,
     score_requires_explicit_feedback,
 )
-from desloppify.intelligence.review.importing.contracts import (
+from desloppify.intelligence.review.importing.contracts_models import (
     AssessmentImportPolicyModel,
+)
+from desloppify.intelligence.review.importing.contracts_types import (
     ReviewImportPayload,
     ReviewIssuePayload,
+)
+from desloppify.intelligence.review.importing.contracts_validation import (
     validate_review_issue_payload,
 )
 from desloppify.intelligence.review.importing.payload import (

@@ -6,8 +6,8 @@ import logging
 from pathlib import Path
 
 from .smells_runtime import (
-    _build_string_line_set,
-    _match_is_in_string,
+    build_string_line_set,
+    match_is_in_string,
 )
 from .smells_runtime import (
     detect_smells_runtime as _detect_smells_runtime,
@@ -187,7 +187,7 @@ def detect_smells(path: Path) -> tuple[list[dict], int]:
 
 __all__ = [
     "SMELL_CHECKS",
-    "_build_string_line_set",
-    "_match_is_in_string",
+    "build_string_line_set",
+    "match_is_in_string",
     "detect_smells",
 ]

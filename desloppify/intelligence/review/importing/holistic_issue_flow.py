@@ -8,9 +8,11 @@ from typing import Any
 from desloppify.engine._state.filtering import make_issue
 from desloppify.engine._state.schema import Issue, StateModel
 from desloppify.intelligence.review.dimensions import normalize_dimension_name
-from desloppify.intelligence.review.importing.contracts import (
+from desloppify.intelligence.review.importing.contracts_types import (
     ReviewIssuePayload,
     ReviewScopePayload,
+)
+from desloppify.intelligence.review.importing.contracts_validation import (
     validate_review_issue_payload,
 )
 from desloppify.intelligence.review.importing.payload import (

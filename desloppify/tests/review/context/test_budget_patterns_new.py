@@ -9,11 +9,13 @@ from __future__ import annotations
 
 import ast
 
-from desloppify.intelligence.review.context_holistic.budget_patterns import (
+from desloppify.intelligence.review.context_holistic.budget_patterns_enums import (
     _census_type_strategies,
     _collect_enum_defs,
-    _find_dict_any_annotations,
     _find_enum_bypass,
+)
+from desloppify.intelligence.review.context_holistic.budget_patterns_types import (
+    _find_dict_any_annotations,
     _guess_alternative,
     _is_dict_str_any,
 )

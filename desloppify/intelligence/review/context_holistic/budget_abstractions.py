@@ -16,16 +16,20 @@ from .budget_analysis import (
     _extract_type_names,
     _score_clamped,
 )
-from .budget_patterns import (
+from .budget_patterns_enums import (
     _census_type_strategies,
     _collect_enum_defs,
-    _collect_typed_dict_defs,
-    _find_delegation_heavy_classes,
-    _find_dict_any_annotations,
     _find_enum_bypass,
+)
+from .budget_patterns_types import (
+    _collect_typed_dict_defs,
+    _find_dict_any_annotations,
+    _find_typed_dict_usage_violations,
+)
+from .budget_patterns_wrappers import (
+    _find_delegation_heavy_classes,
     _find_facade_modules,
     _find_python_passthrough_wrappers,
-    _find_typed_dict_usage_violations,
 )
 
 _DEF_SIGNATURE_RE = re.compile(

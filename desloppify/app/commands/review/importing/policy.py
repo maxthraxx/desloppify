@@ -6,10 +6,12 @@ import hashlib
 from dataclasses import replace
 from pathlib import Path
 
-from desloppify.intelligence.review.importing.contracts import (
-    AssessmentImportPolicy,
+from desloppify.intelligence.review.importing.contracts_models import (
     AssessmentImportPolicyModel,
     AssessmentProvenanceModel,
+)
+from desloppify.intelligence.review.importing.contracts_types import (
+    AssessmentImportPolicy,
     ReviewImportPayload,
 )
 

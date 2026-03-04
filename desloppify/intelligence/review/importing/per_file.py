@@ -15,7 +15,7 @@ from desloppify.intelligence.review.importing.cache import (
     refresh_review_file_cache,
     resolve_import_project_root,
 )
-from desloppify.intelligence.review.importing.contracts import (
+from desloppify.intelligence.review.importing.contracts_types import (
     ReviewImportPayload,
     ReviewIssuePayload,
 )

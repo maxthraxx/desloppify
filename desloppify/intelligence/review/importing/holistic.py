@@ -11,7 +11,7 @@ from desloppify.engine._state.schema import StateModel, utc_now
 from desloppify.intelligence.review.dimensions import normalize_dimension_name
 from desloppify.intelligence.review.dimensions.data import load_dimensions_for_lang
 from desloppify.intelligence.review.importing.assessments import store_assessments
-from desloppify.intelligence.review.importing.contracts import (
+from desloppify.intelligence.review.importing.contracts_types import (
     ReviewImportPayload,
     ReviewIssuePayload,
 )

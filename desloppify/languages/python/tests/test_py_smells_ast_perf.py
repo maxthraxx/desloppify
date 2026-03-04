@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 
 from desloppify.languages.python.detectors.smells_ast._dispatch import (
-    _detect_ast_smells as detect_ast_smells,
+    detect_ast_smells,
 )
 
 

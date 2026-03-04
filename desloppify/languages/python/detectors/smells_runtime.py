@@ -9,17 +9,17 @@ from desloppify.base.discovery.source import find_py_files
 from desloppify.base.discovery.paths import get_project_root
 from desloppify.base.output.fallbacks import log_best_effort_failure
 from desloppify.languages.python.detectors.smells_ast._dispatch import (
-    _detect_ast_smells as detect_ast_smells,
+    detect_ast_smells,
 )
 from desloppify.languages.python.detectors.smells_ast._source_detectors import (
-    _collect_module_constants as collect_module_constants,
-    _detect_duplicate_constants as detect_duplicate_constants,
-    _detect_star_import_no_all as detect_star_import_no_all,
-    _detect_vestigial_parameter as detect_vestigial_parameter,
+    collect_module_constants,
+    detect_duplicate_constants,
+    detect_star_import_no_all,
+    detect_vestigial_parameter,
 )
 
 
-def _build_string_line_set(lines: list[str]) -> set[int]:
+def build_string_line_set(lines: list[str]) -> set[int]:
     """Build 0-indexed line numbers that are inside multi-line strings."""
     in_multiline: str | None = None
     string_lines: set[int] = set()
@@ -80,7 +80,7 @@ def _build_string_line_set(lines: list[str]) -> set[int]:
     return string_lines
 
 
-def _match_is_in_string(line: str, match_start: int) -> bool:
+def match_is_in_string(line: str, match_start: int) -> bool:
     """Return True when a regex match location is inside a string/comment."""
     i = 0
     in_string = None
@@ -217,7 +217,7 @@ def detect_smells_runtime(
         if is_test_path_fn(filepath):
             continue
 
-        multiline_string_lines = _build_string_line_set(lines)
+        multiline_string_lines = build_string_line_set(lines)
 
         for check in smell_checks:
             pattern = check.get("pattern")
@@ -227,7 +227,7 @@ def detect_smells_runtime(
                 if i in multiline_string_lines:
                     continue
                 match = re.search(pattern, line)
-                if match and not _match_is_in_string(line, match.start()):
+                if match and not match_is_in_string(line, match.start()):
                     if check["id"] == "hardcoded_url" and re.match(
                         r"^[A-Z_][A-Z0-9_]*\s*=",
                         line.strip(),

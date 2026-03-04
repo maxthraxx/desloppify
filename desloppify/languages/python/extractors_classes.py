@@ -10,7 +10,7 @@ from desloppify.engine.detectors.base import ClassInfo, FunctionInfo
 from desloppify.languages.python.extractors_shared import find_block_end, read_file
 
 _DATACLASS_DECORATOR_RE = re.compile(
-    r"^(?:[A-Za-z_][A-Za-z0-9_]*\.)*dataclass(?:\s*\(.*\))?$"
+    r"^(?:[A-Za-z_][A-Za-z0-9_]*\.)*dataclass(?:\s*\([^)]*\))?$"
 )
 
 
