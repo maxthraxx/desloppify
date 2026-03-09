@@ -21,7 +21,6 @@ import desloppify.app.commands.show.dimension_views as show_dimension_views_mod
 import desloppify.app.commands.status.render_dimensions as status_render_dimensions_mod
 import desloppify.app.commands.status.render_io as status_render_io_mod
 import desloppify.app.commands.status.render_structural as status_render_structural_mod
-import desloppify.base.compatibility as compatibility_mod
 import desloppify.base.search.grep as grep_mod
 import desloppify.base.output.terminal as output_mod
 import desloppify.app.skill_docs as skill_docs_mod
@@ -74,7 +73,6 @@ def test_direct_coverage_priority_modules_smoke():
     assert callable(display_mod.short_issue_id)
     assert callable(dimension_policy_mod._compose_scorecard_dimensions)
 
-    assert callable(compatibility_mod.is_private_module)
     assert callable(grep_mod.grep_files_containing)
     assert callable(output_mod.display_entries)
     assert callable(skill_docs_mod.check_skill_version)
