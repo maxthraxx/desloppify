@@ -37,7 +37,7 @@ def _file_level_security_issues(
                     summary="Edge function serves requests without authentication check",
                     severity="high",
                     confidence="medium",
-                    remediation="Add authentication check (e.g., authenticateRequest, auth.getUser)",
+                    remediation="Add authentication check (e.g., requireAuth, getServerSession, authenticateRequest, auth.getUser, verifyToken)",
                 )
             )
 

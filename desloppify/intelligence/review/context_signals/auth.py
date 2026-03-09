@@ -6,7 +6,11 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
-from desloppify.base.signal_patterns import SERVICE_ROLE_TOKEN_RE, is_server_only_path
+from desloppify.base.signal_patterns import (
+    AUTH_GUARD_TOKEN_RE,
+    SERVICE_ROLE_TOKEN_RE,
+    is_server_only_path,
+)
 
 _ROUTE_AUTH_RE = re.compile(
     r"@(?:app|router|api)\.(?:get|post|put|patch|delete|route)\b"
@@ -15,11 +19,7 @@ _ROUTE_AUTH_RE = re.compile(
     r"|@router\.(?:get|post|put|patch|delete)\b",
     re.MULTILINE,
 )
-_AUTH_GUARD_RE = re.compile(
-    r"@(?:login_required|require_auth|auth_required|requires_auth|authenticated)\b"
-    r"|\brequireAuth\b|\bwithAuth\b|\bgetServerSession\b|\bauthenticateRequest\b"
-    r"|\bauth\.getUser\b|\bsupabase\.auth\.getUser\b",
-)
+_AUTH_GUARD_RE = AUTH_GUARD_TOKEN_RE
 _AUTH_USAGE_RE = re.compile(r"\buseAuth\b|\brequest\.user\b|\bsession\.user\b|\bgetUser\b")
 # Table name pattern: matches unquoted, "double-quoted", `backtick`, or [bracket] names,
 # optionally preceded by a schema qualifier (e.g. public.users, "auth"."profiles").

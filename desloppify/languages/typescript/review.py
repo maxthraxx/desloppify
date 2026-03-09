@@ -33,7 +33,7 @@ REVIEW_GUIDANCE = {
         "Look for Context providers nested >5 deep — consider composition or state management",
     ],
     "auth": [
-        "Check `useAuth()` / `getServerSession()` consistency — sibling routes should use the same pattern",
+        "Check `useAuth()` / `getServerSession()` / `requireAuth()` / `verifyToken()` consistency — sibling routes should use the same pattern",
         "Flag API routes that access request body without validation (zod, yup, or manual checks)",
         "Look for Supabase RLS bypass patterns — `service_role` key used outside server-only code",
         "Verify auth middleware on API routes — sibling handlers should all check auth or none",

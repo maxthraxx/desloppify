@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import re
 
+from desloppify.base.signal_patterns import AUTH_GUARD_TOKEN_RE
+
 _CREATE_CLIENT_RE = re.compile(r"\bcreateClient\s*\(", re.IGNORECASE)
 _EVAL_PATTERNS = re.compile(r"\b(?:eval|new\s+Function)\s*\(")
 _DANGEROUS_HTML_RE = re.compile(r"dangerouslySetInnerHTML")
@@ -18,10 +20,7 @@ _SERVE_ASYNC_RE = re.compile(r"\b(?:Deno\.)?serve\s*\(\s*(?:async\s*)?")
 _EDGE_ENTRYPOINT_RE = re.compile(
     r"\bexport\s+(?:default\s+)?(?:async\s+)?function\s+(?:GET|POST|PUT|PATCH|DELETE)\b"
 )
-_AUTH_CHECK_RE = re.compile(
-    r"(?:authenticateRequest|auth\.getUser|supabase\.auth(?:\.getUser)?|verifyToken)",
-    re.IGNORECASE,
-)
+_AUTH_CHECK_RE = AUTH_GUARD_TOKEN_RE
 _ATOB_JWT_RE = re.compile(r"atob\s*\(")
 _JWT_PAYLOAD_RE = re.compile(r"(?:payload\.sub|\.split\s*\(\s*['\"]\\?\.['\"])")
 _CREATE_VIEW_RE = re.compile(r"CREATE\s+(?:OR\s+REPLACE\s+)?VIEW\b", re.IGNORECASE)

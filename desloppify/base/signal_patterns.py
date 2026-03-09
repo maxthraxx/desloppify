@@ -16,6 +16,13 @@ SERVICE_ROLE_TOKEN_RE = re.compile(
     re.IGNORECASE,
 )
 
+AUTH_GUARD_TOKEN_RE = re.compile(
+    r"@(?:login_required|require_auth|auth_required|requires_auth|authenticated)\b"
+    r"|\brequireAuth\b|\bwithAuth\b|\bgetServerSession\b|\bauthenticateRequest\b"
+    r"|\bauth\.getUser\b|\bsupabase\.auth(?:\.getUser)?\b|\bverifyToken\b",
+    re.IGNORECASE,
+)
+
 SERVER_ONLY_PATH_HINTS = (
     "/api/",
     "/server/",
