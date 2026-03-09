@@ -355,6 +355,8 @@ class TestFileZoneMap:
         zm = FileZoneMap(files, COMMON_ZONE_RULES, rel_fn=strip_prefix)
         assert zm.get("/project/tests/test_foo.py") == Zone.TEST
         assert zm.get("/project/src/main.py") == Zone.PRODUCTION
+        assert zm.get("tests/test_foo.py") == Zone.TEST
+        assert zm.get("src/main.py") == Zone.PRODUCTION
 
     def test_overrides(self):
         """Overrides are passed through to classify_file."""

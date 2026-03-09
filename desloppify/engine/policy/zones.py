@@ -137,14 +137,35 @@ class FileZoneMap:
     ):
         """Build a zone map from files, ordered rules, and optional overrides."""
         self._map: dict[str, Zone] = {}
+        self._rel_map: dict[str, Zone] = {}
+        self._rel_fn = rel_fn
         self._overrides = overrides
         for file_path in files:
             rel_path = rel_fn(file_path) if rel_fn else file_path
-            self._map[file_path] = classify_file(rel_path, rules, overrides)
+            zone = classify_file(rel_path, rules, overrides)
+            self._map[file_path] = zone
+            self._rel_map[rel_path] = zone
 
     def get(self, path: str) -> Zone:
         """Get zone for a file path. Returns PRODUCTION if not classified."""
-        return self._map.get(path, Zone.PRODUCTION)
+        direct = self._map.get(path)
+        if direct is not None:
+            return direct
+
+        rel_direct = self._rel_map.get(path)
+        if rel_direct is not None:
+            return rel_direct
+
+        if self._rel_fn is not None:
+            try:
+                rel_path = self._rel_fn(path)
+            except Exception:
+                rel_path = path
+            rel_zone = self._rel_map.get(rel_path)
+            if rel_zone is not None:
+                return rel_zone
+
+        return Zone.PRODUCTION
 
     def exclude(self, files: list[str], *zones: Zone) -> list[str]:
         """Return files NOT in the given zones."""
