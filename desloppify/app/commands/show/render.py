@@ -65,7 +65,8 @@ def _print_single_issue(issue: dict, *, show_code: bool) -> None:
     if detail_parts:
         print(colorize(f"      {' · '.join(detail_parts)}", "dim"))
     if show_code:
-        detail = issue.get("detail", {})
+        detail_raw = issue.get("detail", {})
+        detail = detail_raw if isinstance(detail_raw, dict) else {}
         target_line = (
             detail.get("line") or (detail.get("lines", [None]) or [None])[0]
         )

@@ -50,8 +50,13 @@ def _append_pattern_evidence(parts: list[str], detail: dict) -> None:
         parts.append(f"evidence: {', '.join(summary_parts)}")
 
 
-def format_detail(detail: dict) -> list[str]:
-    """Build display parts from a issue's detail dict."""
+def format_detail(detail: object) -> list[str]:
+    """Build display parts from a finding's detail payload."""
+    if isinstance(detail, str):
+        return [f"detail: {detail}"] if detail else []
+    if not isinstance(detail, dict):
+        return []
+
     parts: list[str] = []
     for key, label, formatter in DETAIL_DISPLAY:
         value = detail.get(key)
