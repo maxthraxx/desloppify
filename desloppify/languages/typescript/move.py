@@ -7,7 +7,7 @@ import os
 from pathlib import Path
 
 from desloppify.base.output.fallbacks import log_best_effort_failure
-from desloppify.base.discovery.paths import SRC_PATH
+from desloppify.base.discovery.paths import get_src_path
 
 VERIFY_HINT = "npx tsc --noEmit"
 logger = logging.getLogger(__name__)
@@ -35,16 +35,17 @@ def _strip_ts_ext(path: str) -> str:
 def _compute_ts_specifiers(from_file: str, to_file: str) -> tuple[str | None, str]:
     """Compute both @/ alias and relative import specifiers for a TS file."""
     to_path = Path(to_file)
+    src_path = get_src_path()
 
     alias = None
-    if to_path == SRC_PATH or SRC_PATH in to_path.parents:
-        to_rel_src = to_path.relative_to(SRC_PATH)
+    if to_path == src_path or src_path in to_path.parents:
+        to_rel_src = to_path.relative_to(src_path)
         alias = "@/" + _strip_ts_ext(str(to_rel_src).replace("\\", "/"))
         if alias.endswith("/index"):
             alias = alias[:-6]
     else:
         logger.debug(
-            "Unable to compute TS alias for %s relative to src %s", to_file, SRC_PATH
+            "Unable to compute TS alias for %s relative to src %s", to_file, src_path
         )
 
     from_dir = Path(from_file).parent

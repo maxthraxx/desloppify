@@ -8,8 +8,7 @@ import re
 from pathlib import Path
 
 from desloppify.base.output.fallbacks import log_best_effort_failure
-from desloppify.base.discovery.paths import SRC_PATH
-from desloppify.base.discovery.paths import get_project_root
+from desloppify.base.discovery.paths import get_project_root, get_src_path
 from desloppify.base.text_utils import strip_c_style_comments
 
 TS_IMPORT_RE = re.compile(
@@ -160,7 +159,7 @@ def resolve_import_spec(
 ) -> str | None:
     """Resolve a TypeScript import specifier to a production file path."""
     if spec.startswith("@/") or spec.startswith("~/"):
-        base = Path(str(SRC_PATH) + "/" + spec[2:])
+        base = get_src_path() / spec[2:]
     elif spec.startswith("."):
         test_dir = Path(test_path).parent
         base = (test_dir / spec).resolve()

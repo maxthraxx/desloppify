@@ -1013,8 +1013,8 @@ class TestResolveTsImport:
         assert result == prod
 
     def test_alias_at_slash(self, tmp_path, monkeypatch):
-        """@/components/Button resolves via SRC_PATH."""
-        monkeypatch.setattr(ts_cov, "SRC_PATH", tmp_path / "src")
+        """@/components/Button resolves via get_src_path()."""
+        monkeypatch.setattr(ts_cov, "get_src_path", lambda: tmp_path / "src")
         prod = _write_file(
             tmp_path,
             "src/components/Button.tsx",
@@ -1026,15 +1026,15 @@ class TestResolveTsImport:
         assert result == prod
 
     def test_alias_tilde(self, tmp_path, monkeypatch):
-        """~/utils resolves via SRC_PATH."""
-        monkeypatch.setattr(ts_cov, "SRC_PATH", tmp_path / "src")
+        """~/utils resolves via get_src_path()."""
+        monkeypatch.setattr(ts_cov, "get_src_path", lambda: tmp_path / "src")
         prod = _write_file(tmp_path, "src/utils.ts", "export const x = 1;\n")
         result = _resolve_import("~/utils", "/any/test.ts", {prod}, "typescript")
         assert result == prod
 
     def test_alias_resolves_relative_production_paths(self, tmp_path, monkeypatch):
         """Alias resolution should also work when production paths are project-relative."""
-        monkeypatch.setattr(ts_cov, "SRC_PATH", tmp_path / "src")
+        monkeypatch.setattr(ts_cov, "get_src_path", lambda: tmp_path / "src")
         monkeypatch.setattr(ts_cov, "get_project_root", lambda: tmp_path)
         _write_file(
             tmp_path,
