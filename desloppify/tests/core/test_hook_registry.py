@@ -73,3 +73,27 @@ def test_get_lang_hook_bootstraps_module_register_entrypoint(monkeypatch) -> Non
     monkeypatch.setattr(registry_mod.importlib, "import_module", _fake_import_module)
 
     assert get_lang_hook("bootstraplang", "test_coverage") is sentinel
+
+
+def test_get_lang_hook_uses_explicit_context(monkeypatch) -> None:
+    clear_lang_hooks_for_tests()
+    sentinel = object()
+    scoped_context = registry_mod.create_hook_registry_context()
+    real_import_module = importlib.import_module
+
+    class _Module:
+        @staticmethod
+        def register() -> None:
+            registry_mod.register_lang_hooks("scopedlang", test_coverage=sentinel)
+
+    def _fake_import_module(name: str, package: str | None = None):
+        if name == "desloppify.languages.scopedlang":
+            return _Module()
+        if package is None:
+            return real_import_module(name)
+        return real_import_module(name, package)
+
+    monkeypatch.setattr(registry_mod.importlib, "import_module", _fake_import_module)
+
+    assert get_lang_hook("scopedlang", "test_coverage", context=scoped_context) is sentinel
+    assert "scopedlang" not in registry_mod._STATE.hooks

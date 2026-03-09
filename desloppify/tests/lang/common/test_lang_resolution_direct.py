@@ -148,3 +148,21 @@ def test_available_langs_returns_sorted_list(monkeypatch):
     langs = lang_resolution_mod.available_langs()
     assert langs == ["alpha", "zeta"]
     assert langs[0] < langs[1]
+
+
+def test_get_lang_accepts_explicit_registry_session(monkeypatch):
+    session = lang_resolution_mod.create_registry_session()
+    sentinel_cls = object()
+    session.language_registry.registry["python"] = sentinel_cls
+
+    monkeypatch.setattr(registry_state._STATE, "registry", {})
+    monkeypatch.setattr(lang_resolution_mod, "load_all", lambda **_kw: None)
+    monkeypatch.setattr(
+        lang_resolution_mod, "make_lang_config", lambda name, cfg_cls: (name, cfg_cls)
+    )
+
+    resolved = lang_resolution_mod.get_lang("python", session=session)
+    assert resolved == ("python", sentinel_cls)
+
+    with pytest.raises(ValueError, match="Unknown language"):
+        lang_resolution_mod.get_lang("python")
