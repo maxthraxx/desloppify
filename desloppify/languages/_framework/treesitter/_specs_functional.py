@@ -19,7 +19,8 @@ ELIXIR_SPEC = TreeSitterLangSpec(
             target: (identifier) @_kind
             (arguments
                 (call
-                    target: (identifier) @name))) @func
+                    target: (identifier) @name))
+            (do_block) @body) @func
     """,
     comment_node_types=frozenset({"comment"}),
     import_query="""
@@ -29,8 +30,15 @@ ELIXIR_SPEC = TreeSitterLangSpec(
                 (alias) @path)) @import
     """,
     resolve_import=resolve_elixir_import,
+    class_query="""
+        (call
+            target: (identifier) @_defmodule
+            (arguments
+                (alias) @name)
+            (do_block) @body) @class
+    """,
     log_patterns=(
-        r"^\s*(?:IO\.puts|IO\.inspect|Logger\.)",
+        r"^\s*(?:IO\.puts|IO\.inspect|IO\.warn|Logger\.|dbg\()",
     ),
 )
 
