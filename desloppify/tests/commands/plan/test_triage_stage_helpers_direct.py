@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import desloppify.app.commands.plan.triage.stages.helpers as stage_helpers_mod
+import desloppify.app.commands.plan.triage.stages.flow_helpers as flow_stage_helpers_mod
 from desloppify.app.commands.plan.triage.helpers import inject_triage_stages
 from desloppify.engine._plan.constants import TRIAGE_STAGE_IDS
 
@@ -102,13 +103,19 @@ def test_unclustered_review_issues_uses_state_when_provided() -> None:
         "clusters": {
             "manual": {"auto": False, "issue_ids": ["review::clustered"]},
             "auto": {"auto": True, "issue_ids": ["review::auto"]},
-        }
+        },
+        "skipped": {
+            "review::skipped": {"kind": "permanent"},
+            "concerns::skipped": {"kind": "false_positive"},
+        },
     }
     state = {
         "issues": {
             "review::clustered": {"status": "open", "detector": "review"},
             "review::leftover": {"status": "open", "detector": "review"},
             "concerns::leftover": {"status": "open", "detector": "concerns"},
+            "review::skipped": {"status": "open", "detector": "review"},
+            "concerns::skipped": {"status": "open", "detector": "concerns"},
             "subjective_review::placeholder": {
                 "status": "open",
                 "detector": "subjective_review",
@@ -130,11 +137,17 @@ def test_unclustered_review_issues_falls_back_to_queue_scan() -> None:
             "workflow::score-checkpoint",
             "review::clustered",
             "review::leftover",
+            "review::skipped",
             "concerns::leftover",
+            "concerns::skipped",
             "structural::ignored",
         ],
         "clusters": {
             "manual": {"auto": False, "issue_ids": ["review::clustered"]}
+        },
+        "skipped": {
+            "review::skipped": {"kind": "permanent"},
+            "concerns::skipped": {"kind": "false_positive"},
         },
     }
 
@@ -160,3 +173,29 @@ def test_inject_triage_stages_keeps_workflow_prefix_ahead_of_triage() -> None:
         "workflow::create-plan",
     ]
     assert plan["queue_order"][2: 2 + len(TRIAGE_STAGE_IDS)] == list(TRIAGE_STAGE_IDS)
+
+
+def test_validate_stage_report_length_accepts_short_report_for_small_issue_count(capsys) -> None:
+    ok = flow_stage_helpers_mod.validate_stage_report_length(
+        report="x" * 50,
+        issue_count=3,
+        guidance="Add more detail.",
+    )
+
+    assert ok is True
+    assert capsys.readouterr().out == ""
+
+
+def test_validate_stage_report_length_requires_longer_report_for_larger_issue_count(
+    capsys,
+) -> None:
+    ok = flow_stage_helpers_mod.validate_stage_report_length(
+        report="x" * 80,
+        issue_count=4,
+        guidance="Add concrete evidence.",
+    )
+
+    assert ok is False
+    out = capsys.readouterr().out
+    assert "minimum 100" in out
+    assert "Add concrete evidence." in out

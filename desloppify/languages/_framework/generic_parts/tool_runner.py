@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import re
 import shlex
-import subprocess
+import subprocess  # nosec B404
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path

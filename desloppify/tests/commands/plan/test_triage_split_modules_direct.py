@@ -13,9 +13,12 @@ import desloppify.app.commands.plan.triage.confirmations.basic as confirmations_
 import desloppify.app.commands.plan.triage.confirmations.enrich as confirmations_enrich_mod
 import desloppify.app.commands.plan.triage.confirmations.organize as confirmations_organize_mod
 import desloppify.app.commands.plan.triage.display.layout as display_layout_mod
+import desloppify.app.commands.plan.triage.lifecycle as triage_lifecycle_mod
 import desloppify.app.commands.plan.triage.runner.codex_runner as codex_runner_mod
 import desloppify.app.commands.plan.triage.runner.orchestrator_claude as orchestrator_claude_mod
 import desloppify.app.commands.plan.triage.runner.orchestrator_codex_observe as orchestrator_observe_mod
+import desloppify.app.commands.plan.triage.runner.orchestrator_codex_pipeline_completion as orchestrator_pipeline_completion_mod
+import desloppify.app.commands.plan.triage.runner.orchestrator_codex_pipeline_context as orchestrator_pipeline_context_mod
 import desloppify.app.commands.plan.triage.runner.orchestrator_codex_pipeline as orchestrator_pipeline_mod
 import desloppify.app.commands.plan.triage.runner.orchestrator_codex_pipeline_execution as orchestrator_pipeline_execution_mod
 import desloppify.app.commands.plan.triage.runner.orchestrator_codex_sense as orchestrator_sense_mod
@@ -25,6 +28,33 @@ import desloppify.app.commands.plan.triage.validation.completion_stages as compl
 import desloppify.app.commands.plan.triage.validation.core as stage_validation_mod
 import desloppify.app.commands.plan.triage.validation.enrich_checks as enrich_checks_mod
 from desloppify.base.exception_sets import CommandError
+
+
+def _make_stage_context(
+    tmp_path: Path,
+    **overrides,
+) -> orchestrator_pipeline_context_mod.StageRunContext:
+    for dirname in ("prompts", "output", "logs"):
+        (tmp_path / dirname).mkdir(exist_ok=True)
+    defaults = {
+        "stage": "reflect",
+        "stage_start": time.monotonic(),
+        "args": argparse.Namespace(state=None),
+        "services": SimpleNamespace(load_plan=lambda: {"epic_triage_meta": {"triage_stages": {}}}),
+        "plan": {},
+        "triage_input": {},
+        "prior_reports": {},
+        "repo_root": tmp_path,
+        "prompts_dir": tmp_path / "prompts",
+        "output_dir": tmp_path / "output",
+        "logs_dir": tmp_path / "logs",
+        "cli_command": "/tmp/run_desloppify.sh",
+        "timeout_seconds": 60,
+        "dry_run": False,
+        "append_run_log": lambda _line: None,
+    }
+    defaults.update(overrides)
+    return orchestrator_pipeline_context_mod.StageRunContext(**defaults)
 
 
 def test_completion_policy_helpers_cover_success_and_fail_paths(monkeypatch, capsys) -> None:
@@ -109,9 +139,10 @@ def test_completion_stage_helpers_include_gate_and_auto_confirm_defaults(monkeyp
     )
 
     assert (
-        completion_stages_mod._auto_confirm_organize_for_complete(
+        completion_stages_mod._auto_confirm_stage_for_complete(
             plan=plan,
             stages={},
+            stage="organize",
             attestation=None,
         )
         is False
@@ -125,9 +156,10 @@ def test_completion_stage_helpers_include_gate_and_auto_confirm_defaults(monkeyp
         is False
     )
     assert (
-        completion_stages_mod._auto_confirm_sense_check_for_complete(
+        completion_stages_mod._auto_confirm_stage_for_complete(
             plan=plan,
             stages={},
+            stage="sense-check",
             attestation=None,
         )
         is False
@@ -196,33 +228,35 @@ def test_confirmation_modules_stage_presence_guards(capsys) -> None:
 
 
 def test_confirmation_pipeline_structures_enrich_level_results(monkeypatch) -> None:
+    import desloppify.app.commands.plan.triage.validation.enrich_quality as enrich_quality_mod
+
     monkeypatch.setattr(
-        stage_validation_mod,
+        enrich_quality_mod,
         "_underspecified_steps",
         lambda _plan: [("cluster-a", 2, 4)],
     )
     monkeypatch.setattr(
-        stage_validation_mod,
+        enrich_quality_mod,
         "_steps_with_bad_paths",
         lambda _plan, _root: [("cluster-a", 1, ["src/missing.py"])],
     )
     monkeypatch.setattr(
-        stage_validation_mod,
+        enrich_quality_mod,
         "_steps_without_effort",
         lambda _plan: [("cluster-a", 1, 4)],
     )
     monkeypatch.setattr(
-        stage_validation_mod,
+        enrich_quality_mod,
         "_steps_missing_issue_refs",
         lambda _plan: [("cluster-a", 3, 4)],
     )
     monkeypatch.setattr(
-        stage_validation_mod,
+        enrich_quality_mod,
         "_steps_with_vague_detail",
         lambda _plan, _root: [("cluster-a", 2, "Fix")],
     )
     monkeypatch.setattr(
-        stage_validation_mod,
+        enrich_quality_mod,
         "_steps_referencing_skipped_issues",
         lambda _plan: [("cluster-a", 2, ["review::a.py::id1"])],
     )
@@ -246,13 +280,15 @@ def test_confirmation_pipeline_structures_enrich_level_results(monkeypatch) -> N
 
 
 def test_confirmation_pipeline_can_skip_stale_issue_ref_warnings(monkeypatch) -> None:
-    monkeypatch.setattr(stage_validation_mod, "_underspecified_steps", lambda _plan: [])
-    monkeypatch.setattr(stage_validation_mod, "_steps_with_bad_paths", lambda _plan, _root: [])
-    monkeypatch.setattr(stage_validation_mod, "_steps_without_effort", lambda _plan: [])
-    monkeypatch.setattr(stage_validation_mod, "_steps_missing_issue_refs", lambda _plan: [])
-    monkeypatch.setattr(stage_validation_mod, "_steps_with_vague_detail", lambda _plan, _root: [])
+    import desloppify.app.commands.plan.triage.validation.enrich_quality as enrich_quality_mod
+
+    monkeypatch.setattr(enrich_quality_mod, "_underspecified_steps", lambda _plan: [])
+    monkeypatch.setattr(enrich_quality_mod, "_steps_with_bad_paths", lambda _plan, _root: [])
+    monkeypatch.setattr(enrich_quality_mod, "_steps_without_effort", lambda _plan: [])
+    monkeypatch.setattr(enrich_quality_mod, "_steps_missing_issue_refs", lambda _plan: [])
+    monkeypatch.setattr(enrich_quality_mod, "_steps_with_vague_detail", lambda _plan, _root: [])
     monkeypatch.setattr(
-        stage_validation_mod,
+        enrich_quality_mod,
         "_steps_referencing_skipped_issues",
         lambda _plan: [("cluster-a", 1, ["review::a.py::id1"])],
     )
@@ -317,7 +353,7 @@ def test_display_layout_renderers(monkeypatch, capsys) -> None:
     display_layout_mod.show_plan_summary(plan, state)
 
     out = capsys.readouterr().out
-    assert "Epic triage" in out
+    assert "Cluster triage" in out
     assert "stage-progress" in out
     assert "Review issues by dimension" in out
     assert "Coverage:" in out
@@ -333,32 +369,218 @@ def test_orchestrator_common_helpers(monkeypatch) -> None:
     stamp = orchestrator_common_mod.run_stamp()
     assert len(stamp) == 15
 
+
+def test_lifecycle_ensure_triage_started_handles_active_blocked_and_started() -> None:
     saved: list[dict] = []
     entries: list[tuple[str, dict]] = []
-    monkeypatch.setattr(orchestrator_common_mod, "has_triage_in_queue", lambda _plan: False)
-    monkeypatch.setattr(
-        orchestrator_common_mod,
-        "inject_triage_stages",
-        lambda plan: plan.setdefault("queue_order", []).append("triage::observe"),
-    )
-    plan = {"queue_order": []}
+    printed: list[tuple[str, str]] = []
+
     services = SimpleNamespace(
-        save_plan=lambda p: saved.append(p),
+        save_plan=lambda plan: saved.append(dict(plan)),
         append_log_entry=lambda _plan, action, **kwargs: entries.append((action, kwargs["detail"])),
     )
-    updated = orchestrator_common_mod.ensure_triage_started(plan, services, runner="codex")
-    assert "triage::observe" in updated["queue_order"]
+
+    active_plan = {"epic_triage_meta": {"triage_start_blocked": "stale"}}
+    outcome = triage_lifecycle_mod.ensure_triage_started(
+        active_plan,
+        services=services,
+        deps=triage_lifecycle_mod.TriageLifecycleDeps(
+            has_triage_in_queue=lambda _plan: True,
+            colorize=lambda text, style: printed.append((text, style)) or text,
+        ),
+    )
+    assert outcome.status == "already_active"
+    assert active_plan["epic_triage_meta"] == {}
+
+    blocked_plan = {"epic_triage_meta": {}}
+    blocked = triage_lifecycle_mod.ensure_triage_started(
+        blocked_plan,
+        services=services,
+        state={"issues": {}},
+        deps=triage_lifecycle_mod.TriageLifecycleDeps(
+            has_triage_in_queue=lambda _plan: False,
+            decide_triage_start=lambda *_a, **_k: SimpleNamespace(
+                action="defer", reason="objective_backlog"
+            ),
+            colorize=lambda text, style: printed.append((text, style)) or text,
+        ),
+    )
+    assert blocked.status == "blocked"
+    assert blocked_plan["epic_triage_meta"]["triage_start_blocked"] == "objective_backlog"
     assert saved
-    assert entries == [
-        (
-            "triage_auto_start",
-            {
-                "source": "runner_auto_start",
-                "runner": "codex",
-                "injected_stage_ids": list(orchestrator_common_mod.TRIAGE_STAGE_IDS),
-            },
-        )
-    ]
+
+    started_plan = {"epic_triage_meta": {"triage_start_blocked": "old"}}
+    injected: list[str] = []
+    started = triage_lifecycle_mod.ensure_triage_started(
+        started_plan,
+        services=services,
+        state={"issues": {}},
+        log_action="triage_start",
+        log_detail={"source": "test"},
+        start_message="started",
+        deps=triage_lifecycle_mod.TriageLifecycleDeps(
+            has_triage_in_queue=lambda _plan: False,
+            inject_triage_stages=lambda plan: injected.extend(
+                plan.setdefault("queue_order", ["triage::observe"])
+            ),
+            decide_triage_start=lambda *_a, **_k: SimpleNamespace(
+                action="start", reason="allowed"
+            ),
+            colorize=lambda text, style: printed.append((text, style)) or text,
+        ),
+    )
+    assert started.status == "started"
+    assert started_plan["epic_triage_meta"]["triage_stages"] == {}
+    assert "triage_start_blocked" not in started_plan["epic_triage_meta"]
+    assert injected == ["triage::observe"]
+    assert entries[-1] == (
+        "triage_start",
+        {
+            "source": "test",
+            "injected_stage_ids": list(triage_lifecycle_mod.TRIAGE_STAGE_IDS),
+        },
+    )
+
+
+def test_pipeline_context_helpers_load_prior_reports_directly() -> None:
+    plan = {
+        "epic_triage_meta": {
+            "triage_stages": {
+                "observe": {"report": "observe report"},
+                "reflect": {"report": "reflect report"},
+                "organize": {"report": ""},
+            }
+        }
+    }
+
+    prior = orchestrator_pipeline_context_mod.load_prior_reports_from_plan(
+        plan,
+        ["observe", "reflect", "organize"],
+    )
+
+    assert prior == {"observe": "observe report", "reflect": "reflect report"}
+
+
+def test_pipeline_completion_helpers_cover_success_and_failure_paths(
+    monkeypatch,
+    capsys,
+) -> None:
+    assert orchestrator_pipeline_completion_mod.is_full_stage_run(
+        list(orchestrator_pipeline_completion_mod.STAGES)
+    )
+    assert not orchestrator_pipeline_completion_mod.is_full_stage_run(["observe"])
+    assert orchestrator_pipeline_completion_mod.all_stage_results_successful(
+        stages_to_run=["observe", "reflect"],
+        stage_results={"observe": {"status": "confirmed"}, "reflect": {"status": "skipped"}},
+    )
+    assert not orchestrator_pipeline_completion_mod.all_stage_results_successful(
+        stages_to_run=["observe"],
+        stage_results={"observe": {"status": "failed"}},
+    )
+
+    orchestrator_pipeline_completion_mod.print_not_finalized_message("manual")
+    out = capsys.readouterr().out
+    assert "triage not finalized (manual)" in out
+
+    plan_store = {"epic_triage_meta": {"triage_stages": {"observe": {"report": "observe"}}}}
+    monkeypatch.setattr(
+        orchestrator_pipeline_completion_mod,
+        "validate_stage",
+        lambda *_a, **_k: (True, ""),
+    )
+    monkeypatch.setattr(
+        orchestrator_pipeline_completion_mod,
+        "build_auto_attestation",
+        lambda *_a, **_k: "attestation text",
+    )
+
+    def fake_confirm(_args, *, services):
+        plan_store["epic_triage_meta"]["triage_stages"]["observe"]["confirmed_at"] = "now"
+
+    monkeypatch.setattr(
+        "desloppify.app.commands.plan.triage.confirmations.router.cmd_confirm_stage",
+        fake_confirm,
+    )
+
+    ok, result, report = orchestrator_pipeline_completion_mod.validate_and_confirm_stage(
+        stage="observe",
+        args=argparse.Namespace(state=None),
+        services=SimpleNamespace(load_plan=lambda: plan_store),
+        triage_input=SimpleNamespace(),
+        state={},
+        repo_root=Path("."),
+        stage_start=time.monotonic(),
+        append_run_log=lambda _line: None,
+    )
+    assert ok is True
+    assert result["status"] == "confirmed"
+    assert report == "observe"
+
+    monkeypatch.setattr(
+        orchestrator_pipeline_completion_mod,
+        "validate_stage",
+        lambda *_a, **_k: (False, "broken"),
+    )
+    ok, result, report = orchestrator_pipeline_completion_mod.validate_and_confirm_stage(
+        stage="reflect",
+        args=argparse.Namespace(state=None),
+        services=SimpleNamespace(load_plan=lambda: plan_store),
+        triage_input=SimpleNamespace(),
+        state={},
+        repo_root=Path("."),
+        stage_start=time.monotonic(),
+        append_run_log=lambda _line: None,
+    )
+    assert ok is False
+    assert result["status"] == "validation_failed"
+    assert report == ""
+
+    strategy = orchestrator_pipeline_completion_mod.build_completion_strategy(
+        {
+            "observe": {"report": "a" * 120},
+            "reflect": {"report": "b" * 120},
+        }
+    )
+    assert "[observe]" in strategy
+    assert len(strategy) >= 200
+
+
+def test_complete_pipeline_uses_completion_command(monkeypatch) -> None:
+    state = {"completed": False}
+    plan_before = {"epic_triage_meta": {}}
+
+    monkeypatch.setattr(
+        orchestrator_pipeline_completion_mod,
+        "build_auto_attestation",
+        lambda *_a, **_k: "attestation text",
+    )
+
+    def fake_complete(_args, *, services):
+        state["completed"] = True
+
+    monkeypatch.setattr(
+        "desloppify.app.commands.plan.triage.stages.completion._cmd_triage_complete",
+        fake_complete,
+    )
+
+    services = SimpleNamespace(
+        load_plan=lambda: {
+            "epic_triage_meta": (
+                {"last_completed_at": "2026-03-10T18:00:00+00:00"}
+                if state["completed"]
+                else {}
+            )
+        }
+    )
+
+    completed = orchestrator_pipeline_completion_mod.complete_pipeline(
+        args=argparse.Namespace(state=None),
+        services=services,
+        plan=plan_before,
+        strategy="do it",
+        triage_input=SimpleNamespace(),
+    )
+    assert completed is True
 
 
 def test_orchestrator_claude_prints_instructions(monkeypatch, capsys) -> None:
@@ -820,22 +1042,14 @@ def test_execute_stage_records_output_only_reflect_report(monkeypatch, tmp_path:
         ),
     )
 
-    status, result = orchestrator_pipeline_mod._execute_stage(
-        stage="reflect",
-        args=argparse.Namespace(state=None),
-        services=SimpleNamespace(load_plan=lambda: plan_store),
-        plan={},
-        si={},
-        prior_reports={},
-        repo_root=tmp_path,
-        prompts_dir=tmp_path / "prompts",
-        output_dir=tmp_path / "output",
-        logs_dir=tmp_path / "logs",
-        cli_command="/tmp/run_desloppify.sh",
-        stage_start=time.monotonic(),
-        timeout_seconds=60,
-        dry_run=False,
-        append_run_log=lambda _line: None,
+    status, result = orchestrator_pipeline_execution_mod.execute_stage(
+        _make_stage_context(
+            tmp_path,
+            stage="reflect",
+            services=SimpleNamespace(load_plan=lambda: plan_store),
+        ),
+        handlers=orchestrator_pipeline_mod._STAGE_HANDLERS,
+        dependencies=orchestrator_pipeline_mod._stage_execution_dependencies(),
     )
 
     assert status == "ready"
@@ -863,22 +1077,15 @@ def test_execute_stage_uses_self_record_mode_for_organize(monkeypatch, tmp_path:
     monkeypatch.setattr(orchestrator_pipeline_mod, "build_stage_prompt", fake_build_stage_prompt)
     monkeypatch.setattr(orchestrator_pipeline_mod, "run_triage_stage", fake_run_triage_stage)
 
-    status, result = orchestrator_pipeline_mod._execute_stage(
-        stage="organize",
-        args=argparse.Namespace(state=None),
-        services=SimpleNamespace(),
-        plan={},
-        si={},
-        prior_reports={"reflect": "report"},
-        repo_root=tmp_path,
-        prompts_dir=tmp_path / "prompts",
-        output_dir=tmp_path / "output",
-        logs_dir=tmp_path / "logs",
-        cli_command="/tmp/run_desloppify.sh",
-        stage_start=time.monotonic(),
-        timeout_seconds=60,
-        dry_run=False,
-        append_run_log=lambda _line: None,
+    status, result = orchestrator_pipeline_execution_mod.execute_stage(
+        _make_stage_context(
+            tmp_path,
+            stage="organize",
+            services=SimpleNamespace(),
+            prior_reports={"reflect": "report"},
+        ),
+        handlers=orchestrator_pipeline_mod._STAGE_HANDLERS,
+        dependencies=orchestrator_pipeline_mod._stage_execution_dependencies(),
     )
 
     assert status == "ready"
@@ -888,43 +1095,48 @@ def test_execute_stage_uses_self_record_mode_for_organize(monkeypatch, tmp_path:
     assert captured["cli_command"] == "/tmp/run_desloppify.sh"
 
 
-def test_execute_stage_blocks_organize_when_reflect_accounting_is_invalid(
-    monkeypatch,
+def test_execute_stage_allows_organize_dry_run_without_persisted_reflect(
     tmp_path: Path,
 ) -> None:
     for dirname in ("prompts", "output", "logs"):
         (tmp_path / dirname).mkdir()
 
-    monkeypatch.setattr(
-        orchestrator_pipeline_mod,
-        "_validate_reflect_issue_accounting",
-        lambda **_kwargs: (False, set(), ["review::x::deadbeef"], []),
+    dependencies = orchestrator_pipeline_execution_mod.StageExecutionDependencies(
+        build_stage_prompt=lambda *_args, **_kwargs: "organize prompt",
+        run_triage_stage=orchestrator_pipeline_mod.run_triage_stage,
+        read_stage_output=orchestrator_pipeline_execution_mod.read_stage_output,
+        analyze_reflect_issue_accounting=orchestrator_pipeline_mod._analyze_reflect_issue_accounting,
+        validate_reflect_issue_accounting=lambda **_kwargs: (
+            False,
+            set(),
+            ["review::x::deadbeef"],
+            [],
+        ),
     )
 
-    status, result = orchestrator_pipeline_mod._execute_stage(
-        stage="organize",
-        args=argparse.Namespace(state=None),
-        services=SimpleNamespace(),
-        plan={
-            "epic_triage_meta": {
-                "triage_stages": {"reflect": {"report": "bad reflect blueprint"}}
-            }
-        },
-        si=SimpleNamespace(open_issues={"review::x::deadbeef": {}}),
-        prior_reports={"reflect": "bad reflect blueprint"},
-        repo_root=tmp_path,
-        prompts_dir=tmp_path / "prompts",
-        output_dir=tmp_path / "output",
-        logs_dir=tmp_path / "logs",
-        cli_command="/tmp/run_desloppify.sh",
-        stage_start=time.monotonic(),
-        timeout_seconds=60,
-        dry_run=False,
-        append_run_log=lambda _line: None,
+    status, result = orchestrator_pipeline_execution_mod.execute_stage(
+        _make_stage_context(
+            tmp_path,
+            stage="organize",
+            dry_run=True,
+            services=SimpleNamespace(),
+            plan={
+                "epic_triage_meta": {
+                    "triage_stages": {"reflect": {"report": "bad reflect blueprint"}}
+                }
+            },
+            triage_input=SimpleNamespace(
+                open_issues={"review::x::deadbeef": {}},
+                new_since_last=set(),
+            ),
+            prior_reports={"reflect": "bad reflect blueprint"},
+        ),
+        handlers=orchestrator_pipeline_mod._STAGE_HANDLERS,
+        dependencies=dependencies,
     )
 
-    assert status == "failed"
-    assert result["error"].startswith("reflect_accounting_invalid")
+    assert status == "dry_run"
+    assert result == {"status": "dry_run"}
 
 
 def test_execute_stage_blocks_sense_check_when_enrich_is_not_confirmed(
@@ -944,38 +1156,74 @@ def test_execute_stage_blocks_sense_check_when_enrich_is_not_confirmed(
     )
 
     log_lines: list[str] = []
-    status, result = orchestrator_pipeline_mod._execute_stage(
-        stage="sense-check",
-        args=argparse.Namespace(state=None),
-        services=SimpleNamespace(load_plan=lambda: {"epic_triage_meta": {"triage_stages": {}}}),
-        plan={
-            "epic_triage_meta": {
-                "triage_stages": {
-                    "enrich": {
-                        "report": "enrich report exists but has not been confirmed yet",
+    status, result = orchestrator_pipeline_execution_mod.execute_stage(
+        _make_stage_context(
+            tmp_path,
+            stage="sense-check",
+            services=SimpleNamespace(load_plan=lambda: {"epic_triage_meta": {"triage_stages": {}}}),
+            plan={
+                "epic_triage_meta": {
+                    "triage_stages": {
+                        "enrich": {
+                            "report": "enrich report exists but has not been confirmed yet",
+                        }
                     }
                 }
-            }
-        },
-        si=SimpleNamespace(open_issues={}),
-        prior_reports={"enrich": "enrich report exists but has not been confirmed yet"},
-        repo_root=tmp_path,
-        prompts_dir=tmp_path / "prompts",
-        output_dir=tmp_path / "output",
-        logs_dir=tmp_path / "logs",
-        cli_command="/tmp/run_desloppify.sh",
-        stage_start=time.monotonic(),
-        timeout_seconds=60,
-        dry_run=False,
-        append_run_log=log_lines.append,
+            },
+            triage_input=SimpleNamespace(open_issues={}),
+            prior_reports={"enrich": "enrich report exists but has not been confirmed yet"},
+            append_run_log=log_lines.append,
+        ),
+        handlers=orchestrator_pipeline_mod._STAGE_HANDLERS,
+        dependencies=orchestrator_pipeline_mod._stage_execution_dependencies(),
     )
 
     assert status == "failed"
     assert result["error"] == "enrich_not_confirmed"
-    assert any(
-        line == "stage-preflight-failed stage=sense-check reason=enrich_not_confirmed"
-        for line in log_lines
+
+
+def test_execute_stage_blocks_organize_when_reflect_accounting_is_invalid_in_real_run(
+    tmp_path: Path,
+) -> None:
+    for dirname in ("prompts", "output", "logs"):
+        (tmp_path / dirname).mkdir()
+
+    dependencies = orchestrator_pipeline_execution_mod.StageExecutionDependencies(
+        build_stage_prompt=orchestrator_pipeline_mod.build_stage_prompt,
+        run_triage_stage=orchestrator_pipeline_mod.run_triage_stage,
+        read_stage_output=orchestrator_pipeline_execution_mod.read_stage_output,
+        analyze_reflect_issue_accounting=orchestrator_pipeline_mod._analyze_reflect_issue_accounting,
+        validate_reflect_issue_accounting=lambda **_kwargs: (
+            False,
+            set(),
+            ["review::x::deadbeef"],
+            [],
+        ),
     )
+
+    status, result = orchestrator_pipeline_execution_mod.execute_stage(
+        _make_stage_context(
+            tmp_path,
+            stage="organize",
+            dry_run=False,
+            services=SimpleNamespace(),
+            plan={
+                "epic_triage_meta": {
+                    "triage_stages": {"reflect": {"report": "bad reflect blueprint"}}
+                }
+            },
+            triage_input=SimpleNamespace(
+                open_issues={"review::x::deadbeef": {}},
+                new_since_last=set(),
+            ),
+            prior_reports={"reflect": "bad reflect blueprint"},
+        ),
+        handlers=orchestrator_pipeline_mod._STAGE_HANDLERS,
+        dependencies=dependencies,
+    )
+
+    assert status == "failed"
+    assert result["error"].startswith("reflect_accounting_invalid")
 
 
 def test_repair_reflect_report_if_needed_repairs_missing_hashes(monkeypatch, tmp_path: Path) -> None:
@@ -994,26 +1242,22 @@ Cluster "alpha" owns the actual code changes.
 1. alpha
 """
 
-    monkeypatch.setattr(
-        orchestrator_pipeline_mod,
-        "run_triage_stage",
-        lambda **_kwargs: codex_runner_mod.TriageStageRunResult(exit_code=0),
-    )
-    monkeypatch.setattr(orchestrator_pipeline_mod, "build_stage_prompt", lambda *a, **k: "repair prompt")
-    monkeypatch.setattr(
-        orchestrator_pipeline_mod,
-        "_read_stage_output",
-        lambda _path: repaired_report,
+    dependencies = orchestrator_pipeline_execution_mod.StageExecutionDependencies(
+        build_stage_prompt=lambda *_a, **_k: "repair prompt",
+        run_triage_stage=lambda **_kwargs: codex_runner_mod.TriageStageRunResult(exit_code=0),
+        read_stage_output=lambda _path: repaired_report,
+        analyze_reflect_issue_accounting=orchestrator_pipeline_mod._analyze_reflect_issue_accounting,
+        validate_reflect_issue_accounting=orchestrator_pipeline_mod._validate_reflect_issue_accounting,
     )
 
-    report, error = orchestrator_pipeline_mod._repair_reflect_report_if_needed(
+    report, error = orchestrator_pipeline_execution_mod.repair_reflect_report_if_needed(
         report=(
             "## Coverage Ledger\n"
             '- aaaabbbb -> cluster "alpha"\n\n'
             "## Cluster Blueprint\n"
             "Cluster alpha is the main work."
         ),
-        si=SimpleNamespace(
+        triage_input=SimpleNamespace(
             open_issues={
                 "review::src/a.ts::alpha::aaaabbbb": {},
                 "review::src/b.ts::beta::ccccdddd": {},
@@ -1027,10 +1271,143 @@ Cluster "alpha" owns the actual code changes.
         cli_command="/tmp/run_desloppify.sh",
         timeout_seconds=30,
         append_run_log=lambda _line: None,
+        dependencies=dependencies,
     )
 
     assert error is None
     assert report == repaired_report
+
+
+def test_pipeline_execution_helpers_cover_leaf_paths(monkeypatch, tmp_path: Path) -> None:
+    missing_output = orchestrator_pipeline_execution_mod.read_stage_output(
+        tmp_path / "missing.txt"
+    )
+    assert missing_output == ""
+
+    report_file = tmp_path / "report.txt"
+    report_file.write_text("  report text  ", encoding="utf-8")
+    assert orchestrator_pipeline_execution_mod.read_stage_output(report_file) == "report text"
+
+    deps = orchestrator_pipeline_execution_mod.default_stage_execution_dependencies()
+    assert callable(deps.build_stage_prompt)
+    assert callable(deps.run_triage_stage)
+
+    assert orchestrator_pipeline_execution_mod.stage_report_recorded(
+        {"epic_triage_meta": {"triage_stages": {"reflect": {"report": "ok"}}}},
+        "reflect",
+    )
+
+    log_lines: list[str] = []
+    ok, reason = orchestrator_pipeline_execution_mod.preflight_stage(
+        stage="sense-check",
+        plan={"epic_triage_meta": {"triage_stages": {}}},
+        triage_input=SimpleNamespace(open_issues={}),
+        dry_run=False,
+        append_run_log=log_lines.append,
+        validate_reflect_issue_accounting=lambda **_kwargs: (True, set(), [], []),
+    )
+    assert ok is False
+    assert reason == "enrich_not_confirmed"
+    assert log_lines == [
+        "stage-preflight-failed stage=sense-check reason=enrich_not_confirmed"
+    ]
+
+    prompt = orchestrator_pipeline_execution_mod.build_reflect_repair_prompt(
+        triage_input=SimpleNamespace(open_issues={}),
+        prior_reports={},
+        repo_root=Path("."),
+        cli_command="desloppify",
+        original_report="old report",
+        missing_ids=["review::src/a.py::deadbeef"],
+        duplicate_ids=["review::src/b.py::facefeed"],
+        build_stage_prompt_fn=lambda *_a, **_k: "base prompt",
+    )
+    assert "Missing hashes: deadbeef" in prompt
+    assert "Duplicated hashes: facefeed" in prompt
+    assert "Previous Reflect Report" in prompt
+
+    ok, reason = orchestrator_pipeline_execution_mod.preflight_stage(
+        stage="organize",
+        plan={"epic_triage_meta": {"triage_stages": {}}},
+        triage_input=SimpleNamespace(open_issues={"review::x::deadbeef": {}}),
+        dry_run=True,
+        append_run_log=log_lines.append,
+        validate_reflect_issue_accounting=lambda **_kwargs: (
+            False,
+            set(),
+            ["review::x::deadbeef"],
+            [],
+        ),
+    )
+    assert ok is True
+    assert reason is None
+
+    context = orchestrator_pipeline_context_mod.StageRunContext(
+        stage="observe",
+        stage_start=time.monotonic(),
+        args=argparse.Namespace(state=None),
+        services=SimpleNamespace(load_plan=lambda: {}),
+        plan={"epic_triage_meta": {"triage_stages": {"observe": {"report": "done"}}}},
+        triage_input=SimpleNamespace(),
+        prior_reports={},
+        repo_root=tmp_path,
+        prompts_dir=tmp_path / "prompts",
+        output_dir=tmp_path / "output",
+        logs_dir=tmp_path / "logs",
+        cli_command="/tmp/run.sh",
+        timeout_seconds=60,
+        dry_run=True,
+        append_run_log=lambda _line: None,
+    )
+    context.prompts_dir.mkdir()
+    context.output_dir.mkdir()
+    context.logs_dir.mkdir()
+
+    status, result, handled = orchestrator_pipeline_execution_mod._execute_parallel_stage(
+        context=context,
+        stage="observe",
+        handler=orchestrator_pipeline_execution_mod.StageHandler(
+            run_parallel=lambda _context: codex_runner_mod.TriageStageRunResult(
+                exit_code=0,
+                merged_output="parallel report",
+            ),
+            record_report=lambda report, _args, _services: report == "parallel report",
+        ),
+    )
+    assert (status, result, handled) == ("ready", {}, True)
+
+    prompt_text, stages_data = orchestrator_pipeline_execution_mod._build_subprocess_prompt(
+        context=context,
+        stage="observe",
+        prompt_mode="output_only",
+        dependencies=orchestrator_pipeline_execution_mod.StageExecutionDependencies(
+            build_stage_prompt=lambda *_a, **_k: "prompt body",
+            run_triage_stage=lambda **_kwargs: codex_runner_mod.TriageStageRunResult(exit_code=0),
+            read_stage_output=lambda _path: "",
+            analyze_reflect_issue_accounting=lambda **_kwargs: (set(), [], []),
+            validate_reflect_issue_accounting=lambda **_kwargs: (True, set(), [], []),
+        ),
+    )
+    assert prompt_text == "prompt body"
+    assert stages_data == {"observe": {"report": "done"}}
+    assert (context.prompts_dir / "observe.md").exists()
+
+    status, result, output_file, elapsed = orchestrator_pipeline_execution_mod._run_subprocess_stage(
+        context=context,
+        stage="observe",
+        prompt="prompt body",
+        dependencies=orchestrator_pipeline_execution_mod.StageExecutionDependencies(
+            build_stage_prompt=lambda *_a, **_k: "prompt body",
+            run_triage_stage=lambda **_kwargs: codex_runner_mod.TriageStageRunResult(exit_code=0),
+            read_stage_output=lambda _path: "",
+            analyze_reflect_issue_accounting=lambda **_kwargs: (set(), [], []),
+            validate_reflect_issue_accounting=lambda **_kwargs: (True, set(), [], []),
+        ),
+    )
+    assert status == "dry_run"
+    assert result == {"status": "dry_run"}
+    assert output_file is None
+    assert elapsed is None
 
 
 def test_execute_stage_fails_when_handler_does_not_persist_stage(monkeypatch, tmp_path: Path) -> None:
@@ -1052,22 +1429,17 @@ def test_execute_stage_fails_when_handler_does_not_persist_stage(monkeypatch, tm
 
     services = SimpleNamespace(load_plan=lambda: {"epic_triage_meta": {"triage_stages": {}}})
 
-    status, result = orchestrator_pipeline_mod._execute_stage(
-        stage="reflect",
-        args=argparse.Namespace(state=None),
-        services=services,
-        plan={"epic_triage_meta": {"triage_stages": {"observe": {"report": "ok"}}}},
-        si=SimpleNamespace(open_issues={}),
-        prior_reports={"observe": "ok"},
-        repo_root=tmp_path,
-        prompts_dir=tmp_path / "prompts",
-        output_dir=tmp_path / "output",
-        logs_dir=tmp_path / "logs",
-        cli_command="/tmp/run_desloppify.sh",
-        stage_start=time.monotonic(),
-        timeout_seconds=60,
-        dry_run=False,
-        append_run_log=lambda _line: None,
+    status, result = orchestrator_pipeline_execution_mod.execute_stage(
+        _make_stage_context(
+            tmp_path,
+            stage="reflect",
+            services=services,
+            plan={"epic_triage_meta": {"triage_stages": {"observe": {"report": "ok"}}}},
+            triage_input=SimpleNamespace(open_issues={}),
+            prior_reports={"observe": "ok"},
+        ),
+        handlers=orchestrator_pipeline_mod._STAGE_HANDLERS,
+        dependencies=orchestrator_pipeline_mod._stage_execution_dependencies(),
     )
 
     assert status == "failed"
@@ -1084,8 +1456,8 @@ def test_run_codex_pipeline_raises_on_stage_failure(monkeypatch, tmp_path: Path)
     )
     monkeypatch.setattr(
         orchestrator_pipeline_mod,
-        "_execute_stage",
-        lambda **_kwargs: ("failed", {"status": "failed", "error": "boom"}),
+        "execute_stage_impl",
+        lambda *_args, **_kwargs: ("failed", {"status": "failed", "error": "boom"}),
     )
 
     services = SimpleNamespace(

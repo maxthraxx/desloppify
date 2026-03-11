@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from desloppify.engine._plan.operations.lifecycle import clear_focus_if_cluster_empty
 from desloppify.engine._plan.operations.queue import move_items
 from desloppify.engine._plan.schema import Cluster, PlanModel, ensure_plan_defaults
 from desloppify.engine._state.schema import utc_now
@@ -96,6 +97,7 @@ def remove_from_cluster(
         cluster["user_modified"] = True
 
     cluster["updated_at"] = now
+    clear_focus_if_cluster_empty(plan)
     return count
 
 

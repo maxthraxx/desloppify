@@ -62,7 +62,7 @@ def test_build_refactor_entry_handles_special_detectors(monkeypatch) -> None:
         lambda _detector, _count: 0.8,
     )
     assert subjective["command"] == "desloppify review --prepare"
-    assert "design review" in subjective["description"]
+    assert "subjective dimension" in subjective["description"]
 
     review = routing_mod._build_refactor_entry(
         "review",

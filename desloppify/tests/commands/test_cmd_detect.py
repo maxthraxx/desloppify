@@ -145,6 +145,28 @@ class TestCmdDetect:
         assert len(captured_args) == 1
         assert captured_args[0].threshold == 0.8
 
+    def test_complexity_threshold_default(self, monkeypatch):
+        """When detector is 'complexity' and threshold is None, use lang.complexity_threshold."""
+        captured_args = []
+
+        class FakeLang(_FakeLangBase):
+            name = "typescript"
+            detect_commands = {"complexity": lambda a: captured_args.append(a)}
+            large_threshold = 300
+            complexity_threshold = 17
+
+        monkeypatch.setattr(detect_mod, "resolve_lang", lambda args: FakeLang())
+
+        class FakeArgs:
+            detector = "complexity"
+            lang = "typescript"
+            path = "."
+            threshold = None
+
+        cmd_detect(FakeArgs())
+        assert len(captured_args) == 1
+        assert captured_args[0].threshold == 17
+
     def test_explicit_threshold_not_overridden(self, monkeypatch):
         """When user provides --threshold, it should not be overridden."""
         captured_args = []
@@ -164,6 +186,27 @@ class TestCmdDetect:
 
         cmd_detect(FakeArgs())
         assert captured_args[0].threshold == 200
+
+    def test_explicit_complexity_threshold_not_overridden(self, monkeypatch):
+        """An explicit complexity threshold should flow through unchanged."""
+        captured_args = []
+
+        class FakeLang(_FakeLangBase):
+            name = "typescript"
+            detect_commands = {"complexity": lambda a: captured_args.append(a)}
+            large_threshold = 500
+            complexity_threshold = 17
+
+        monkeypatch.setattr(detect_mod, "resolve_lang", lambda args: FakeLang())
+
+        class FakeArgs:
+            detector = "complexity"
+            lang = "typescript"
+            path = "."
+            threshold = 20
+
+        cmd_detect(FakeArgs())
+        assert captured_args[0].threshold == 20
 
     def test_hyphen_alias_resolves_to_underscore_key(self, monkeypatch):
         """Hyphenated detector input resolves to underscore command key."""

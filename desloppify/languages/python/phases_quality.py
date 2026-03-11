@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from desloppify import state as state_mod
 from desloppify.base.output.terminal import log
+from desloppify.engine._state.filtering import make_issue
 from desloppify.engine.policy.zones import adjust_potential, filter_entries
 from desloppify.languages._framework.issue_factories import make_smell_issues
 from desloppify.languages._framework.base.types import LangRuntimeContract
@@ -18,7 +18,7 @@ from desloppify.languages.python.detectors import (
 )
 from desloppify.languages.python.detectors import smells as smells_detector_mod
 from desloppify.languages.python.detectors.ruff_smells import detect_with_ruff_smells
-from desloppify.state import Issue
+from desloppify.state_io import Issue
 
 
 def phase_smells(path: Path, lang: LangRuntimeContract) -> tuple[list[Issue], dict[str, int]]:
@@ -41,7 +41,7 @@ def phase_mutable_state(path: Path, lang: LangRuntimeContract) -> tuple[list[Iss
     results = []
     for entry in entries:
         results.append(
-            state_mod.make_issue(
+            make_issue(
                 "global_mutable_config",
                 entry["file"],
                 entry["name"],
@@ -71,7 +71,7 @@ def phase_layer_violation(path: Path, lang: LangRuntimeContract) -> tuple[list[I
     results = []
     for entry in entries:
         results.append(
-            state_mod.make_issue(
+            make_issue(
                 "layer_violation",
                 entry["file"],
                 f"{entry['source_pkg']}::{entry['target_pkg']}",
@@ -99,7 +99,7 @@ def phase_dict_keys(path: Path, lang: LangRuntimeContract) -> tuple[list[Issue],
     results = []
     for entry in flow_entries:
         results.append(
-            state_mod.make_issue(
+            make_issue(
                 "dict_keys",
                 entry["file"],
                 f"{entry['kind']}::{entry['variable']}::{entry['key']}"
@@ -121,7 +121,7 @@ def phase_dict_keys(path: Path, lang: LangRuntimeContract) -> tuple[list[Issue],
     drift_entries = filter_entries(lang.zone_map, drift_entries, "dict_keys")
     for entry in drift_entries:
         results.append(
-            state_mod.make_issue(
+            make_issue(
                 "dict_keys",
                 entry["file"],
                 f"schema_drift::{entry['key']}::{entry['line']}",

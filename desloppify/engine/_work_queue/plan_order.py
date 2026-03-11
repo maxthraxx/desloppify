@@ -11,7 +11,15 @@ from desloppify.engine.plan_ops import (
     get_issue_override,
 )
 from desloppify.engine._work_queue.types import WorkQueueItem
-from desloppify.state import StateModel
+from desloppify.state_io import StateModel
+
+
+def _cluster_issue_ids(cluster: dict[str, Any]) -> list[str]:
+    """Return canonical cluster members after plan-load normalization."""
+    issue_ids = cluster.get("issue_ids", [])
+    if not isinstance(issue_ids, list):
+        return []
+    return [issue_id for issue_id in issue_ids if isinstance(issue_id, str) and issue_id]
 
 
 def new_item_ids(state: StateModel) -> set[str]:
@@ -48,7 +56,7 @@ def enrich_plan_metadata(items: list[WorkQueueItem], plan: dict) -> None:
             item["plan_cluster"] = {
                 "name": cluster_name,
                 "description": cluster_data.get("description"),
-                "total_items": len(cluster_data.get("issue_ids", [])),
+                "total_items": len(_cluster_issue_ids(cluster_data)),
                 "action_steps": cluster_data.get("action_steps") or [],
             }
 
@@ -68,11 +76,13 @@ def stamp_plan_sort_keys(
     subjective_defer_meta = plan.get("subjective_defer_meta", {})
     if not isinstance(subjective_defer_meta, dict):
         subjective_defer_meta = {}
-    force_visible_ids = {
+    normalized_force_visible_ids = sorted({
         str(fid).strip()
         for fid in subjective_defer_meta.get("force_visible_ids", [])
         if str(fid).strip()
-    }
+    })
+    subjective_defer_meta["force_visible_ids"] = normalized_force_visible_ids
+    force_visible_ids = set(normalized_force_visible_ids)
 
     position_map: dict[str, int] = {}
     for idx, issue_id in enumerate(queue_order):
@@ -120,7 +130,7 @@ def filter_cluster_focus(
         return items
     clusters: dict = plan.get("clusters", {})
     cluster_data = clusters.get(effective_cluster, {})
-    cluster_member_ids = set(cluster_data.get("issue_ids", []))
+    cluster_member_ids = set(_cluster_issue_ids(cluster_data))
     if not cluster_member_ids:
         return items
     return [item for item in items if item["id"] in cluster_member_ids]
@@ -167,7 +177,7 @@ def _build_cluster_meta(
             action_type = "refactor"
 
     stored_desc = cluster_data.get("description") or ""
-    total_in_cluster = len(cluster_data.get("issue_ids", []))
+    total_in_cluster = len(_cluster_issue_ids(cluster_data))
     if stored_desc and total_in_cluster != len(members):
         summary = stored_desc.replace(str(total_in_cluster), str(len(members)))
     else:
@@ -218,7 +228,7 @@ def collapse_clusters(items: list[WorkQueueItem], plan: dict) -> list[WorkQueueI
 
     fid_to_cluster: dict[str, str] = {}
     for name, cluster in clusters.items():
-        for issue_id in cluster.get("issue_ids", []):
+        for issue_id in _cluster_issue_ids(cluster):
             # Manual clusters take priority when an issue is in both
             if issue_id not in fid_to_cluster or not cluster.get("auto"):
                 fid_to_cluster[issue_id] = name

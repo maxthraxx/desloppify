@@ -7,7 +7,8 @@ from pathlib import Path
 
 from desloppify.base.discovery.file_paths import rel
 from desloppify.base.enums import Tier
-from desloppify.state import Issue, make_issue
+from desloppify.engine._state.filtering import make_issue
+from desloppify.state_io import Issue
 
 
 def make_unused_issues(entries: list[dict], stderr_fn) -> list[Issue]:

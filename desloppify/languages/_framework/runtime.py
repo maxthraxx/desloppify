@@ -28,6 +28,7 @@ class LangRuntimeState:
     complexity_map: dict[str, float] = field(default_factory=dict)
     review_cache: dict[str, Any] = field(default_factory=dict)
     review_max_age_days: int = 30
+    subjective_assessments: dict[str, Any] = field(default_factory=dict)
     runtime_settings: dict[str, Any] = field(default_factory=dict)
     runtime_options: dict[str, Any] = field(default_factory=dict)
     large_threshold_override: int = 0
@@ -45,6 +46,7 @@ class LangRunOverrides:
     complexity_map: dict[str, float] | None = _UNSET
     review_cache: dict[str, Any] | None = _UNSET
     review_max_age_days: int | None = _UNSET
+    subjective_assessments: dict[str, Any] | None = _UNSET
     runtime_settings: dict[str, Any] | None = _UNSET
     runtime_options: dict[str, Any] | None = _UNSET
     large_threshold_override: int | None = _UNSET
@@ -59,6 +61,7 @@ _LANG_OVERRIDE_DICT_FIELDS = frozenset(
     {
         "complexity_map",
         "review_cache",
+        "subjective_assessments",
         "runtime_settings",
         "runtime_options",
         "detector_coverage",

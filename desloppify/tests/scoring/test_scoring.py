@@ -642,16 +642,16 @@ class TestComputeHealthBreakdown:
             },
         }
         breakdown = compute_health_breakdown(scores)
-        assert breakdown["mechanical_fraction"] == pytest.approx(0.4)
-        assert breakdown["subjective_fraction"] == pytest.approx(0.6)
-        assert breakdown["overall_score"] == pytest.approx(88.0, abs=0.1)
+        assert breakdown["mechanical_fraction"] == pytest.approx(0.25)
+        assert breakdown["subjective_fraction"] == pytest.approx(0.75)
+        assert breakdown["overall_score"] == pytest.approx(85.0, abs=0.1)
 
         rows = {entry["name"]: entry for entry in breakdown["entries"]}
         assert rows["High elegance"]["pool"] == "subjective"
-        assert rows["High elegance"]["overall_drag"] == pytest.approx(12.0, abs=0.1)
+        assert rows["High elegance"]["overall_drag"] == pytest.approx(15.0, abs=0.1)
         assert rows["Code quality"]["pool"] == "mechanical"
         assert rows["Code quality"]["overall_contribution"] == pytest.approx(
-            40.0, abs=0.1
+            25.0, abs=0.1
         )
 
     def test_mechanical_only_falls_back_to_full_mechanical_fraction(self):

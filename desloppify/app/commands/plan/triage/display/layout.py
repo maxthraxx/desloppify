@@ -24,6 +24,7 @@ from desloppify.base.output.terminal import colorize
 
 from .primitives import print_stage_progress
 from ..helpers import (
+    cluster_issue_ids,
     find_cluster_for,
     manual_clusters_with_issues,
     open_review_ids_from_state,
@@ -47,7 +48,7 @@ def _print_runner_paths(
 
 def print_dashboard_header(si: object, stages: dict, meta: dict, plan: dict) -> None:
     """Print the header section: title, open issues count, stage progress, overall status."""
-    print(colorize("  Epic triage", "bold"))
+    print(colorize("  Cluster triage", "bold"))
     print(colorize("  " + "─" * 60, "dim"))
     print(f"  Open review issues: {len(si.open_issues)}")
     print(colorize("  Goal: identify contradictions, resolve them, then group the coherent", "cyan"))
@@ -56,8 +57,9 @@ def print_dashboard_header(si: object, stages: dict, meta: dict, plan: dict) -> 
     print(colorize(f"    Codex:  {TRIAGE_CMD_RUN_STAGES_CODEX}", "dim"))
     print(colorize(f"    Claude: {TRIAGE_CMD_RUN_STAGES_CLAUDE}", "dim"))
     print(colorize("  Manual stage commands below are fallback/debug paths.", "dim"))
-    if si.existing_epics:
-        print(f"  Existing clusters: {len(si.existing_epics)}")
+    existing_clusters = getattr(si, "existing_clusters", getattr(si, "existing_epics", {}))
+    if existing_clusters:
+        print(f"  Existing clusters: {len(existing_clusters)}")
     if si.new_since_last:
         print(colorize(f"  New since last triage: {len(si.new_since_last)}", "yellow"))
         for fid in sorted(si.new_since_last):
@@ -83,11 +85,18 @@ def print_dashboard_header(si: object, stages: dict, meta: dict, plan: dict) -> 
         )
 
 
-def print_action_guidance(stages: dict, meta: dict, si: object, plan: dict) -> None:
-    """Print the 'What to do' action guidance section based on current stage."""
-    print()
+def _print_completed_guidance(si: object) -> None:
+    """Triage completed, no new issues — point to execution."""
+    print(colorize("  Triage complete. Executing current plan.", "green"))
+    print(colorize("    desloppify next", "dim"))
+    if si.resolved_since_last:
+        print(colorize(f"  {len(si.resolved_since_last)} issue(s) resolved since last triage.", "dim"))
+
+
+def _print_retriage_guidance(si: object, meta: dict) -> None:
+    """Triage completed but new issues arrived — offer re-triage paths."""
     has_only_additions = bool(si.new_since_last) and not si.resolved_since_last
-    if "observe" not in stages and has_only_additions and meta.get("strategy_summary"):
+    if has_only_additions and meta.get("strategy_summary"):
         print(colorize("  Two paths available:", "yellow"))
         print()
         print(colorize("  To reuse the existing enriched cluster plan (without rewriting clusters):", "cyan"))
@@ -97,14 +106,18 @@ def print_action_guidance(stages: dict, meta: dict, si: object, plan: dict) -> N
         print(f"    Codex:  {TRIAGE_CMD_RUN_STAGES_CODEX}")
         print(f"    Claude: {TRIAGE_CMD_RUN_STAGES_CLAUDE}")
         print(colorize(f"    Manual fallback: {TRIAGE_CMD_OBSERVE}", "dim"))
-    elif "observe" not in stages:
+    else:
         _print_runner_paths(
             only_stages="observe",
             manual_fallback=TRIAGE_CMD_OBSERVE,
             intro="  Next step:",
         )
         print(colorize("    (themes, root causes, contradictions between issues — NOT a list of IDs)", "dim"))
-    elif "reflect" not in stages:
+
+
+def _print_in_progress_guidance(stages: dict, meta: dict, plan: dict) -> None:
+    """Triage stages are active — guide through the stage chain."""
+    if "reflect" not in stages:
         _print_runner_paths(
             only_stages="reflect",
             manual_fallback=TRIAGE_CMD_REFLECT,
@@ -167,6 +180,27 @@ def print_action_guidance(stages: dict, meta: dict, si: object, plan: dict) -> N
         print(colorize('    (use --strategy "same" to keep existing strategy)', "dim"))
 
 
+def print_action_guidance(stages: dict, meta: dict, si: object, plan: dict) -> None:
+    """Print the 'What to do' action guidance section based on current stage.
+
+    Three states, matching the engine's canonical triage lifecycle:
+      1. Completed & current — triaged_ids present, no new issues
+      2. Needs (re-)triage — observe not done yet (fresh start or new issues)
+      3. In progress — observe done, working through remaining stages
+    """
+    print()
+    triage_has_run = bool(meta.get("triaged_ids"))
+    has_new_issues = bool(si.new_since_last)
+
+    if "observe" not in stages:
+        if triage_has_run and not has_new_issues:
+            _print_completed_guidance(si)
+        else:
+            _print_retriage_guidance(si, meta)
+    else:
+        _print_in_progress_guidance(stages, meta, plan)
+
+
 def print_prior_stage_reports(stages: dict) -> None:
     """Print prior stage reports (observe/reflect) as context for current action."""
     if "observe" in stages:
@@ -218,13 +252,17 @@ def print_issues_by_dimension(open_issues: dict) -> None:
 def show_plan_summary(plan: dict, state: dict) -> None:
     """Print a compact plan rendering: clusters + queue order + coverage."""
     clusters = plan.get("clusters", {})
-    active = {name: cluster for name, cluster in clusters.items() if cluster.get("issue_ids") and not cluster.get("auto")}
+    active = {
+        name: cluster
+        for name, cluster in clusters.items()
+        if cluster_issue_ids(cluster) and not cluster.get("auto")
+    }
     issues = state.get("issues", {})
 
     if active:
         print(colorize(f"\n  Clusters ({len(active)}):", "bold"))
         for name, cluster in active.items():
-            count = len(cluster.get("issue_ids", []))
+            count = len(cluster_issue_ids(cluster))
             steps = len(cluster.get("action_steps", []))
             desc = (cluster.get("description") or "")[:60]
             print(f"    {name}: {count} items, {steps} steps — {desc}")

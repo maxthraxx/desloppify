@@ -13,6 +13,7 @@ from desloppify.base.registry import _DISPLAY_ORDER, DETECTORS
 from desloppify.engine._scoring.policy.core import (
     DIMENSIONS,
     FILE_BASED_DETECTORS,
+    _NON_OBJECTIVE_DETECTORS,
 )
 from desloppify.engine.detectors.review_coverage import (
     detect_holistic_review_staleness,
@@ -501,12 +502,13 @@ class TestRegistryIntegration:
     def test_subjective_review_in_display_order(self):
         assert "subjective_review" in _DISPLAY_ORDER
 
-    def test_subjective_review_in_scoring_dimensions(self):
-        review_dim = next(d for d in DIMENSIONS if d.name == "Test health")
-        assert "subjective_review" in review_dim.detectors
+    def test_subjective_review_in_non_objective_detectors(self):
+        assert "subjective_review" in _NON_OBJECTIVE_DETECTORS
 
-    def test_subjective_review_is_file_based(self):
-        assert "subjective_review" in FILE_BASED_DETECTORS
+    def test_subjective_review_not_in_file_based(self):
+        assert "subjective_review" not in {
+            d for dim in DIMENSIONS for d in dim.detectors
+        }
 
 
 # ── Phase integration ────────────────────────────────────────────

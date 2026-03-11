@@ -15,7 +15,7 @@ from desloppify.languages._framework.base.shared_phases import (
 from desloppify.languages._framework.base.types import LangRuntimeContract
 from desloppify.languages.csharp.detectors.deps import build_dep_graph
 from desloppify.languages.csharp.extractors import extract_csharp_classes
-from desloppify.state import Issue
+from desloppify.state_io import Issue
 
 
 def _compute_max_nesting(content: str, _lines: list[str]):

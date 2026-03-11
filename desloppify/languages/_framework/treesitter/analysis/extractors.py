@@ -159,7 +159,10 @@ def ts_extract_functions(
             if len(normalized.splitlines()) < 3:
                 continue
 
-            body_hash = hashlib.md5(normalized.encode("utf-8")).hexdigest()
+            body_hash = hashlib.md5(
+                normalized.encode("utf-8"),
+                usedforsecurity=False,
+            ).hexdigest()
             params = _extract_param_names(func_node)
 
             functions.append(

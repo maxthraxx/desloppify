@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from desloppify import state as state_mod
 from desloppify.base.config import target_strict_score_from_config
 from desloppify.base import config as config_mod
 from desloppify.base.output.terminal import colorize
+from desloppify.state_scoring import ScoreSnapshot, score_snapshot
 
 
 def _format_delta(value: float, prev: float | None) -> tuple[str, str]:
@@ -18,13 +18,13 @@ def _format_delta(value: float, prev: float | None) -> tuple[str, str]:
 
 def print_score_update(
     state: dict,
-    prev: state_mod.ScoreSnapshot,
+    prev: ScoreSnapshot,
     *,
     config: dict | None = None,
     label: str = "Scores",
 ) -> None:
     """Print score quartet with deltas and strict target progress."""
-    new = state_mod.score_snapshot(state)
+    new = score_snapshot(state)
     if (
         new.overall is None
         or new.objective is None

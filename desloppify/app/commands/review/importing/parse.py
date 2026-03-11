@@ -28,7 +28,7 @@ from desloppify.intelligence.review.importing.contracts_validation import (
 from desloppify.intelligence.review.importing.payload import (
     normalize_legacy_findings_alias,
 )
-from desloppify.state import coerce_assessment_score
+from desloppify.engine._state.resolution import coerce_assessment_score
 
 from .policy import (
     ASSESSMENT_POLICY_KEY,

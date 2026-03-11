@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-from desloppify.engine._plan.sync.dimensions import (
-    sync_stale_dimensions,
-    sync_unscored_dimensions,
-)
+from desloppify.engine._plan.sync.dimensions import sync_subjective_dimensions
 from desloppify.tests.plan.test_stale_dimensions import (
     _plan_with_queue,
     _state_with_stale_dimensions,
@@ -19,7 +16,7 @@ def test_unscored_appends_after_existing():
     plan["promoted_ids"] = ["issue_a"]
     state = _state_with_unscored_dimensions("design_coherence")
 
-    result = sync_unscored_dimensions(plan, state)
+    result = sync_subjective_dimensions(plan, state)
     assert len(result.injected) == 1
     assert plan["queue_order"][0] == "issue_a"
     assert plan["queue_order"][1] == "issue_b"
@@ -31,7 +28,7 @@ def test_unscored_multiple_append_to_back():
     plan = _plan_with_queue("issue_a", "issue_b", "issue_c")
     state = _state_with_unscored_dimensions("design_coherence", "error_consistency")
 
-    result = sync_unscored_dimensions(plan, state)
+    result = sync_subjective_dimensions(plan, state)
     assert len(result.injected) == 2
     # Existing items keep their positions
     assert plan["queue_order"][0] == "issue_a"
@@ -59,12 +56,12 @@ def test_cycle_completed_injects_stale_despite_objective_backlog():
     }
 
     # Without cycle_just_completed: no injection (existing behavior)
-    result_normal = sync_stale_dimensions(plan, state)
+    result_normal = sync_subjective_dimensions(plan, state)
     assert result_normal.injected == []
 
     # With cycle_just_completed: inject at back (never reorder existing queue)
     plan2 = _plan_with_queue("some_issue::file.py::abc123")
-    result_cycle = sync_stale_dimensions(plan2, state, cycle_just_completed=True)
+    result_cycle = sync_subjective_dimensions(plan2, state, cycle_just_completed=True)
     assert len(result_cycle.injected) == 2
     # Existing item keeps position; stale dims appended at back
     assert plan2["queue_order"][0] == "some_issue::file.py::abc123"
@@ -80,7 +77,7 @@ def test_cycle_completed_appends_to_back():
         "id": "issue_a", "status": "open", "detector": "smells",
     }
 
-    result = sync_stale_dimensions(plan, state, cycle_just_completed=True)
+    result = sync_subjective_dimensions(plan, state, cycle_just_completed=True)
     assert len(result.injected) == 1
     assert plan["queue_order"][0] == "issue_a"
     assert plan["queue_order"][1] == "issue_b"
@@ -100,12 +97,12 @@ def test_cycle_completed_injects_under_target_dims():
     }
 
     # Without cycle_just_completed: no injection (under-target gated by backlog)
-    result_normal = sync_stale_dimensions(plan, state)
+    result_normal = sync_subjective_dimensions(plan, state)
     assert result_normal.injected == []
 
     # With cycle_just_completed: under-target dim injected at back
     plan2 = _plan_with_queue("some_issue::file.py::abc123")
-    result_cycle = sync_stale_dimensions(plan2, state, cycle_just_completed=True)
+    result_cycle = sync_subjective_dimensions(plan2, state, cycle_just_completed=True)
     assert len(result_cycle.injected) == 1
     assert plan2["queue_order"][0] == "some_issue::file.py::abc123"
     assert plan2["queue_order"][1] == "subjective::design_coherence"
@@ -117,7 +114,7 @@ def test_under_target_injected_when_no_objective_backlog():
     state = _state_with_stale_dimensions("design_coherence")
     state["subjective_assessments"]["design_coherence"]["needs_review_refresh"] = False
 
-    result = sync_stale_dimensions(plan, state)
+    result = sync_subjective_dimensions(plan, state)
     assert "subjective::design_coherence" in result.injected
 
 
@@ -126,7 +123,7 @@ def test_cycle_completed_no_stale_dims_no_injection():
     plan = _plan_with_queue("some_issue::file.py::abc123")
     state = {"issues": {}, "scan_count": 5}
 
-    result = sync_stale_dimensions(plan, state, cycle_just_completed=True)
+    result = sync_subjective_dimensions(plan, state, cycle_just_completed=True)
     assert result.injected == []
     assert plan["queue_order"] == ["some_issue::file.py::abc123"]
 
@@ -136,7 +133,7 @@ def test_cycle_completed_no_objective_appends_to_back():
     plan = _plan_with_queue()
     state = _state_with_stale_dimensions("design_coherence")
 
-    result = sync_stale_dimensions(plan, state, cycle_just_completed=True)
+    result = sync_subjective_dimensions(plan, state, cycle_just_completed=True)
     assert len(result.injected) == 1
     assert plan["queue_order"] == ["subjective::design_coherence"]
 

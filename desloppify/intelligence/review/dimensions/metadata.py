@@ -10,14 +10,15 @@ from __future__ import annotations
 from typing import Any
 
 from desloppify.base.subjective_dimensions import (
+    default_dimension_keys_for_lang as _default_dimension_keys_for_lang,
     configure_subjective_dimension_providers,
-    default_display_names_map,
-    dimension_display_name,
-    dimension_weight,
-    get_dimension_metadata,
-    load_subjective_dimension_metadata,
-    load_subjective_dimension_metadata_for_lang,
-    resettable_default_dimensions,
+    default_display_names_map as _default_display_names_map,
+    dimension_display_name as _dimension_display_name,
+    dimension_weight as _dimension_weight,
+    get_dimension_metadata as _get_dimension_metadata,
+    load_subjective_dimension_metadata as _load_subjective_dimension_metadata,
+    load_subjective_dimension_metadata_for_lang as _load_subjective_dimension_metadata_for_lang,
+    resettable_default_dimensions as _resettable_default_dimensions,
 )
 from desloppify.base.subjective_dimensions_merge import extract_prompt_meta
 from desloppify.intelligence.review.dimensions.data import (
@@ -58,7 +59,67 @@ configure_subjective_dimension_providers(
 )
 
 
+def _refresh_provider_wiring() -> None:
+    """Keep the base metadata helpers aligned with this compatibility surface."""
+    configure_subjective_dimension_providers(
+        available_languages_provider=_available_languages,
+        load_dimensions_payload_provider=_load_dimensions_payload,
+        load_dimensions_payload_for_lang_provider=_load_dimensions_payload_for_lang,
+    )
+
+
+def load_subjective_dimension_metadata() -> dict[str, dict[str, object]]:
+    _refresh_provider_wiring()
+    return _load_subjective_dimension_metadata()
+
+
+def load_subjective_dimension_metadata_for_lang(
+    lang_name: str | None,
+) -> dict[str, dict[str, object]]:
+    _refresh_provider_wiring()
+    return _load_subjective_dimension_metadata_for_lang(lang_name)
+
+
+def get_dimension_metadata(
+    dimension_name: str, *, lang_name: str | None = None,
+) -> dict[str, object]:
+    _refresh_provider_wiring()
+    return _get_dimension_metadata(dimension_name, lang_name=lang_name)
+
+
+def dimension_display_name(dimension_name: str, *, lang_name: str | None = None) -> str:
+    _refresh_provider_wiring()
+    return _dimension_display_name(dimension_name, lang_name=lang_name)
+
+
+def dimension_weight(dimension_name: str, *, lang_name: str | None = None) -> float:
+    _refresh_provider_wiring()
+    return _dimension_weight(dimension_name, lang_name=lang_name)
+
+
+def default_display_names_map(*, lang_name: str | None = None) -> dict[str, str]:
+    _refresh_provider_wiring()
+    return _default_display_names_map(lang_name=lang_name)
+
+
+def resettable_default_dimensions(*, lang_name: str | None = None) -> tuple[str, ...]:
+    _refresh_provider_wiring()
+    return _resettable_default_dimensions(lang_name=lang_name)
+
+
+def default_dimension_keys_for_lang(lang_name: str | None) -> tuple[str, ...]:
+    _refresh_provider_wiring()
+    return _default_dimension_keys_for_lang(lang_name)
+
+
+load_subjective_dimension_metadata.cache_clear = _load_subjective_dimension_metadata.cache_clear
+load_subjective_dimension_metadata_for_lang.cache_clear = (
+    _load_subjective_dimension_metadata_for_lang.cache_clear
+)
+
+
 __all__ = [
+    "default_dimension_keys_for_lang",
     "default_display_names_map",
     "dimension_display_name",
     "dimension_weight",
@@ -70,4 +131,3 @@ __all__ = [
     "load_subjective_dimension_metadata_for_lang",
     "resettable_default_dimensions",
 ]
-

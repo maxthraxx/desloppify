@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 
 import desloppify.app.commands.plan.triage.command as triage_mod
+from desloppify.app.commands.plan.triage.services import TriageServices
 from desloppify.engine._plan.schema import empty_plan
 from desloppify.engine._plan.constants import TRIAGE_STAGE_IDS
 
@@ -95,6 +96,35 @@ def _fake_args(**overrides) -> argparse.Namespace:
     return argparse.Namespace(**defaults)
 
 
+def _fake_services(plan, state, save_plan_fn=None):
+    """Build a fake TriageServices with test stubs."""
+    return TriageServices(
+        command_runtime=lambda args: _fake_runtime(state),
+        load_plan=lambda *a, **kw: plan,
+        save_plan=save_plan_fn or (lambda p, *a, **kw: None),
+        collect_triage_input=lambda p, s: type("TI", (), {
+            "open_issues": s.get("issues", {}),
+            "resolved_issues": {},
+            "new_since_last": [],
+            "resolved_since_last": [],
+            "existing_clusters": {},
+        })(),
+        detect_recurring_patterns=lambda _a, _b: {},
+        append_log_entry=lambda *a, **kw: None,
+        extract_issue_citations=lambda text, ids: set(),
+        build_triage_prompt=lambda si: "prompt",
+    )
+
+
+def _patch_triage(monkeypatch, plan, state, save_plan_fn=None):
+    """Apply standard triage monkeypatches."""
+    monkeypatch.setattr(
+        triage_mod, "default_triage_services",
+        lambda: _fake_services(plan, state, save_plan_fn),
+    )
+    monkeypatch.setattr(triage_mod, "require_issue_inventory", lambda s: True)
+
+
 # ---------------------------------------------------------------------------
 # Tests: reflect auto-confirms observe
 # ---------------------------------------------------------------------------
@@ -105,10 +135,7 @@ class TestReflectFoldConfirmObserve:
         plan = _plan_with_stages("observe", confirmed=False)
         state = _state_with_issues("r1", "r2", "r3", "r4", "r5")
 
-        monkeypatch.setattr(triage_mod, "load_plan", lambda *a, **kw: plan)
-        monkeypatch.setattr(triage_mod, "command_runtime", lambda args: _fake_runtime(state))
-        monkeypatch.setattr(triage_mod, "require_completed_scan", lambda s: True)
-        monkeypatch.setattr(triage_mod, "save_plan", lambda p: None)
+        _patch_triage(monkeypatch, plan, state)
 
         attestation = (
             "I have thoroughly reviewed all the naming dimension issues "
@@ -140,10 +167,7 @@ class TestReflectFoldConfirmObserve:
         plan = _plan_with_stages("observe", confirmed=False)
         state = _state_with_issues("r1", "r2", "r3")
 
-        monkeypatch.setattr(triage_mod, "load_plan", lambda *a, **kw: plan)
-        monkeypatch.setattr(triage_mod, "command_runtime", lambda args: _fake_runtime(state))
-        monkeypatch.setattr(triage_mod, "require_completed_scan", lambda s: True)
-        monkeypatch.setattr(triage_mod, "save_plan", lambda p: None)
+        _patch_triage(monkeypatch, plan, state)
 
         reflect_report = (
             "Strategy analysis of current issues with enough length to pass validation."
@@ -163,10 +187,7 @@ class TestReflectFoldConfirmObserve:
         plan = _plan_with_stages("observe", confirmed=False)
         state = _state_with_issues("r1", "r2", "r3", "r4", "r5")
 
-        monkeypatch.setattr(triage_mod, "load_plan", lambda *a, **kw: plan)
-        monkeypatch.setattr(triage_mod, "command_runtime", lambda args: _fake_runtime(state))
-        monkeypatch.setattr(triage_mod, "require_completed_scan", lambda s: True)
-        monkeypatch.setattr(triage_mod, "save_plan", lambda p: None)
+        _patch_triage(monkeypatch, plan, state)
 
         # Attestation that does NOT reference any dimension
         attestation = (
@@ -206,10 +227,7 @@ class TestOrganizeFoldConfirmReflect:
 
         state = _state_with_issues("r1", "r2", "r3", "r4", "r5")
 
-        monkeypatch.setattr(triage_mod, "load_plan", lambda *a, **kw: plan)
-        monkeypatch.setattr(triage_mod, "command_runtime", lambda args: _fake_runtime(state))
-        monkeypatch.setattr(triage_mod, "require_completed_scan", lambda s: True)
-        monkeypatch.setattr(triage_mod, "save_plan", lambda p: None)
+        _patch_triage(monkeypatch, plan, state)
 
         # Attestation references a cluster name
         attestation = (
@@ -256,10 +274,7 @@ class TestCompleteFoldConfirmOrganize:
 
         state = _state_with_issues("r1", "r2", "r3", "r4", "r5")
 
-        monkeypatch.setattr(triage_mod, "load_plan", lambda *a, **kw: plan)
-        monkeypatch.setattr(triage_mod, "command_runtime", lambda args: _fake_runtime(state))
-        monkeypatch.setattr(triage_mod, "require_completed_scan", lambda s: True)
-        monkeypatch.setattr(triage_mod, "save_plan", lambda p: None)
+        _patch_triage(monkeypatch, plan, state)
 
         # Attestation references a cluster name
         attestation = (
@@ -298,10 +313,7 @@ class TestExistingConfirmPathUnchanged:
         plan = _plan_with_stages("observe", confirmed=False)
         state = _state_with_issues("r1", "r2", "r3", "r4", "r5")
 
-        monkeypatch.setattr(triage_mod, "load_plan", lambda *a, **kw: plan)
-        monkeypatch.setattr(triage_mod, "command_runtime", lambda args: _fake_runtime(state))
-        monkeypatch.setattr(triage_mod, "require_completed_scan", lambda s: True)
-        monkeypatch.setattr(triage_mod, "save_plan", lambda p: None)
+        _patch_triage(monkeypatch, plan, state)
 
         attestation = (
             "I have thoroughly reviewed all the naming dimension issues "
@@ -331,10 +343,7 @@ class TestCompleteArchivesStages:
         plan["clusters"]["fix-naming"]["issue_ids"] = ["review::test.py::r1", "review::test.py::r2"]
         state = _state_with_issues("review::test.py::r1", "review::test.py::r2")
 
-        monkeypatch.setattr(triage_mod, "load_plan", lambda *a, **kw: plan)
-        monkeypatch.setattr(triage_mod, "command_runtime", lambda args: _fake_runtime(state))
-        monkeypatch.setattr(triage_mod, "require_completed_scan", lambda s: True)
-        monkeypatch.setattr(triage_mod, "save_plan", lambda p: None)
+        _patch_triage(monkeypatch, plan, state)
 
         strategy = (
             "Execute fix-naming cluster first to resolve all naming convention "

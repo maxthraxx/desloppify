@@ -68,11 +68,12 @@ def make_cmd_complexity(
     """Factory: detect complexity signals."""
 
     def cmd_complexity(args: argparse.Namespace) -> None:
+        threshold = getattr(args, "threshold", None) or default_threshold
         entries, _ = complexity_detector.detect_complexity(
             Path(args.path),
             signals=signals,
             file_finder=file_finder,
-            threshold=default_threshold,
+            threshold=threshold,
         )
         display_entries(
             args,
@@ -275,4 +276,3 @@ def make_cmd_smells(
                 print(f"    {rel(m['file'])}:{m['line']}  {m['content'][:60]}")
 
     return _set_module(cmd_smells, module_name)
-

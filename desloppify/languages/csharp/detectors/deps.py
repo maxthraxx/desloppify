@@ -7,7 +7,7 @@ import json
 import logging
 import os
 import shlex
-import subprocess
+import subprocess  # nosec B404
 from collections import defaultdict
 from pathlib import Path
 
@@ -146,6 +146,7 @@ def _build_dep_graph_roslyn(
         _DEFAULT_ROSLYN_MAX_OUTPUT_BYTES,
     )
     try:
+        # Roslyn command runs via fixed argv without shell expansion.
         proc = subprocess.run(
             cmd,
             shell=False,
@@ -153,7 +154,7 @@ def _build_dep_graph_roslyn(
             capture_output=True,
             text=False,
             timeout=timeout_seconds,
-        )
+        )  # nosec B603
     except (OSError, subprocess.TimeoutExpired):
         return None
     if proc.returncode != 0:

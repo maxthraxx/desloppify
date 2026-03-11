@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from desloppify.languages._framework.treesitter import TreeSitterLangSpec
-
 from ..imports.resolvers_backend import (
     resolve_csharp_import,
     resolve_dart_import,
@@ -13,6 +11,7 @@ from ..imports.resolvers_backend import (
     resolve_rust_import,
 )
 from ..imports.resolvers_scripts import resolve_php_import
+from ..types import TreeSitterLangSpec
 from .compiled_native import C_SPEC, CPP_SPEC, SCALA_SPEC
 
 GO_SPEC = TreeSitterLangSpec(

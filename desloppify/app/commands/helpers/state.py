@@ -7,6 +7,10 @@ from pathlib import Path
 from desloppify.app.commands.helpers.lang import auto_detect_lang_name
 from desloppify.base.output.terminal import colorize
 from desloppify.base.discovery.paths import get_project_root
+from desloppify.engine._state.schema import (
+    scan_inventory_available,
+    scan_metrics_available,
+)
 
 
 def _sole_existing_lang_state_file() -> Path | None:
@@ -50,9 +54,24 @@ def state_path(args: argparse.Namespace) -> Path | None:
     return None
 
 
-def require_completed_scan(state: dict) -> bool:
-    """Return True when the state contains at least one completed scan."""
-    has_completed_scan = bool(state.get("last_scan"))
-    if not has_completed_scan:
+def require_issue_inventory(state: dict) -> bool:
+    """Return True when command consumers can rely on the issue inventory."""
+    if not scan_inventory_available(state):
         print(colorize("No scans yet. Run: desloppify scan", "yellow"))
-    return has_completed_scan
+        return False
+    return True
+
+
+def require_scan_metrics(state: dict) -> bool:
+    """Return True when real scan-derived metrics are available."""
+    if not scan_metrics_available(state):
+        print(colorize("No completed scan metrics yet. Run: desloppify scan", "yellow"))
+        return False
+    return True
+
+
+__all__ = [
+    "require_issue_inventory",
+    "require_scan_metrics",
+    "state_path",
+]

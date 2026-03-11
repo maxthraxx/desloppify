@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import re
 from collections import Counter
+from dataclasses import dataclass
 
 from desloppify.app.commands.helpers.runtime import command_runtime
 from desloppify.base.output.terminal import colorize
@@ -14,7 +15,7 @@ from desloppify.engine.plan_triage import (
     detect_recurring_patterns,
     extract_issue_citations,
 )
-from desloppify.state import utc_now
+from desloppify.state_io import utc_now
 
 from .completion_policy import (
     _completion_clusters_valid,
@@ -30,7 +31,7 @@ from .completion_policy import (
 )
 from .completion_stages import (
     _auto_confirm_enrich_for_complete,
-    _auto_confirm_organize_for_complete,
+    _auto_confirm_stage_for_complete,
     _require_enrich_stage_for_complete,
     _require_organize_stage_for_complete,
     _require_sense_check_stage_for_complete,
@@ -49,22 +50,112 @@ from .enrich_checks import (
     _underspecified_steps,
 )
 from ..confirmations.basic import MIN_ATTESTATION_LEN, validate_attestation
-from ..helpers import manual_clusters_with_issues, observe_dimension_breakdown
+from ..helpers import (
+    cluster_issue_ids,
+    manual_clusters_with_issues,
+    observe_dimension_breakdown,
+)
 from ..stages.helpers import unclustered_review_issues, unenriched_clusters
+
+
+@dataclass(frozen=True)
+class AutoConfirmStageRequest:
+    """Configuration for one fold-confirm stage auto-confirmation."""
+
+    stage_name: str
+    stage_label: str
+    blocked_heading: str
+    confirm_cmd: str
+    inline_hint: str
+    dimensions: list[str] | None = None
+    cluster_names: list[str] | None = None
+
+
+@dataclass(frozen=True)
+class StagePrerequisite:
+    """One required upstream stage for a triage workflow seam."""
+
+    stage_name: str
+    require_confirmation: bool = False
+
+
+@dataclass(frozen=True)
+class ReflectAutoConfirmDeps:
+    triage_input: object | None = None
+    command_runtime_fn: object | None = None
+    collect_triage_input_fn: object = collect_triage_input
+    detect_recurring_patterns_fn: object = detect_recurring_patterns
+    save_plan_fn: object | None = None
+
+
+_STAGE_PREREQUISITES = {
+    "organize": (
+        StagePrerequisite("observe"),
+        StagePrerequisite("reflect"),
+    ),
+    "enrich": (
+        StagePrerequisite("observe"),
+        StagePrerequisite("reflect"),
+        StagePrerequisite("organize"),
+    ),
+    "sense-check": (
+        StagePrerequisite("enrich", require_confirmation=True),
+    ),
+    "complete:organize": (
+        StagePrerequisite("observe"),
+        StagePrerequisite("organize"),
+    ),
+    "complete:enrich": (
+        StagePrerequisite("observe"),
+        StagePrerequisite("organize"),
+        StagePrerequisite("enrich"),
+    ),
+    "complete:sense-check": (
+        StagePrerequisite("observe"),
+        StagePrerequisite("organize"),
+        StagePrerequisite("enrich"),
+        StagePrerequisite("sense-check"),
+    ),
+}
+
+
+def _missing_stage_prerequisite(
+    stages: dict,
+    *,
+    flow: str,
+) -> StagePrerequisite | None:
+    """Return the first missing upstream stage required by one triage flow."""
+    for prerequisite in _STAGE_PREREQUISITES.get(flow, ()):
+        stage_record = stages.get(prerequisite.stage_name)
+        if stage_record is None:
+            return prerequisite
+        if prerequisite.require_confirmation and not stage_record.get("confirmed_at"):
+            return prerequisite
+    return None
+
+
+def require_stage_prerequisite(
+    stages: dict,
+    *,
+    flow: str,
+    messages: dict[str, tuple[str, str]],
+) -> bool:
+    """Print consistent prerequisite guidance for simple triage stage gates."""
+    missing = _missing_stage_prerequisite(stages, flow=flow)
+    if missing is None:
+        return True
+    blocked_heading, command_hint = messages[missing.stage_name]
+    print(colorize(blocked_heading, "red"))
+    print(colorize(command_hint, "dim"))
+    return False
 
 
 def _auto_confirm_stage(
     *,
     plan: dict,
     stage_record: dict,
-    stage_name: str,
-    stage_label: str,
     attestation: str | None,
-    blocked_heading: str,
-    confirm_cmd: str,
-    inline_hint: str,
-    dimensions: list[str] | None = None,
-    cluster_names: list[str] | None = None,
+    request: AutoConfirmStageRequest,
     save_plan_fn=None,
 ) -> bool:
     """Shared auto-confirm flow for stage fold-confirm operations."""
@@ -73,17 +164,17 @@ def _auto_confirm_stage(
     if stage_record.get("confirmed_at"):
         return True
     if not attestation or len(attestation.strip()) < MIN_ATTESTATION_LEN:
-        print(colorize(f"  {blocked_heading}", "red"))
-        print(colorize(f"  Run: {confirm_cmd}", "dim"))
-        print(colorize(f"  {inline_hint}", "dim"))
+        print(colorize(f"  {request.blocked_heading}", "red"))
+        print(colorize(f"  Run: {request.confirm_cmd}", "dim"))
+        print(colorize(f"  {request.inline_hint}", "dim"))
         return False
 
     confirmed_text = attestation.strip()
     validation_err = validate_attestation(
         confirmed_text,
-        stage_name,
-        dimensions=dimensions,
-        cluster_names=cluster_names,
+        request.stage_name,
+        dimensions=request.dimensions,
+        cluster_names=request.cluster_names,
     )
     if validation_err:
         print(colorize(f"  {validation_err}", "red"))
@@ -92,7 +183,7 @@ def _auto_confirm_stage(
     stage_record["confirmed_at"] = utc_now()
     stage_record["confirmed_text"] = confirmed_text
     save_plan_fn(plan)
-    print(colorize(f"  ✓ {stage_label} auto-confirmed via --attestation.", "green"))
+    print(colorize(f"  ✓ {request.stage_label} auto-confirmed via --attestation.", "green"))
     return True
 
 
@@ -111,13 +202,15 @@ def _auto_confirm_observe_if_attested(
     return _auto_confirm_stage(
         plan=plan,
         stage_record=observe_stage,
-        stage_name="observe",
-        stage_label="Observe",
         attestation=attestation,
-        blocked_heading="Cannot reflect: observe stage not confirmed.",
-        confirm_cmd="desloppify plan triage --confirm observe",
-        inline_hint="Or pass --attestation to auto-confirm observe inline.",
-        dimensions=dim_names,
+        request=AutoConfirmStageRequest(
+            stage_name="observe",
+            stage_label="Observe",
+            blocked_heading="Cannot reflect: observe stage not confirmed.",
+            confirm_cmd="desloppify plan triage --confirm observe",
+            inline_hint="Or pass --attestation to auto-confirm observe inline.",
+            dimensions=dim_names,
+        ),
         save_plan_fn=save_plan_fn,
     )
 
@@ -257,15 +350,20 @@ def _validate_reflect_issue_accounting(
 
 
 def _require_reflect_stage_for_organize(stages: dict) -> bool:
-    if "reflect" in stages:
-        return True
-    if "observe" not in stages:
-        print(colorize("  Cannot organize: observe stage not complete.", "red"))
-        print(colorize('  Run: desloppify plan triage --stage observe --report "..."', "dim"))
-        return False
-    print(colorize("  Cannot organize: reflect stage not complete.", "red"))
-    print(colorize('  Run: desloppify plan triage --stage reflect --report "..."', "dim"))
-    return False
+    return require_stage_prerequisite(
+        stages,
+        flow="organize",
+        messages={
+            "observe": (
+                "  Cannot organize: observe stage not complete.",
+                '  Run: desloppify plan triage --stage observe --report "..."',
+            ),
+            "reflect": (
+                "  Cannot organize: reflect stage not complete.",
+                '  Run: desloppify plan triage --stage reflect --report "..."',
+            ),
+        },
+    )
 
 
 def _auto_confirm_reflect_for_organize(
@@ -274,21 +372,18 @@ def _auto_confirm_reflect_for_organize(
     plan: dict,
     stages: dict,
     attestation: str | None,
-    triage_input=None,
-    command_runtime_fn=None,
-    collect_triage_input_fn=collect_triage_input,
-    detect_recurring_patterns_fn=detect_recurring_patterns,
-    save_plan_fn=None,
+    deps: ReflectAutoConfirmDeps | None = None,
 ) -> bool:
     reflect_stage = stages.get("reflect")
     if reflect_stage is None:
         return False
 
-    resolved_triage_input = triage_input
+    deps = deps or ReflectAutoConfirmDeps()
+    resolved_triage_input = deps.triage_input
     if resolved_triage_input is None:
-        runtime_factory = command_runtime_fn or command_runtime
+        runtime_factory = deps.command_runtime_fn or command_runtime
         runtime = runtime_factory(args)
-        resolved_triage_input = collect_triage_input_fn(plan, runtime.state)
+        resolved_triage_input = deps.collect_triage_input_fn(plan, runtime.state)
 
     valid_ids = set(resolved_triage_input.open_issues.keys())
     accounting_ok, cited_ids, missing_ids, duplicate_ids = _validate_reflect_issue_accounting(
@@ -301,7 +396,7 @@ def _auto_confirm_reflect_for_organize(
     reflect_stage["missing_issue_ids"] = missing_ids
     reflect_stage["duplicate_issue_ids"] = duplicate_ids
 
-    recurring = detect_recurring_patterns_fn(
+    recurring = deps.detect_recurring_patterns_fn(
         resolved_triage_input.open_issues,
         resolved_triage_input.resolved_issues,
     )
@@ -311,23 +406,34 @@ def _auto_confirm_reflect_for_organize(
     return _auto_confirm_stage(
         plan=plan,
         stage_record=reflect_stage,
-        stage_name="reflect",
-        stage_label="Reflect",
         attestation=attestation,
-        blocked_heading="Cannot organize: reflect stage not confirmed.",
-        confirm_cmd="desloppify plan triage --confirm reflect",
-        inline_hint="Or pass --attestation to auto-confirm reflect inline.",
-        dimensions=reflect_dims,
-        cluster_names=reflect_clusters,
-        save_plan_fn=save_plan_fn,
+        request=AutoConfirmStageRequest(
+            stage_name="reflect",
+            stage_label="Reflect",
+            blocked_heading="Cannot organize: reflect stage not confirmed.",
+            confirm_cmd="desloppify plan triage --confirm reflect",
+            inline_hint="Or pass --attestation to auto-confirm reflect inline.",
+            dimensions=reflect_dims,
+            cluster_names=reflect_clusters,
+        ),
+        save_plan_fn=deps.save_plan_fn,
     )
 
 
-def _manual_clusters_or_error(plan: dict) -> list[str] | None:
+def _manual_clusters_or_error(
+    plan: dict,
+    *,
+    open_review_ids: set[str] | None = None,
+) -> list[str] | None:
     manual_clusters = manual_clusters_with_issues(plan)
     if manual_clusters:
         return manual_clusters
-    any_clusters = [name for name, cluster in plan.get("clusters", {}).items() if cluster.get("issue_ids")]
+    if open_review_ids is not None and not open_review_ids:
+        return []
+    any_clusters = [
+        name for name, cluster in plan.get("clusters", {}).items()
+        if cluster_issue_ids(cluster)
+    ]
     if any_clusters:
         print(colorize("  Cannot organize: only auto-clusters exist.", "red"))
         print(colorize("  Create manual clusters that group issues by root cause:", "dim"))
@@ -388,7 +494,8 @@ def _organize_report_or_error(report: str | None) -> str | None:
 __all__ = [
     "_auto_confirm_enrich_for_complete",
     "_auto_confirm_observe_if_attested",
-    "_auto_confirm_organize_for_complete",
+    "AutoConfirmStageRequest",
+    "_auto_confirm_stage_for_complete",
     "_auto_confirm_reflect_for_organize",
     "_cluster_file_overlaps",
     "_clusters_with_directory_scatter",
@@ -412,6 +519,7 @@ __all__ = [
     "_require_prior_strategy_for_confirm",
     "_require_reflect_stage_for_organize",
     "_require_sense_check_stage_for_complete",
+    "_missing_stage_prerequisite",
     "_resolve_completion_strategy",
     "_resolve_confirm_existing_strategy",
     "_underspecified_steps",
@@ -421,4 +529,5 @@ __all__ = [
     "_steps_with_vague_detail",
     "_steps_without_effort",
     "_validate_recurring_dimension_mentions",
+    "require_stage_prerequisite",
 ]

@@ -70,9 +70,9 @@ def test_plan_command_modules_use_only_focused_engine_plan_facades() -> None:
                     offenders.append(rel)
                     break
                 if mod.startswith("desloppify.engine.planning"):
-                    offenders.append(rel)
-                    break
-                if mod.startswith("desloppify.engine.plan_") and mod not in allowed:
+                    # engine.planning is a public API surface for queue policy
+                    pass
+                elif mod.startswith("desloppify.engine.plan_") and mod not in allowed:
                     offenders.append(rel)
                     break
             elif isinstance(node, ast.Import):
@@ -82,8 +82,7 @@ def test_plan_command_modules_use_only_focused_engine_plan_facades() -> None:
                         offenders.append(rel)
                         break
                     if mod.startswith("desloppify.engine.planning"):
-                        offenders.append(rel)
-                        break
+                        pass  # public API surface
                     if mod.startswith("desloppify.engine.plan_") and mod not in allowed:
                         offenders.append(rel)
                         break

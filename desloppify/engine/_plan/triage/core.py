@@ -128,7 +128,7 @@ def triage_epics(
         raw_response = deps.llm_call(_TRIAGE_SYSTEM_PROMPT, prompt)
         raw_json = json.loads(raw_response)
     except (json.JSONDecodeError, TypeError, ValueError) as exc:
-        logger.error("Epic triage LLM response parse error: %s", exc)
+        logger.error("Cluster triage LLM response parse error: %s", exc)
         result = TriageMutationResult()
         result.strategy_summary = f"Triage failed: {exc}"
         return result

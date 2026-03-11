@@ -135,8 +135,8 @@ class TestMergeScan:
         assert "smells::foo.py::debug_tag" in state["issues"]
 
     @patch.object(merge_mod, "_recompute_stats")
-    def test_merge_auto_resolves_disappeared(self, mock_recompute):
-        """Old open issues not in current scan get auto-resolved."""
+    def test_merge_keeps_disappeared_open_issue_open(self, mock_recompute):
+        """Old open issues not in current scan stay open until manually resolved."""
         mock_recompute.return_value = None
         state = self._make_state()
         state["issues"]["smells::old.py::leftover"] = {
@@ -158,8 +158,8 @@ class TestMergeScan:
         diff = merge_scan(
             state, [], MergeScanOptions(lang="python", force_resolve=True)
         )
-        assert diff["auto_resolved"] == 1
-        assert state["issues"]["smells::old.py::leftover"]["status"] == "auto_resolved"
+        assert diff["auto_resolved"] == 0
+        assert state["issues"]["smells::old.py::leftover"]["status"] == "open"
 
     @patch.object(merge_mod, "_recompute_stats")
     def test_merge_with_ignore_patterns(self, mock_recompute):
@@ -512,7 +512,7 @@ class TestFixerHelpLines:
         mock_get_lang.side_effect = ImportError("no such lang")
 
         lines = parser_admin_mod._fixer_help_lines(["bogus"])
-        assert "none yet" in lines[0]
+        assert "failed to load" in lines[0]
 
 
 class TestFixParser:
@@ -877,5 +877,3 @@ class TestLogPhaseSummary:
         assert "security" in msg
         assert "clean" in msg
         assert "100 files scanned" in msg
-
-

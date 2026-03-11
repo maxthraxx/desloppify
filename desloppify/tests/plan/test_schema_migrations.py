@@ -74,3 +74,76 @@ def test_upgrade_plan_to_v7_runs_legacy_cleanup() -> None:
     assert "pending_plan_gate" not in plan
     assert "uncommitted_findings" not in plan
     assert "deferred" in plan and plan["deferred"] == []
+
+
+def test_normalize_cluster_defaults_restores_issue_ids_from_step_refs_and_log() -> None:
+    plan = {
+        "clusters": {
+            "manual": {
+                "name": "manual",
+                "issue_ids": [],
+                "action_steps": [
+                    {"title": "fix", "issue_refs": ["07c3759c"]},
+                ],
+            }
+        },
+        "execution_log": [
+            {
+                "action": "cluster_add",
+                "cluster_name": "manual",
+                "issue_ids": [
+                    "review::.::holistic::authorization_consistency::decrypted_api_key_rpc_not_restricted::07c3759c",
+                    "review::.::holistic::test_strategy::untested_shared_request_guards::1d016b7e",
+                ],
+            },
+            {
+                "action": "cluster_remove",
+                "cluster_name": "manual",
+                "issue_ids": [
+                    "review::.::holistic::test_strategy::untested_shared_request_guards::1d016b7e",
+                ],
+            },
+        ],
+    }
+
+    migrations.normalize_cluster_defaults(plan)
+
+    assert plan["clusters"]["manual"]["issue_ids"] == [
+        "review::.::holistic::authorization_consistency::decrypted_api_key_rpc_not_restricted",
+    ]
+
+
+def test_normalize_cluster_defaults_preserves_non_review_ids_and_recovers_overrides() -> None:
+    plan = {
+        "clusters": {
+            "auto/initial-review": {
+                "name": "auto/initial-review",
+                "issue_ids": [],
+                "auto": True,
+                "cluster_key": "subjective::unscored",
+            },
+            "auto/security": {
+                "name": "auto/security",
+                "issue_ids": [
+                    "security::pkg/mod.py::security::B101::pkg/mod.py::12",
+                ],
+                "auto": True,
+                "cluster_key": "detector::security",
+            },
+        },
+        "overrides": {
+            "subjective::abstraction_fitness": {"cluster": "auto/initial-review"},
+            "subjective::type_safety": {"cluster": "auto/initial-review"},
+        },
+        "execution_log": [],
+    }
+
+    migrations.normalize_cluster_defaults(plan)
+
+    assert plan["clusters"]["auto/initial-review"]["issue_ids"] == [
+        "subjective::abstraction_fitness",
+        "subjective::type_safety",
+    ]
+    assert plan["clusters"]["auto/security"]["issue_ids"] == [
+        "security::pkg/mod.py::security::B101::pkg/mod.py::12",
+    ]

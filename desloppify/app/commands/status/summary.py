@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
-from desloppify import state as state_mod
 from desloppify.base.output.terminal import LOC_COMPACT_THRESHOLD, colorize
+from desloppify.engine._state.filtering import open_scope_breakdown
+from desloppify.state_io import (
+    scan_metrics_available,
+    scan_reconstructed_issue_count,
+    scan_source,
+)
 
 
 def score_summary_lines(
@@ -59,6 +64,25 @@ def score_summary_lines(
 
 def print_scan_metrics(state: dict) -> None:
     """Print aggregate codebase metrics from the last scan."""
+    if not scan_metrics_available(state):
+        if scan_source(state) == "plan_reconstruction":
+            reconstructed = scan_reconstructed_issue_count(state)
+            print(
+                colorize(
+                    "  Scan metrics unavailable · "
+                    f"reconstructed {reconstructed} open review item(s) from saved plan",
+                    "dim",
+                )
+            )
+            return
+        print(
+            colorize(
+                f"  Scans: {state.get('scan_count', 0)} | Last: {state.get('last_scan', 'never')}",
+                "dim",
+            )
+        )
+        return
+
     metrics = state.get("codebase_metrics", {})
     total_files = sum(m.get("total_files", 0) for m in metrics.values())
     total_loc = sum(m.get("total_loc", 0) for m in metrics.values())
@@ -73,12 +97,7 @@ def print_scan_metrics(state: dict) -> None:
             )
         )
         return
-    print(
-        colorize(
-            f"  Scans: {state.get('scan_count', 0)} | Last: {state.get('last_scan', 'never')}",
-            "dim",
-        )
-    )
+    print(colorize(f"  Scans: {state.get('scan_count', 0)} | Last: {state.get('last_scan', 'never')}", "dim"))
 
 
 def print_scan_completeness(state: dict) -> None:
@@ -100,7 +119,7 @@ def print_open_scope_breakdown(state: dict) -> None:
     if not isinstance(issues, dict):
         return
 
-    counts = state_mod.open_scope_breakdown(issues, state.get("scan_path"))
+    counts = open_scope_breakdown(issues, state.get("scan_path"))
     print(
         colorize(
             "  "

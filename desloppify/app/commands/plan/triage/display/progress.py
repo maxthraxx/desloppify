@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 from desloppify.app.commands.helpers.display import short_issue_id
-from desloppify.app.commands.plan.triage.helpers import triage_coverage
+from desloppify.app.commands.plan.triage.helpers import (
+    cluster_issue_ids,
+    triage_coverage,
+)
 from desloppify.base.output.terminal import colorize
 
 
@@ -17,12 +20,14 @@ def _print_progress(plan: dict, open_issues: dict) -> None:
 
 def _print_active_clusters(clusters: dict[str, dict]) -> None:
     """Print current clusters that contain issues."""
-    active_clusters = {name: cluster for name, cluster in clusters.items() if cluster.get("issue_ids")}
+    active_clusters = {
+        name: cluster for name, cluster in clusters.items() if cluster_issue_ids(cluster)
+    }
     if not active_clusters:
         return
     print(colorize("\n  Current clusters:", "cyan"))
     for name, cluster in active_clusters.items():
-        count = len(cluster.get("issue_ids", []))
+        count = len(cluster_issue_ids(cluster))
         desc = cluster.get("description") or ""
         tag_str = _cluster_tag_summary(cluster)
         desc_str = f" - {desc}" if desc else ""
@@ -47,7 +52,7 @@ def _collect_unclustered_issues(clusters: dict[str, dict], open_issues: dict) ->
     """Return issue IDs that are not attached to any cluster."""
     all_clustered: set[str] = set()
     for cluster in clusters.values():
-        all_clustered.update(cluster.get("issue_ids", []))
+        all_clustered.update(cluster_issue_ids(cluster))
     return [issue_id for issue_id in open_issues if issue_id not in all_clustered]
 
 

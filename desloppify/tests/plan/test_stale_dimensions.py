@@ -1,13 +1,10 @@
-"""Tests for stale and unscored subjective dimension sync in the plan."""
+"""Tests for unified subjective dimension sync in the plan."""
 
 from __future__ import annotations
 
 from desloppify.engine._plan.reconcile import reconcile_plan_after_scan
 from desloppify.engine._plan.schema import empty_plan
-from desloppify.engine._plan.sync.dimensions import (
-    sync_stale_dimensions,
-    sync_unscored_dimensions,
-)
+from desloppify.engine._plan.sync.dimensions import sync_subjective_dimensions
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -80,15 +77,49 @@ def _state_with_unscored_dimensions(*dim_keys: str) -> dict:
     }
 
 
+def _state_with_under_target_dimensions(*dim_keys: str, score: float = 50.0) -> dict:
+    """Build a minimal state with under-target (scored, not stale) subjective dimensions."""
+    dim_scores: dict = {}
+    assessments: dict = {}
+    for dim_key in dim_keys:
+        dim_scores[dim_key] = {
+            "score": score,
+            "strict": score,
+            "checks": 1,
+            "failing": 0,
+            "detectors": {
+                "subjective_assessment": {
+                    "dimension_key": dim_key,
+                    "placeholder": False,
+                }
+            },
+        }
+        assessments[dim_key] = {
+            "score": score,
+            "needs_review_refresh": False,
+        }
+    return {
+        "issues": {},
+        "scan_count": 5,
+        "dimension_scores": dim_scores,
+        "subjective_assessments": assessments,
+    }
+
+
 def _state_with_mixed_dimensions(
     unscored: list[str],
     stale: list[str],
+    under_target: list[str] | None = None,
 ) -> dict:
-    """Build a state with both unscored and stale dimensions."""
+    """Build a state with unscored, stale, and optionally under-target dimensions."""
     state = _state_with_unscored_dimensions(*unscored)
     stale_state = _state_with_stale_dimensions(*stale)
     state["dimension_scores"].update(stale_state["dimension_scores"])
     state["subjective_assessments"].update(stale_state["subjective_assessments"])
+    if under_target:
+        ut_state = _state_with_under_target_dimensions(*under_target)
+        state["dimension_scores"].update(ut_state["dimension_scores"])
+        state["subjective_assessments"].update(ut_state["subjective_assessments"])
     return state
 
 
@@ -101,7 +132,7 @@ def test_unscored_injected_at_back():
     plan = _plan_with_queue("some_issue::file.py::abc123")
     state = _state_with_unscored_dimensions("design_coherence", "error_consistency")
 
-    result = sync_unscored_dimensions(plan, state)
+    result = sync_subjective_dimensions(plan, state)
     assert len(result.injected) == 2
     # Existing item keeps its position; unscored dims appended at back
     assert plan["queue_order"][0] == "some_issue::file.py::abc123"
@@ -117,7 +148,7 @@ def test_unscored_injection_unconditional():
     )
     state = _state_with_unscored_dimensions("design_coherence")
 
-    result = sync_unscored_dimensions(plan, state)
+    result = sync_subjective_dimensions(plan, state)
     assert len(result.injected) == 1
     assert plan["queue_order"][-1] == "subjective::design_coherence"
     assert len(plan["queue_order"]) == 3  # 2 existing + 1 unscored
@@ -133,7 +164,7 @@ def test_unscored_pruned_after_review():
     # Only error_consistency is still unscored; design_coherence was scored
     state = _state_with_unscored_dimensions("error_consistency")
 
-    result = sync_unscored_dimensions(plan, state)
+    result = sync_subjective_dimensions(plan, state)
     assert "subjective::design_coherence" in result.pruned
     assert "subjective::error_consistency" in plan["queue_order"]
     assert "subjective::design_coherence" not in plan["queue_order"]
@@ -150,7 +181,7 @@ def test_stale_sync_does_not_prune_unscored_ids():
         stale=["error_consistency"],
     )
 
-    result = sync_stale_dimensions(plan, state)
+    result = sync_subjective_dimensions(plan, state)
     # design_coherence is unscored (not stale), but stale sync should NOT prune it
     assert "subjective::design_coherence" not in result.pruned
     assert "subjective::design_coherence" in plan["queue_order"]
@@ -168,7 +199,7 @@ def test_unscored_sync_does_not_prune_stale_ids():
         stale=["error_consistency"],
     )
 
-    result = sync_unscored_dimensions(plan, state)
+    result = sync_subjective_dimensions(plan, state)
     assert "subjective::error_consistency" not in result.pruned
     assert "subjective::error_consistency" in plan["queue_order"]
 
@@ -177,7 +208,7 @@ def test_unscored_no_injection_when_no_dimension_scores():
     plan = _plan_with_queue()
     state = {"issues": {}, "scan_count": 1}
 
-    result = sync_unscored_dimensions(plan, state)
+    result = sync_subjective_dimensions(plan, state)
     assert result.injected == []
     assert result.pruned == []
 
@@ -187,7 +218,7 @@ def test_unscored_no_duplicates():
     plan = _plan_with_queue("subjective::design_coherence")
     state = _state_with_unscored_dimensions("design_coherence")
 
-    result = sync_unscored_dimensions(plan, state)
+    result = sync_subjective_dimensions(plan, state)
     assert result.injected == []
     assert plan["queue_order"].count("subjective::design_coherence") == 1
 
@@ -198,7 +229,7 @@ def test_unscored_sync_resurfaces_skipped_subjective_ids():
     plan["skipped"] = {"subjective::design_coherence": {"kind": "permanent"}}
     state = _state_with_unscored_dimensions("design_coherence")
 
-    result = sync_unscored_dimensions(plan, state)
+    result = sync_subjective_dimensions(plan, state)
     assert result.injected == ["subjective::design_coherence"]
     assert plan["queue_order"] == ["subjective::design_coherence"]
     assert "subjective::design_coherence" not in plan["skipped"]
@@ -210,7 +241,7 @@ def test_unscored_sync_repairs_skipped_overlap():
     plan["skipped"] = {"subjective::design_coherence": {"kind": "permanent"}}
     state = _state_with_unscored_dimensions("design_coherence")
 
-    result = sync_unscored_dimensions(plan, state)
+    result = sync_subjective_dimensions(plan, state)
     assert result.injected == []
     assert result.pruned == []
     assert plan["queue_order"] == ["subjective::design_coherence"]
@@ -225,7 +256,7 @@ def test_injects_when_queue_empty():
     plan = _plan_with_queue()
     state = _state_with_stale_dimensions("design_coherence", "error_consistency")
 
-    result = sync_stale_dimensions(plan, state)
+    result = sync_subjective_dimensions(plan, state)
     assert len(result.injected) == 2
     assert "subjective::design_coherence" in plan["queue_order"]
     assert "subjective::error_consistency" in plan["queue_order"]
@@ -242,7 +273,7 @@ def test_no_injection_when_queue_has_real_items():
         "detector": "smells",
     }
 
-    result = sync_stale_dimensions(plan, state)
+    result = sync_subjective_dimensions(plan, state)
     assert result.injected == []
     assert "subjective::design_coherence" not in plan["queue_order"]
 
@@ -261,7 +292,7 @@ def test_stale_ids_evicted_when_objective_backlog_exists():
         "detector": "smells",
     }
 
-    result = sync_stale_dimensions(plan, state)
+    result = sync_subjective_dimensions(plan, state)
     # Stale IDs are evicted while objective backlog exists
     assert "subjective::design_coherence" in result.pruned
     assert "subjective::error_consistency" in result.pruned
@@ -282,13 +313,13 @@ def test_stale_ids_inject_when_backlog_clears():
     }
 
     # Mid-cycle: no injection
-    r1 = sync_stale_dimensions(plan, state)
+    r1 = sync_subjective_dimensions(plan, state)
     assert r1.injected == []
 
     # Objective backlog clears
     state["issues"]["some_issue::file.py::abc123"]["status"] = "done"
 
-    r2 = sync_stale_dimensions(plan, state)
+    r2 = sync_subjective_dimensions(plan, state)
     assert "subjective::design_coherence" in r2.injected
     assert "subjective::design_coherence" in plan["queue_order"]
 
@@ -298,7 +329,7 @@ def test_no_injection_when_no_stale_or_under_target_dimensions():
     state = _state_with_stale_dimensions("design_coherence", score=100.0)
     state["subjective_assessments"]["design_coherence"]["needs_review_refresh"] = False
 
-    result = sync_stale_dimensions(plan, state)
+    result = sync_subjective_dimensions(plan, state)
     assert result.injected == []
     assert plan["queue_order"] == []
 
@@ -307,7 +338,7 @@ def test_no_injection_when_no_dimension_scores():
     plan = _plan_with_queue()
     state = {"issues": {}, "scan_count": 5}
 
-    result = sync_stale_dimensions(plan, state)
+    result = sync_subjective_dimensions(plan, state)
     assert result.injected == []
     assert result.pruned == []
 
@@ -324,7 +355,7 @@ def test_prunes_resolved_dimension_ids():
     # Only design_coherence is still stale; error_consistency was refreshed
     state = _state_with_stale_dimensions("design_coherence")
 
-    result = sync_stale_dimensions(plan, state)
+    result = sync_subjective_dimensions(plan, state)
     assert result.pruned == ["subjective::error_consistency"]
     assert plan["queue_order"] == ["subjective::design_coherence"]
 
@@ -337,7 +368,7 @@ def test_prune_does_not_touch_real_issue_ids():
     # design_coherence is no longer stale
     state = {"issues": {}, "scan_count": 5, "dimension_scores": {}}
 
-    result = sync_stale_dimensions(plan, state)
+    result = sync_subjective_dimensions(plan, state)
     assert "subjective::design_coherence" in result.pruned
     assert plan["queue_order"] == ["structural::file.py::abc123"]
 
@@ -351,7 +382,7 @@ def test_full_lifecycle():
     state = _state_with_stale_dimensions("design_coherence", "error_consistency")
 
     # 1. Empty queue, stale dims → inject both
-    r1 = sync_stale_dimensions(plan, state)
+    r1 = sync_subjective_dimensions(plan, state)
     assert len(r1.injected) == 2
     assert plan["queue_order"] == [
         "subjective::design_coherence",
@@ -361,7 +392,7 @@ def test_full_lifecycle():
     # 2. User refreshes design_coherence (no longer stale, but still under target)
     state["subjective_assessments"]["design_coherence"]["needs_review_refresh"] = False
 
-    r2 = sync_stale_dimensions(plan, state)
+    r2 = sync_subjective_dimensions(plan, state)
     # Not pruned: still under target (score=50)
     assert r2.pruned == []
     assert "subjective::design_coherence" in plan["queue_order"]
@@ -374,7 +405,7 @@ def test_full_lifecycle():
         state["dimension_scores"][key]["strict"] = 100.0
         state["subjective_assessments"][key]["score"] = 100.0
 
-    r3 = sync_stale_dimensions(plan, state)
+    r3 = sync_subjective_dimensions(plan, state)
     assert len(r3.pruned) == 2
     assert plan["queue_order"] == []
     assert r3.injected == []
@@ -385,7 +416,7 @@ def test_full_lifecycle():
     state["subjective_assessments"]["design_coherence"]["score"] = 50.0
     state["subjective_assessments"]["design_coherence"]["needs_review_refresh"] = True
 
-    r4 = sync_stale_dimensions(plan, state)
+    r4 = sync_subjective_dimensions(plan, state)
     assert r4.injected == ["subjective::design_coherence"]
     assert plan["queue_order"] == ["subjective::design_coherence"]
 
@@ -414,7 +445,7 @@ def test_injection_when_only_subjective_in_queue():
     plan = _plan_with_queue("subjective::design_coherence")
     state = _state_with_stale_dimensions("design_coherence", "error_consistency")
 
-    result = sync_stale_dimensions(plan, state)
+    result = sync_subjective_dimensions(plan, state)
     assert "subjective::error_consistency" in result.injected
     assert "subjective::design_coherence" not in result.injected  # already there
     assert set(plan["queue_order"]) == {
@@ -512,3 +543,125 @@ def test_single_stale_dim_no_cluster():
 
     auto_cluster_issues(plan, state)
     assert "auto/stale-review" not in plan["clusters"]
+
+
+# ---------------------------------------------------------------------------
+# Category preservation: under_target kept when not evicting
+# ---------------------------------------------------------------------------
+
+def test_under_target_preserved_when_no_backlog():
+    """Under-target IDs are preserved when no objective backlog exists."""
+    plan = _plan_with_queue(
+        "subjective::design_coherence",   # unscored
+        "subjective::naming_quality",     # under_target
+    )
+    state = _state_with_mixed_dimensions(
+        unscored=["design_coherence"],
+        stale=[],
+        under_target=["naming_quality"],
+    )
+
+    result = sync_subjective_dimensions(plan, state)
+    assert "subjective::naming_quality" not in result.pruned
+    assert "subjective::naming_quality" in plan["queue_order"]
+    assert "subjective::design_coherence" in plan["queue_order"]
+
+
+def test_under_target_evicted_mid_cycle_with_objective_backlog():
+    """Mid-cycle with objective backlog, under_target IDs are evicted."""
+    plan = _plan_with_queue(
+        "subjective::naming_quality",     # under_target
+        "some_issue::file.py::abc123",    # objective (makes it mid-cycle)
+    )
+    plan["plan_start_scores"] = {"strict": 50.0}  # mark as mid-cycle
+    state = _state_with_mixed_dimensions(
+        unscored=[],
+        stale=[],
+        under_target=["naming_quality"],
+    )
+    state["issues"]["some_issue::file.py::abc123"] = {
+        "id": "some_issue::file.py::abc123",
+        "status": "open",
+        "detector": "smells",
+    }
+
+    result = sync_subjective_dimensions(plan, state)
+    assert "subjective::naming_quality" in result.pruned
+    assert "subjective::naming_quality" not in plan["queue_order"]
+
+
+# ---------------------------------------------------------------------------
+# Regression: full evict → clear backlog → re-injection cycle
+# ---------------------------------------------------------------------------
+
+def test_under_target_reinjected_after_objective_backlog_clears():
+    """Under-target IDs evicted mid-cycle must reappear when objective backlog clears."""
+    plan = _plan_with_queue("some_issue::file.py::abc123")
+    state = _state_with_mixed_dimensions(
+        unscored=[],
+        stale=[],
+        under_target=["naming_quality", "error_handling"],
+    )
+    state["issues"]["some_issue::file.py::abc123"] = {
+        "id": "some_issue::file.py::abc123",
+        "status": "open",
+        "detector": "smells",
+    }
+
+    # Step 1: objective backlog → under_target not injected
+    r1 = sync_subjective_dimensions(plan, state)
+    assert r1.injected == []
+    assert "subjective::naming_quality" not in plan["queue_order"]
+
+    # Step 2: objective backlog clears
+    state["issues"]["some_issue::file.py::abc123"]["status"] = "done"
+
+    # Step 3: under_target IDs injected
+    r2 = sync_subjective_dimensions(plan, state)
+    assert "subjective::naming_quality" in r2.injected
+    assert "subjective::error_handling" in r2.injected
+    assert "subjective::naming_quality" in plan["queue_order"]
+    assert "subjective::error_handling" in plan["queue_order"]
+
+    # Step 4: idempotent — no double-injection
+    r3 = sync_subjective_dimensions(plan, state)
+    assert "subjective::naming_quality" not in r3.pruned
+    assert "subjective::naming_quality" in plan["queue_order"]
+
+
+def test_escalation_mid_cycle_reinserts_evicted_ids():
+    """After 3 deferred scans mid-cycle, escalation force-promotes previously-evicted IDs."""
+    plan = _plan_with_queue("some_issue::file.py::abc123")
+    plan["plan_start_scores"] = {"strict": 50.0}  # mid-cycle
+    state = _state_with_under_target_dimensions("naming_quality")
+    state["issues"] = {
+        "some_issue::file.py::abc123": {
+            "id": "some_issue::file.py::abc123",
+            "status": "open",
+            "detector": "smells",
+        },
+    }
+    state["scan_count"] = 1
+    state["last_scan"] = "2026-03-01T00:00:00+00:00"
+
+    # Scan 1: evicted, defer_count=1
+    sync_subjective_dimensions(plan, state)
+    assert "subjective::naming_quality" not in plan["queue_order"]
+    assert plan["subjective_defer_meta"]["defer_count"] == 1
+
+    # Scan 2: still evicted, defer_count=2
+    state["scan_count"] = 2
+    state["last_scan"] = "2026-03-02T00:00:00+00:00"
+    sync_subjective_dimensions(plan, state)
+    assert "subjective::naming_quality" not in plan["queue_order"]
+    assert plan["subjective_defer_meta"]["defer_count"] == 2
+
+    # Scan 3: escalation — naming_quality force-promoted ahead of objective work
+    state["scan_count"] = 3
+    state["last_scan"] = "2026-03-03T00:00:00+00:00"
+    sync_subjective_dimensions(plan, state)
+    assert "subjective::naming_quality" in plan["queue_order"]
+    objective_idx = plan["queue_order"].index("some_issue::file.py::abc123")
+    subjective_idx = plan["queue_order"].index("subjective::naming_quality")
+    assert subjective_idx < objective_idx
+    assert plan["subjective_defer_meta"]["force_visible_ids"] == ["subjective::naming_quality"]

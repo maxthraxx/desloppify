@@ -8,8 +8,6 @@ Compatibility owner: core-platform
 Removal target: 2026-06-30
 """
 
-from typing import NamedTuple
-
 from desloppify.engine._state.filtering import (
     add_ignore,
     is_ignored,
@@ -44,6 +42,7 @@ from desloppify.engine._state.schema import (
     ConcernDismissal,
     DimensionScore,
     Issue,
+    ScanMetadataModel,
     StateModel,
     StateStats,
     SubjectiveAssessment,
@@ -54,6 +53,11 @@ from desloppify.engine._state.schema import (
     get_state_file,
     json_default,
     migrate_state_keys,
+    scan_inventory_available,
+    scan_metadata,
+    scan_reconstructed_issue_count,
+    scan_source,
+    scan_metrics_available,
     utc_now,
     validate_state_invariants,
 )
@@ -63,28 +67,7 @@ from desloppify.engine._state.schema_scores import (
     get_strict_score,
     get_verified_strict_score,
 )
-from desloppify.engine._state.scoring import (
-    suppression_metrics,
-)
-
-
-class ScoreSnapshot(NamedTuple):
-    """All four canonical scores from a single state dict."""
-
-    overall: float | None
-    objective: float | None
-    strict: float | None
-    verified: float | None
-
-
-def score_snapshot(state: StateModel) -> ScoreSnapshot:
-    """Load all four canonical scores from *state* in one call."""
-    return ScoreSnapshot(
-        overall=get_overall_score(state),
-        objective=get_objective_score(state),
-        strict=get_strict_score(state),
-        verified=get_verified_strict_score(state),
-    )
+from desloppify.state_scoring import ScoreSnapshot, score_snapshot, suppression_metrics
 
 
 __all__ = [
@@ -92,6 +75,7 @@ __all__ = [
     "ConcernDismissal",
     "DimensionScore",
     "Issue",
+    "ScanMetadataModel",
     "MergeScanOptions",
     "ScoreSnapshot",
     "StateModel",
@@ -105,31 +89,23 @@ __all__ = [
     "get_state_dir",
     "get_state_file",
     # Functions
-    "add_ignore",
     "apply_issue_noise_budget",
-    "coerce_assessment_score",
     "empty_state",
     "ensure_state_defaults",
-    "find_suspect_detectors",
-    "issue_in_scan_scope",
-    "open_scope_breakdown",
-    "is_ignored",
     "json_default",
     "load_state",
-    "make_issue",
-    "match_issues",
-    "merge_scan",
-    "path_scoped_issues",
-    "remove_ignored_issues",
     "resolve_issue_noise_budget",
     "resolve_issue_noise_global_budget",
     "resolve_issue_noise_settings",
-    "resolve_issues",
     "save_state",
+    "scan_inventory_available",
+    "scan_metadata",
+    "scan_reconstructed_issue_count",
+    "scan_source",
+    "scan_metrics_available",
     "state_lock",
     "score_snapshot",
     "suppression_metrics",
-    "upsert_issues",
     "utc_now",
     "validate_state_invariants",
     "migrate_state_keys",

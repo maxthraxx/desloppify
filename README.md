@@ -37,14 +37,18 @@ desloppify next
 Your goal is to get the strict score as high as possible. The scoring resists gaming — the
 only way to improve it is to actually make the code better.
 
-THE LOOP: run `next`. It tells you what to fix, which file, and the resolve command to run
-when done. Fix it, resolve it, run `next` again. Over and over. This is your main job.
+THE LOOP: run `next`. It is the execution queue from the living plan, not the whole backlog.
+It tells you what to fix now, which file, and the resolve command to run when done.
+Fix it, resolve it, run `next` again. Over and over. This is your main job.
+
+Use `desloppify backlog` only when you need to inspect broader open work that is not currently
+driving execution.
 
 Don't be lazy. Large refactors and small detailed fixes — do both with equal energy. No task
 is too big or too small. Fix things properly, not minimally.
 
-Use `plan` to reorder priorities or cluster related issues. Rescan periodically. The scan
-output includes agent instructions — follow them, don't substitute your own analysis.
+Use `plan` / `plan queue` to reorder priorities or cluster related issues. Rescan periodically.
+The scan output includes agent instructions — follow them, don't substitute your own analysis.
 ```
 
 ## From Vibe Coding to Vibe Engineering

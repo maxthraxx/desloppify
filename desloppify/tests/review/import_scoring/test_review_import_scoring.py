@@ -242,7 +242,9 @@ class TestScoringIntegration:
         assert "Test health" in dim_names
         rc = [d for d in DIMENSIONS if d.name == "Test health"][0]
         assert rc.tier == 4
-        assert "subjective_review" in rc.detectors
+        # subjective_review is now a non-objective detector, not in Test health
+        assert "subjective_review" not in rc.detectors
+        assert "test_coverage" in rc.detectors
 
 
 # ── Assessment import tests ────────────────────────────────────────

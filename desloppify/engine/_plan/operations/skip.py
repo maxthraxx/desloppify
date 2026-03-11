@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from desloppify.engine._plan.operations.lifecycle import clear_focus_if_cluster_empty
 from desloppify.engine._plan.operations.queue import _remove_id_from_lists
 from desloppify.engine._plan.promoted_ids import prune_promoted_ids
 from desloppify.engine._plan.schema import PlanModel, SkipEntry, ensure_plan_defaults
@@ -92,6 +93,7 @@ def skip_items(
             "skipped_at_scan": skip_options.scan_count,
         }
         count += 1
+    clear_focus_if_cluster_empty(plan)
     return count
 
 

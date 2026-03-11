@@ -33,7 +33,7 @@ Desloppify Scan (python)
   Scan complete
   ──────────────────────────────────────────────────
   +1 new
-  Scores: overall 40.0/100 (+40.0)  objective 100.0/100 (+100.0)  strict 40.0/100 (+40.0)  verified 40.0/100 (+40.0)  |  1 open / 1 total
+  Scores: overall 25.0/100 (+25.0)  objective 100.0/100 (+100.0)  strict 25.0/100 (+25.0)  verified 25.0/100 (+25.0)  |  1 open / 1 total
   Scorecard dimensions (matches scorecard.png):
   File health        ░░░░░░░░░░░░░░░   0.0%  (strict   0.0%)
   AI Generated Debt  ░░░░░░░░░░░░░░░   0.0%  (strict   0.0%)
@@ -49,14 +49,14 @@ Desloppify Scan (python)
   Test health        ░░░░░░░░░░░░░░░   0.0%  (strict   0.0%)
 
   Score recipe:
-    overall = 40% mechanical + 60% subjective
+    overall = 25% mechanical + 75% subjective
     Pool averages: mechanical 100.0% · subjective 0.0%
     Biggest weighted drags:
-      - High Elegance: -13.20 pts (score 0.0%, 22.0% of subjective pool)
-      - Mid Elegance: -13.20 pts (score 0.0%, 22.0% of subjective pool)
-      - Type Safety: -7.20 pts (score 0.0%, 12.0% of subjective pool)
-      - Contracts: -7.20 pts (score 0.0%, 12.0% of subjective pool)
-      - Low Elegance: -7.20 pts (score 0.0%, 12.0% of subjective pool)
+      - High Elegance: -16.50 pts (score 0.0%, 22.0% of subjective pool)
+      - Mid Elegance: -16.50 pts (score 0.0%, 22.0% of subjective pool)
+      - Type Safety: -9.00 pts (score 0.0%, 12.0% of subjective pool)
+      - Contracts: -9.00 pts (score 0.0%, 12.0% of subjective pool)
+      - Low Elegance: -9.00 pts (score 0.0%, 12.0% of subjective pool)
 
   Needs attention:
     Naming Quality (0%) — run `desloppify review --prepare` to assess

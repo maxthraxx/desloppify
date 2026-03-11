@@ -171,6 +171,9 @@ def _append_concerns_batch(
                             existing_files.add(filepath)
                     existing["concern_signals"] = concerns_batch.get("concern_signals", [])
                     existing["concern_signal_count"] = concerns_batch.get("concern_signal_count", 0)
+                    jfc = concerns_batch.get("judgment_finding_counts")
+                    if jfc:
+                        existing["judgment_finding_counts"] = jfc
                     merged = True
                     break
             if not merged:
@@ -215,6 +218,7 @@ def prepare_holistic_review_payload(
         lang,
         repo_root=path,
         max_files_per_batch=options.max_files_per_batch,
+        state=state,
     )
 
     _append_concerns_batch(

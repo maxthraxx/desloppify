@@ -175,7 +175,10 @@ def extract_ts_functions(filepath: str) -> list[FunctionInfo]:
                         loc=end_line - line_idx + 1,
                         body=body,
                         normalized=normalized,
-                        body_hash=hashlib.md5(normalized.encode()).hexdigest(),
+                        body_hash=hashlib.md5(
+                            normalized.encode(),
+                            usedforsecurity=False,
+                        ).hexdigest(),
                         params=params,
                     )
                 )

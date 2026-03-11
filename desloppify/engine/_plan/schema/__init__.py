@@ -64,7 +64,7 @@ class Cluster(TypedDict, total=False):
     dismissed: list[str]
     agent_safe: bool
     dependency_order: int
-    action_steps: list[str | ActionStep]
+    action_steps: list[ActionStep]
     priority: int
     source_clusters: list[str]
     status: str
@@ -137,7 +137,10 @@ class EpicTriageMeta(TypedDict, total=False):
     """Metadata persisted for the multi-stage triage flow."""
 
     triaged_ids: list[str]
+    active_triage_issue_ids: list[str]
     dismissed_ids: list[str]
+    undispositioned_issue_ids: list[str]
+    undispositioned_issue_count: int
     issue_snapshot_hash: str
     strategy_summary: str
     trigger: str
@@ -155,7 +158,9 @@ class EpicTriageMeta(TypedDict, total=False):
 class RefreshState(TypedDict, total=False):
     """Metadata for the post-flight refresh pipeline."""
 
+    lifecycle_phase: str
     postflight_scan_completed_at_scan_count: int
+    pending_import_scores: dict[str, Any]
 
 
 class PlanModel(TypedDict, total=False):

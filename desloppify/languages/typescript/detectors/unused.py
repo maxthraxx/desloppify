@@ -58,12 +58,17 @@ def detect_unused(path: Path, category: str = "all") -> tuple[list[dict], int]:
         safe_write_text(tmp_path, json.dumps(tmp_tsconfig, indent=2))
         try:
             result = subprocess.run(
-                ["npx", "tsc", "--project", str(tmp_path), "--noEmit"],
+                [
+                    "npx",
+                    "tsc",
+                    "--project",
+                    str(tmp_path),
+                    "--noEmit",
+                ],
                 capture_output=True,
                 text=True,
                 cwd=get_project_root(),
                 timeout=120,
-                shell=(sys.platform == "win32"),
             )
         except (subprocess.SubprocessError, OSError) as exc:
             logger.debug("Falling back to source-based unused detection: %s", exc)

@@ -91,6 +91,11 @@ def test_queue_breakdown_defaults():
     assert b.focus_cluster_total == 0
 
 
+def test_queue_breakdown_objective_actionable_zero_for_review_phase() -> None:
+    b = QueueBreakdown(queue_total=4, lifecycle_phase="review")
+    assert b.objective_actionable == 0
+
+
 def test_queue_breakdown_objective_actionable_excludes_subjective_and_workflow():
     b = QueueBreakdown(queue_total=10, subjective=3, workflow=2)
     assert b.objective_actionable == 5
@@ -138,6 +143,16 @@ def test_score_display_mode_phase_transition_when_only_subjective():
 def test_score_display_mode_phase_transition_when_only_workflow():
     b = QueueBreakdown(queue_total=1, subjective=0, workflow=1)
     assert score_display_mode(b, 80.0) is ScoreDisplayMode.PHASE_TRANSITION
+
+
+def test_score_display_mode_live_when_scan_phase_is_active() -> None:
+    b = QueueBreakdown(queue_total=1, workflow=1, lifecycle_phase="scan")
+    assert score_display_mode(b, 80.0) is ScoreDisplayMode.LIVE
+
+
+def test_score_display_mode_frozen_when_execute_phase_is_active() -> None:
+    b = QueueBreakdown(queue_total=1, lifecycle_phase="execute")
+    assert score_display_mode(b, 80.0) is ScoreDisplayMode.FROZEN
 
 
 def test_score_display_mode_live_when_queue_empty():
@@ -282,7 +297,7 @@ def test_plan_aware_queue_breakdown_basic():
         "skipped": {"c": {"kind": "temporary"}},
     }
     with patch(
-        "desloppify.engine._work_queue.core.build_work_queue",
+        "desloppify.app.commands.helpers.queue_progress.build_execution_queue",
         return_value=mock_result,
     ):
         breakdown = plan_aware_queue_breakdown({"issues": {}}, plan=plan)
@@ -290,6 +305,7 @@ def test_plan_aware_queue_breakdown_basic():
     assert breakdown.plan_ordered == 2  # a, b (c is skipped)
     assert breakdown.skipped == 1
     assert breakdown.subjective == 1
+    assert breakdown.lifecycle_phase == "execute"
 
 
 def test_plan_aware_queue_breakdown_no_plan():
@@ -299,7 +315,7 @@ def test_plan_aware_queue_breakdown_no_plan():
         "items": mock_items,
     }
     with patch(
-        "desloppify.engine._work_queue.core.build_work_queue",
+        "desloppify.app.commands.helpers.queue_progress.build_execution_queue",
         return_value=mock_result,
     ):
         breakdown = plan_aware_queue_breakdown({"issues": {}})
@@ -332,7 +348,7 @@ def test_plan_aware_queue_breakdown_with_focus():
         },
     }
     with patch(
-        "desloppify.engine._work_queue.core.build_work_queue",
+        "desloppify.app.commands.helpers.queue_progress.build_execution_queue",
         return_value=mock_result,
     ):
         breakdown = plan_aware_queue_breakdown(state, plan=plan)

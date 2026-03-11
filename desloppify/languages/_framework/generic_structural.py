@@ -14,7 +14,7 @@ from desloppify.languages._framework.treesitter import (
 if TYPE_CHECKING:
     from desloppify.languages._framework.base.types import LangRuntimeContract
     from desloppify.languages._framework.treesitter import TreeSitterLangSpec
-    from desloppify.state import Issue
+    from desloppify.state_io import Issue
 
 logger = logging.getLogger(__name__)
 

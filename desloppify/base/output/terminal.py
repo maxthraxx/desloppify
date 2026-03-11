@@ -21,11 +21,23 @@ COLORS = {
     "cyan": "\033[36m",
 }
 
-NO_COLOR = os.environ.get("NO_COLOR") is not None
+
+class _NoColorFlag:
+    """Compatibility export that reads the current environment on demand."""
+
+    def __bool__(self) -> bool:
+        return no_color_enabled()
+
+
+def no_color_enabled() -> bool:
+    return os.environ.get("NO_COLOR") is not None
+
+
+NO_COLOR = _NoColorFlag()
 
 
 def colorize(text: str, color: str) -> str:
-    if NO_COLOR or not sys.stdout.isatty():
+    if no_color_enabled() or not sys.stdout.isatty():
         return str(text)
     return f"{COLORS.get(color, '')}{text}{COLORS['reset']}"
 
@@ -88,5 +100,6 @@ __all__ = [
     "colorize",
     "display_entries",
     "log",
+    "no_color_enabled",
     "print_table",
 ]

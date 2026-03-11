@@ -65,6 +65,29 @@ def test_steps_with_bad_paths_no_paths(tmp_path: Path) -> None:
     assert result == []
 
 
+def test_steps_with_bad_paths_monorepo_prefix(tmp_path: Path) -> None:
+    """Monorepo paths like packages/backend/src/foo.ts should be validated correctly."""
+    (tmp_path / "packages" / "backend" / "src").mkdir(parents=True)
+    (tmp_path / "packages" / "backend" / "src" / "middleware" / "auth.ts").parent.mkdir(parents=True)
+    (tmp_path / "packages" / "backend" / "src" / "middleware" / "auth.ts").write_text("export {}")
+    plan = _plan_with_steps([
+        {"title": "fix", "detail": "Update packages/backend/src/middleware/auth.ts to fix auth"},
+    ])
+    result = _steps_with_bad_paths(plan, tmp_path)
+    assert result == [], f"Valid monorepo path was flagged as bad: {result}"
+
+
+def test_steps_with_bad_paths_monorepo_invalid(tmp_path: Path) -> None:
+    """Monorepo paths that don't exist should still be flagged."""
+    (tmp_path / "packages" / "backend" / "src").mkdir(parents=True)
+    plan = _plan_with_steps([
+        {"title": "fix", "detail": "Update packages/backend/src/nonexistent.ts"},
+    ])
+    result = _steps_with_bad_paths(plan, tmp_path)
+    assert len(result) == 1
+    assert "packages/backend/src/nonexistent.ts" in result[0][2]
+
+
 def test_steps_with_bad_paths_auto_cluster_skipped(tmp_path: Path) -> None:
     """Auto clusters should be skipped."""
     plan = {
@@ -582,7 +605,7 @@ def test_high_step_ratio_skips_small_clusters() -> None:
 
 def test_auto_start_preserves_existing_stages(monkeypatch) -> None:
     """Auto-start in stage commands should NOT clear existing triage_stages."""
-    from desloppify.app.commands.plan.triage.stages import commands as stage_flow_commands
+    import desloppify.app.commands.plan.triage.stages.observe as observe_flow
 
     existing_stages = {
         "observe": {"report": "analysis", "confirmed_at": "2026-01-01"},
@@ -597,10 +620,10 @@ def test_auto_start_preserves_existing_stages(monkeypatch) -> None:
 
     saved_plans = []
     monkeypatch.setattr(
-        stage_flow_commands, "has_triage_in_queue", lambda p: False,
+        observe_flow, "has_triage_in_queue", lambda p: False,
     )
     monkeypatch.setattr(
-        stage_flow_commands, "inject_triage_stages", lambda p: None,
+        observe_flow, "inject_triage_stages", lambda p: None,
     )
 
     class FakeRuntime:
@@ -623,7 +646,7 @@ def test_auto_start_preserves_existing_stages(monkeypatch) -> None:
             pass
 
     args = argparse.Namespace(report="x" * 200, stage="observe")
-    stage_flow_commands._cmd_stage_observe(args, services=FakeServices())
+    observe_flow._cmd_stage_observe(args, services=FakeServices())
 
     # The key assertion: existing stages should be preserved
     meta = test_plan["epic_triage_meta"]

@@ -6,7 +6,7 @@ import argparse
 
 
 def _add_queue_subparser(plan_sub) -> None:
-    p_queue = plan_sub.add_parser("queue", help="Compact table of upcoming queue items")
+    p_queue = plan_sub.add_parser("queue", help="Compact table of execution queue items")
     p_queue.add_argument("--top", type=int, default=30, help="Max items (default: 30, 0=all)")
     p_queue.add_argument("--cluster", type=str, default=None, metavar="NAME",
                          help="Filter to a specific cluster")

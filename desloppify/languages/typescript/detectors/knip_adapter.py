@@ -26,7 +26,13 @@ def _run_knip(path: Path, timeout: int = 120) -> dict | None:
     """Run ``npx knip --reporter json`` and return parsed JSON, or None on failure."""
     try:
         result = subprocess.run(
-            ["npx", "knip", "--reporter", "json", "--no-gitignore"],
+            [
+                "npx",
+                "knip",
+                "--reporter",
+                "json",
+                "--no-gitignore",
+            ],
             capture_output=True,
             text=True,
             cwd=str(path),

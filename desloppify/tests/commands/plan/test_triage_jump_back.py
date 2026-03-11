@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 
 import desloppify.app.commands.plan.triage.command as triage_mod
+from desloppify.app.commands.plan.triage.services import TriageServices
 from desloppify.engine._plan.schema import empty_plan
 from desloppify.engine._plan.constants import TRIAGE_STAGE_IDS
 
@@ -95,6 +96,35 @@ def _fake_args(**overrides) -> argparse.Namespace:
     return argparse.Namespace(**defaults)
 
 
+def _fake_services(plan, state, save_plan_fn=None):
+    """Build a fake TriageServices with test stubs."""
+    return TriageServices(
+        command_runtime=lambda args: _fake_runtime(state),
+        load_plan=lambda *a, **kw: plan,
+        save_plan=save_plan_fn or (lambda p, *a, **kw: None),
+        collect_triage_input=lambda p, s: type("TI", (), {
+            "open_issues": s.get("issues", {}),
+            "resolved_issues": {},
+            "new_since_last": [],
+            "resolved_since_last": [],
+            "existing_clusters": {},
+        })(),
+        detect_recurring_patterns=lambda _a, _b: {},
+        append_log_entry=lambda *a, **kw: None,
+        extract_issue_citations=lambda text, ids: set(),
+        build_triage_prompt=lambda si: "prompt",
+    )
+
+
+def _patch_triage(monkeypatch, plan, state, save_plan_fn=None):
+    """Apply standard triage monkeypatches."""
+    monkeypatch.setattr(
+        triage_mod, "default_triage_services",
+        lambda: _fake_services(plan, state, save_plan_fn),
+    )
+    monkeypatch.setattr(triage_mod, "require_issue_inventory", lambda s: True)
+
+
 # ---------------------------------------------------------------------------
 # Tests: jump-back reflect with new report
 # ---------------------------------------------------------------------------
@@ -107,10 +137,7 @@ class TestJumpBackReflect:
         )
         state = _state_with_issues("r1", "r2", "r3", "r4", "r5")
 
-        monkeypatch.setattr(triage_mod, "load_plan", lambda *a, **kw: plan)
-        monkeypatch.setattr(triage_mod, "command_runtime", lambda args: _fake_runtime(state))
-        monkeypatch.setattr(triage_mod, "require_completed_scan", lambda s: True)
-        monkeypatch.setattr(triage_mod, "save_plan", lambda p: None)
+        _patch_triage(monkeypatch, plan, state)
 
         new_report = (
             "Revised strategy for r1 r2 r3 r4 r5: after further analysis, the naming issues "
@@ -134,10 +161,7 @@ class TestJumpBackReflect:
         original_report = plan["epic_triage_meta"]["triage_stages"]["reflect"]["report"]
         state = _state_with_issues("r1", "r2", "r3", "r4", "r5")
 
-        monkeypatch.setattr(triage_mod, "load_plan", lambda *a, **kw: plan)
-        monkeypatch.setattr(triage_mod, "command_runtime", lambda args: _fake_runtime(state))
-        monkeypatch.setattr(triage_mod, "require_completed_scan", lambda s: True)
-        monkeypatch.setattr(triage_mod, "save_plan", lambda p: None)
+        _patch_triage(monkeypatch, plan, state)
 
         args = _fake_args(stage="reflect")  # No --report
         triage_mod.cmd_plan_triage(args)
@@ -154,10 +178,7 @@ class TestJumpBackReflect:
         original_confirmed = plan["epic_triage_meta"]["triage_stages"]["reflect"]["confirmed_at"]
         state = _state_with_issues("r1", "r2", "r3", "r4", "r5")
 
-        monkeypatch.setattr(triage_mod, "load_plan", lambda *a, **kw: plan)
-        monkeypatch.setattr(triage_mod, "command_runtime", lambda args: _fake_runtime(state))
-        monkeypatch.setattr(triage_mod, "require_completed_scan", lambda s: True)
-        monkeypatch.setattr(triage_mod, "save_plan", lambda p: None)
+        _patch_triage(monkeypatch, plan, state)
 
         args = _fake_args(stage="reflect")  # No --report (reuse)
         triage_mod.cmd_plan_triage(args)
@@ -178,10 +199,7 @@ class TestJumpBackObserve:
         )
         state = _state_with_issues("r1", "r2", "r3", "r4", "r5")
 
-        monkeypatch.setattr(triage_mod, "load_plan", lambda *a, **kw: plan)
-        monkeypatch.setattr(triage_mod, "command_runtime", lambda args: _fake_runtime(state))
-        monkeypatch.setattr(triage_mod, "require_completed_scan", lambda s: True)
-        monkeypatch.setattr(triage_mod, "save_plan", lambda p: None)
+        _patch_triage(monkeypatch, plan, state)
 
         new_report = (
             "Completely revised observation after discovering additional naming "
@@ -211,10 +229,7 @@ class TestJumpBackThenFoldConfirm:
         )
         state = _state_with_issues("r1", "r2", "r3", "r4", "r5")
 
-        monkeypatch.setattr(triage_mod, "load_plan", lambda *a, **kw: plan)
-        monkeypatch.setattr(triage_mod, "command_runtime", lambda args: _fake_runtime(state))
-        monkeypatch.setattr(triage_mod, "require_completed_scan", lambda s: True)
-        monkeypatch.setattr(triage_mod, "save_plan", lambda p: None)
+        _patch_triage(monkeypatch, plan, state)
 
         # Step 1: Jump back to reflect (reuse) — this clears organize's confirmation
         args = _fake_args(stage="reflect")
@@ -260,10 +275,7 @@ class TestCompleteJumpBackGuidance:
         )
         state = _state_with_issues("r1", "r2", "r3", "r4", "r5")
 
-        monkeypatch.setattr(triage_mod, "load_plan", lambda *a, **kw: plan)
-        monkeypatch.setattr(triage_mod, "command_runtime", lambda args: _fake_runtime(state))
-        monkeypatch.setattr(triage_mod, "require_completed_scan", lambda s: True)
-        monkeypatch.setattr(triage_mod, "save_plan", lambda p: None)
+        _patch_triage(monkeypatch, plan, state)
 
         strategy = (
             "Execute fix-naming cluster first to resolve all naming convention "
@@ -291,10 +303,7 @@ class TestRerunWithoutPriorData:
         # No reflect stage data exists
         state = _state_with_issues("r1", "r2", "r3")
 
-        monkeypatch.setattr(triage_mod, "load_plan", lambda *a, **kw: plan)
-        monkeypatch.setattr(triage_mod, "command_runtime", lambda args: _fake_runtime(state))
-        monkeypatch.setattr(triage_mod, "require_completed_scan", lambda s: True)
-        monkeypatch.setattr(triage_mod, "save_plan", lambda p: None)
+        _patch_triage(monkeypatch, plan, state)
 
         args = _fake_args(stage="reflect")  # No --report, no prior data
         triage_mod.cmd_plan_triage(args)
@@ -318,10 +327,7 @@ class TestStageProgressShowsNeedsConfirm:
         )
         state = _state_with_issues("r1", "r2", "r3", "r4", "r5")
 
-        monkeypatch.setattr(triage_mod, "load_plan", lambda *a, **kw: plan)
-        monkeypatch.setattr(triage_mod, "command_runtime", lambda args: _fake_runtime(state))
-        monkeypatch.setattr(triage_mod, "require_completed_scan", lambda s: True)
-        monkeypatch.setattr(triage_mod, "save_plan", lambda p: None)
+        _patch_triage(monkeypatch, plan, state)
 
         # Jump back to reflect with new report — clears organize confirmation
         new_report = (

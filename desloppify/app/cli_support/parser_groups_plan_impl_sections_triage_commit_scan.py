@@ -169,9 +169,22 @@ examples:
     p_remove.add_argument("rule_index", type=int, help="Rule number to remove")
 
 
+def _add_repair_state_subparser(plan_sub) -> None:
+    plan_sub.add_parser(
+        "repair-state",
+        help="Rebuild state.json from surviving plan metadata",
+        epilog="""\
+examples:
+  desloppify plan repair-state
+  desloppify plan repair-state --state .desloppify/state-typescript.json""",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+
+
 __all__ = [
     "_add_commit_log_subparser",
     "_add_policy_subparser",
+    "_add_repair_state_subparser",
     "_add_scan_gate_subparser",
     "_add_triage_subparser",
 ]

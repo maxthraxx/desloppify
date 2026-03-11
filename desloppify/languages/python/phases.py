@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from desloppify import state as state_mod
 from desloppify.base.output.terminal import log
 from desloppify.engine.detectors.base import ComplexitySignal, GodRule
+from desloppify.engine._state.filtering import make_issue
 from desloppify.engine.policy.zones import adjust_potential, filter_entries
 from desloppify.languages._framework.issue_factories import (
     make_unused_issues,
@@ -33,7 +33,7 @@ from desloppify.languages.python.phases_runtime import (
     run_phase_coupling,
     run_phase_structural,
 )
-from desloppify.state import Issue
+from desloppify.state_io import Issue
 
 # ── Config data (single source of truth) ──────────────────
 
@@ -141,7 +141,7 @@ def phase_responsibility_cohesion(
         if len(entry["component_sizes"]) > 5:
             comp_sizes += f", +{len(entry['component_sizes']) - 5} more"
         results.append(
-            state_mod.make_issue(
+            make_issue(
                 "responsibility_cohesion",
                 entry["file"],
                 "",
@@ -183,7 +183,7 @@ def phase_uncalled_functions(
     results: list[Issue] = []
     for entry in entries:
         results.append(
-            state_mod.make_issue(
+            make_issue(
                 "uncalled_functions",
                 entry["file"],
                 entry["name"],
@@ -209,7 +209,7 @@ def phase_unused_enums(
     results: list[Issue] = []
     for entry in entries:
         results.append(
-            state_mod.make_issue(
+            make_issue(
                 "unused_enums",
                 entry["file"],
                 entry["name"],

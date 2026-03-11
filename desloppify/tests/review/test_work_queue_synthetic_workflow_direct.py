@@ -4,11 +4,30 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+from desloppify.engine._work_queue.ranking import item_sort_key
 import desloppify.engine._work_queue.synthetic_workflow as workflow_mod
 
 
 def test_build_score_checkpoint_item_returns_none_when_not_queued() -> None:
     assert workflow_mod.build_score_checkpoint_item({"queue_order": []}, {}) is None
+
+
+def test_build_run_scan_item_only_while_postflight_scan_is_pending() -> None:
+    item = workflow_mod.build_run_scan_item({"queue_order": []})
+
+    assert item is not None
+    assert item["id"] == "workflow::run-scan"
+    assert item["kind"] == "workflow_action"
+    assert item["execution_visibility"] == "always"
+    assert item["primary_command"] == "desloppify scan"
+
+    completed = workflow_mod.build_run_scan_item(
+        {
+            "queue_order": [],
+            "refresh_state": {"postflight_scan_completed_at_scan_count": 5},
+        }
+    )
+    assert completed is None
 
 
 def test_build_score_checkpoint_item_includes_strict_delta(monkeypatch) -> None:
@@ -46,12 +65,22 @@ def test_build_create_plan_and_import_scores_items() -> None:
     assert "Create prioritized plan" in create_item["summary"]
 
     import_item = workflow_mod.build_import_scores_item(
-        {"queue_order": [WORKFLOW_IMPORT_SCORES_ID]},
-        {},
+        {
+            "queue_order": [WORKFLOW_IMPORT_SCORES_ID],
+            "refresh_state": {
+                "pending_import_scores": {
+                    "import_file": "/tmp/review/issues.json",
+                    "packet_sha256": "abc123",
+                }
+            },
+        },
+        {"assessment_import_audit": []},
     )
     assert import_item is not None
     assert import_item["id"] == WORKFLOW_IMPORT_SCORES_ID
     assert "untrusted source" in import_item["detail"]["explanation"]
+    assert "/tmp/review/issues.json" in import_item["primary_command"]
+    assert import_item["detail"]["packet_sha256"] == "abc123"
 
 
 def test_build_create_plan_item_uses_confirm_for_unconfirmed_recorded_stage() -> None:
@@ -109,6 +138,21 @@ def test_build_create_plan_item_advances_to_next_pending_stage() -> None:
     )
 
 
+def test_triage_stage_order_contract_keeps_sense_check_before_commit() -> None:
+    sense_check = {
+        "kind": "workflow_stage",
+        "detail": {"stage": "sense-check"},
+        "id": "triage::sense-check",
+    }
+    commit = {
+        "kind": "workflow_stage",
+        "detail": {"stage": "commit"},
+        "id": "triage::commit",
+    }
+
+    assert item_sort_key(sense_check) < item_sort_key(commit)
+
+
 def test_build_communicate_score_item_formats_command_and_delta(monkeypatch) -> None:
     from desloppify.engine._plan.constants import WORKFLOW_COMMUNICATE_SCORE_ID
 
@@ -153,6 +197,7 @@ def test_build_deferred_disposition_item_with_temporary_skips() -> None:
     assert item is not None
     assert item["id"] == WORKFLOW_DEFERRED_DISPOSITION_ID
     assert item["kind"] == "workflow_action"
+    assert item["execution_visibility"] == "always"
     assert "0 clusters + 2 individual items" in item["summary"]
     assert item["primary_command"] == 'desloppify plan unskip "*"'
     assert item["detail"]["deferred_cluster_count"] == 0

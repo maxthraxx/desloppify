@@ -65,6 +65,7 @@ def _is_runner_missing(text: str) -> bool:
         "codex not found" in text
         or ("no such file or directory" in text and "$ codex " in text)
         or ("errno 2" in text and "codex" in text)
+        or ("winerror 2" in text and "codex" in text)
     )
 
 

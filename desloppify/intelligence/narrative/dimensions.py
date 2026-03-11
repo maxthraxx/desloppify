@@ -8,8 +8,9 @@ from desloppify.engine._scoring.policy.core import (
     TIER_WEIGHTS,
 )
 from desloppify.engine._scoring.results.core import compute_score_impact
+from desloppify.engine._state.filtering import path_scoped_issues
 from desloppify.intelligence.narrative._constants import STRUCTURAL_MERGE
-from desloppify.state import StateModel, path_scoped_issues
+from desloppify.state_io import StateModel
 
 
 def _analyze_dimensions(dim_scores: dict, history: list[dict], state: StateModel) -> dict:

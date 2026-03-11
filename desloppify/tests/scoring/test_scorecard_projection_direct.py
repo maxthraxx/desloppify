@@ -35,7 +35,12 @@ def test_abstraction_dimension_cli_keys_use_components():
         {
             "detectors": {
                 "subjective_assessment": {
-                    "components": ["Abstraction Leverage", "Indirection Cost"],
+                    "components": [
+                        "Abstraction Leverage",
+                        "Delegation Density",
+                        "Definition Directness",
+                        "Type Discipline",
+                    ],
                 }
             }
         },

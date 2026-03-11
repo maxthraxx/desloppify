@@ -13,6 +13,9 @@ _COMPONENT_TO_DIMENSION: dict[str, str] = {
     "abstraction leverage": "abstraction_fitness",
     "indirection cost": "abstraction_fitness",
     "interface honesty": "abstraction_fitness",
+    "delegation density": "abstraction_fitness",
+    "definition directness": "abstraction_fitness",
+    "type discipline": "abstraction_fitness",
 }
 
 

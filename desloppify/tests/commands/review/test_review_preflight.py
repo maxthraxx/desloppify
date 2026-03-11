@@ -59,6 +59,23 @@ def _concern_issue(*, issue_id: str, dimension: str, status: str = "open") -> di
     }
 
 
+def _objective_issue(
+    *,
+    issue_id: str,
+    detector: str = "smells",
+    dimension: str,
+    status: str = "open",
+) -> dict:
+    return {
+        "id": issue_id,
+        "detector": detector,
+        "status": status,
+        "file": ".",
+        "suppressed": False,
+        "detail": {"dimension": dimension},
+    }
+
+
 # -- review_rerun_preflight (gate logic) --------------------------------------
 
 
@@ -143,6 +160,27 @@ def test_subjective_review_backlog_is_dimension_filtered():
     args = _make_args(dimensions="naming_quality")
     with patch(_QUEUE_CONTEXT, return_value=_mock_queue_context(objective_count=0)):
         review_rerun_preflight(state, args)
+
+
+def test_subjective_assessment_queue_items_do_not_block_targeted_rerun():
+    """Visible rerun actions should not fall back to objective backlog counts."""
+    state = _state_with_prior_review()
+    queue = {
+        "items": [
+            {
+                "detector": "subjective_assessment",
+                "detail": {"dimension": "naming_quality"},
+            }
+        ]
+    }
+    with (
+        patch(_QUEUE_CONTEXT, return_value=_mock_queue_context(objective_count=20)),
+        patch(
+            "desloppify.app.commands.review.preflight.build_work_queue",
+            return_value=queue,
+        ),
+    ):
+        review_rerun_preflight(state, _make_args(dimensions="naming_quality"))
 
 
 def test_targeted_dimension_does_not_block_own_preparation():
@@ -380,6 +418,49 @@ def test_targeting_mix_of_scored_and_unscored_blocks_and_suggests(capsys):
     assert "design_coherence" in err
     # Should suggest targeting only the unscored dimension
     assert "--dimensions logic_clarity" in err
+
+
+def test_targeted_rerun_ignores_unrelated_objective_backlog(monkeypatch):
+    """Targeted reruns ignore objective backlog outside the requested dimensions."""
+    state = _state_with_prior_review()
+    args = _make_args(dimensions="naming_quality")
+    monkeypatch.setattr(
+        "desloppify.app.commands.review.preflight.build_work_queue",
+        lambda *_args, **_kwargs: {
+            "items": [
+                _objective_issue(
+                    issue_id="smells::logic",
+                    dimension="logic_clarity",
+                )
+            ]
+        },
+    )
+    with patch(_QUEUE_CONTEXT, return_value=_mock_queue_context(objective_count=3)):
+        review_rerun_preflight(state, args)
+
+
+def test_targeted_rerun_blocks_on_same_scope_objective_backlog(capsys, monkeypatch):
+    """Targeted reruns still block on objective backlog in the same dimensions."""
+    state = _state_with_prior_review()
+    args = _make_args(dimensions="naming_quality")
+    monkeypatch.setattr(
+        "desloppify.app.commands.review.preflight.build_work_queue",
+        lambda *_args, **_kwargs: {
+            "items": [
+                _objective_issue(
+                    issue_id="smells::naming",
+                    dimension="naming_quality",
+                )
+            ]
+        },
+    )
+    with patch(_QUEUE_CONTEXT, return_value=_mock_queue_context(objective_count=3)):
+        with pytest.raises(CommandError) as exc:
+            review_rerun_preflight(state, args)
+        assert exc.value.exit_code == 1
+
+    err = capsys.readouterr().err
+    assert "Open objective issue(s): 1" in err
 
 
 def test_no_dimensions_flag_blocks_on_any_scored(capsys):

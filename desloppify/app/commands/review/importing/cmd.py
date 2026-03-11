@@ -7,6 +7,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from desloppify import state as state_mod
+import desloppify.engine.plan_queue as plan_queue_mod
 from desloppify.app.commands.scan.reporting import (
     dimensions as reporting_dimensions_mod,
 )
@@ -166,12 +167,60 @@ def _persist_import_state(
     diff: dict,
     assessment_mode: str,
     config: dict | None,
+    import_file: str,
+    import_payload: dict,
 ) -> None:
     """Persist imported state and synchronize the work plan."""
     state.clear()
     state.update(working_state)
     state_mod.save_state(state, state_file)
-    sync_plan_after_import(state, diff, assessment_mode, config=config)
+    sync_plan_after_import(
+        state,
+        diff,
+        assessment_mode,
+        state_file=state_file,
+        config=config,
+        import_file=import_file,
+        import_payload=import_payload,
+    )
+
+
+def _guard_pending_import_scores_match(
+    *,
+    state: dict,
+    state_file,
+    import_file: str,
+    issues_data: dict,
+    assessment_policy: AssessmentImportPolicyModel,
+) -> None:
+    """Refuse durable imports that do not match the queued score-import batch."""
+    if assessment_policy.mode not in {"trusted_internal", "attested_external"}:
+        return
+    plan_path = plan_queue_mod.plan_path_for_state(Path(state_file))
+    if not plan_queue_mod.has_living_plan(plan_path):
+        return
+    plan = plan_queue_mod.load_plan(plan_path)
+    if plan_queue_mod.WORKFLOW_IMPORT_SCORES_ID not in plan.get("queue_order", []):
+        return
+    pending_meta = plan_queue_mod.pending_import_scores_meta(plan, state)
+    matches, reason = plan_queue_mod.import_scores_meta_matches(
+        pending_meta,
+        import_file=import_file,
+        import_payload=issues_data,
+    )
+    if matches:
+        return
+    expected_file = ""
+    if isinstance(pending_meta, dict):
+        expected_file = str(pending_meta.get("import_file", "")).strip()
+    raise CommandError(
+        "Refusing durable score import: the pending "
+        "`workflow::import-scores` task is bound to a different review batch.\n"
+        f"  - {reason}\n"
+        + (f"Expected queued import file: {expected_file}\n" if expected_file else "")
+        + "Use the exact file shown by `desloppify next`, or clear the stale workflow item first.",
+        exit_code=1,
+    )
 
 
 def _has_refreshable_scorecard_context(state: dict) -> bool:
@@ -250,6 +299,13 @@ def do_import(
         import_file=str(import_file),
         colorize_fn=colorize,
     )
+    _guard_pending_import_scores_match(
+        state=state,
+        state_file=state_file,
+        import_file=str(import_file),
+        issues_data=issues_data,
+        assessment_policy=assessment_policy,
+    )
 
     prev = state_mod.score_snapshot(state)
     working_state = _build_working_state(state, state_file)
@@ -278,6 +334,8 @@ def do_import(
             diff=diff,
             assessment_mode=assessment_policy.mode,
             config=resolved_import_config.config,
+            import_file=str(import_file),
+            import_payload=issues_data,
         )
 
     display_state = state if not dry_run else working_state

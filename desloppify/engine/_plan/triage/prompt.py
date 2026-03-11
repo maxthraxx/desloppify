@@ -16,11 +16,11 @@ from desloppify.engine._state.schema import StateModel
 
 @dataclass
 class TriageInput:
-    """All data needed to produce/update triage clusters (legacy schema)."""
+    """All data needed to produce/update triage clusters."""
 
     open_issues: dict[str, dict]       # id -> issue (review + concerns)
     mechanical_issues: dict[str, dict]  # id -> issue (non-review, for context)
-    existing_epics: dict[str, Cluster]    # legacy field name; values are clusters
+    existing_epics: dict[str, Cluster]    # compatibility alias; values are clusters
     dimension_scores: dict[str, Any]      # for context
     new_since_last: set[str]             # issue IDs new since last triage
     resolved_since_last: set[str]        # issue IDs resolved since last
@@ -31,7 +31,7 @@ class TriageInput:
 
     @property
     def existing_clusters(self) -> dict[str, Cluster]:
-        """Canonical alias for ``existing_epics`` used by staged triage docs."""
+        """Canonical cluster view used by staged triage docs."""
         return self.existing_epics
 
 @dataclass
@@ -58,6 +58,11 @@ class TriageResult:
     dismissed_issues: list[DismissedIssue] = field(default_factory=list)
     contradiction_notes: list[ContradictionNote] = field(default_factory=list)
     priority_rationale: str = ""
+
+    @property
+    def clusters(self) -> list[dict]:
+        """Canonical cluster view for triage results."""
+        return self.epics
 
 
 def _issue_dimension(issue: dict) -> str:
@@ -147,14 +152,12 @@ def collect_triage_input(plan: PlanModel, state: StateModel) -> TriageInput:
     )
 
 _TRIAGE_SYSTEM_PROMPT = """\
-You are maintaining the meta-plan for this codebase. This is the legacy
-whole-plan triage contract used by compatibility callers; the primary runtime
-uses staged triage commands. Produce a coherent prioritized strategy for all
-open review issues.
+You are maintaining the meta-plan for this codebase. Produce a coherent
+prioritized strategy for all open review issues.
 
 Your plan should:
 - Cluster issues by ROOT CAUSE, not by dimension or detector
-- Give each cluster (``epics`` field in this legacy schema) a clear thesis: one imperative sentence
+- Give each cluster a clear thesis: one imperative sentence
 - Order clusters by dependency: what must be done first for later work to make sense
 - Dismiss issues that don't make sense, are contradictory, or are false positives
 - Mark which clusters are agent-safe (can be executed mechanically) vs need human judgment
@@ -164,8 +167,9 @@ Your plan should:
 Available directions for clusters: delete, merge, flatten, enforce, simplify, decompose, extract, inline.
 
 Available plan tools (the agent executing your plan has access to these):
-- `desloppify plan queue` — view all items in priority order
-- `desloppify plan focus epic/<name>` — focus the queue on one epic
+- `desloppify plan queue` — view the execution queue in priority order
+- `desloppify backlog` — inspect broader open work outside the execution queue
+- `desloppify plan focus <name>` — focus the queue on one cluster
 - `desloppify plan skip <id> --permanent --note "why" --attest "..."` — permanently dismiss
 - `desloppify plan skip <id> --note "revisit later"` — temporarily defer
 - `desloppify plan resolve <id> --note "what I did" --attest "..."` — mark resolved
@@ -181,7 +185,7 @@ removed from the queue with your stated reason.
 Respond with a single JSON object matching this schema:
 {
   "strategy_summary": "2-4 sentence narrative: what the meta-plan says, top priorities, current state",
-  "epics": [
+  "clusters": [
     {
       "name": "slug-name",
       "thesis": "imperative one-liner",
@@ -215,14 +219,13 @@ def build_triage_prompt(si: TriageInput) -> str:
     """Build the user-facing prompt content with all issue data."""
     parts: list[str] = []
 
-    # Section: existing clusters (legacy key: existing_epics)
-    if si.existing_epics:
-        parts.append("## Existing clusters (legacy field: existing_epics)")
-        for name, epic in sorted(si.existing_epics.items()):
-            status = epic.get("status", "pending")
-            thesis = epic.get("thesis", "")
-            direction = epic.get("direction", "")
-            fids = epic.get("issue_ids", [])
+    if si.existing_clusters:
+        parts.append("## Existing clusters")
+        for name, cluster in sorted(si.existing_clusters.items()):
+            status = cluster.get("status", "pending")
+            thesis = cluster.get("thesis", "")
+            direction = cluster.get("direction", "")
+            fids = cluster.get("issue_ids", [])
             parts.append(
                 f"- {name} [{status}] ({direction}): {thesis}"
                 f"\n  Issues: {', '.join(fids[:10])}"

@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import logging
 
-from desloppify import state as state_mod
 from desloppify.app.commands.helpers.guardrails import print_triage_guardrail_info
 from desloppify.app.commands.helpers.lang import resolve_lang
 from desloppify.app.commands.helpers.queue_progress import (
@@ -29,6 +28,8 @@ from desloppify.base.tooling import check_config_staleness
 from desloppify.engine._work_queue.context import queue_context
 from desloppify.engine.plan_state import load_plan
 from desloppify.intelligence.narrative.core import NarrativeContext, compute_narrative
+from desloppify.state_io import StateModel
+from desloppify.state_scoring import ScoreSnapshot, score_snapshot
 
 from .render import (
     StatusQueryRequest,
@@ -51,8 +52,8 @@ _logger = logging.getLogger(__name__)
 
 
 def print_score_section(
-    state: state_mod.StateModel,
-    scores: state_mod.ScoreSnapshot,
+    state: StateModel,
+    scores: ScoreSnapshot,
     plan: dict,
     target_strict_score: float | None,
     ctx: object | None = None,
@@ -109,7 +110,7 @@ def render_terminal_status(
     if config_warning:
         print(colorize(f"  {config_warning}", "yellow"))
 
-    scores = state_mod.score_snapshot(state)
+    scores = score_snapshot(state)
     by_tier = stats.get("by_tier", {})
     target_strict_score = target_strict_score_from_config(config)
 

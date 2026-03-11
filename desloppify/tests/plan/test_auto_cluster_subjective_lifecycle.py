@@ -346,20 +346,22 @@ def test_stale_cluster_uses_actual_stale_ids():
     assert "subjective::error_consistency" not in stale_members
 
 
-def test_under_target_evicted_when_objective_backlog_returns():
-    """Under-target IDs must not stay in queue when objective issues exist."""
+def test_under_target_not_evicted_by_auto_cluster():
+    """auto_cluster_sync no longer evicts under-target IDs — sync_stale owns that."""
+    from desloppify.engine._plan.sync.dimensions import sync_subjective_dimensions
+
     plan = empty_plan()
     ut = _under_target_state("design_coherence", "error_consistency", score=70.0)
 
-    # Step 1: no objective items → under-target IDs injected
+    # Step 1: sync_stale injects when no objective backlog
     state_no_obj = {**ut, "issues": {}}
-    auto_cluster_issues(plan, state_no_obj)
+    sync_subjective_dimensions(plan, state_no_obj)
 
     order = plan["queue_order"]
     assert "subjective::design_coherence" in order
     assert "subjective::error_consistency" in order
 
-    # Step 2: objective issues reappear
+    # Step 2: objective issues reappear — auto_cluster should NOT evict
     state_with_obj = {
         **ut,
         "issues": {
@@ -370,23 +372,15 @@ def test_under_target_evicted_when_objective_backlog_returns():
     auto_cluster_issues(plan, state_with_obj)
 
     order = plan["queue_order"]
-    # Under-target IDs should have been evicted
-    assert "subjective::design_coherence" not in order
-    assert "subjective::error_consistency" not in order
-    # Objective issues should be present (via queue_order from auto-cluster)
-    # The queue head should not be a subjective under-target item
-    subjective_ut = [
-        fid for fid in order
-        if fid.startswith("subjective::") and fid in {
-            "subjective::design_coherence",
-            "subjective::error_consistency",
-        }
-    ]
-    assert subjective_ut == []
+    # Under-target IDs remain — sync_stale is the authority on eviction
+    assert "subjective::design_coherence" in order
+    assert "subjective::error_consistency" in order
 
 
-def test_stale_ids_evicted_when_objective_backlog_returns():
-    """Stale subjective IDs must not stay in queue when objective issues exist."""
+def test_stale_ids_not_evicted_by_auto_cluster():
+    """auto_cluster_sync no longer evicts stale IDs — sync_stale owns that."""
+    from desloppify.engine._plan.sync.dimensions import sync_subjective_dimensions
+
     plan = empty_plan()
     stale_state = _stale_state("design_coherence", "error_consistency", score=50.0)
     plan["queue_order"] = [
@@ -401,7 +395,7 @@ def test_stale_ids_evicted_when_objective_backlog_returns():
     assert "subjective::design_coherence" in order
     assert "subjective::error_consistency" in order
 
-    # Step 2: objective issues reappear -> stale IDs should be evicted
+    # Step 2: objective issues reappear -> auto_cluster should NOT evict
     state_with_obj = {
         **stale_state,
         "issues": {
@@ -410,28 +404,39 @@ def test_stale_ids_evicted_when_objective_backlog_returns():
         },
     }
     auto_cluster_issues(plan, state_with_obj)
+    order = plan["queue_order"]
+    # IDs remain after auto_cluster — it no longer evicts
+    assert "subjective::design_coherence" in order
+    assert "subjective::error_consistency" in order
 
+    # But sync_stale DOES evict them when objective backlog exists
+    result = sync_subjective_dimensions(plan, state_with_obj)
     order = plan["queue_order"]
     assert "subjective::design_coherence" not in order
     assert "subjective::error_consistency" not in order
+    assert "subjective::design_coherence" in result.pruned
+    assert "subjective::error_consistency" in result.pruned
 
 
-def test_under_target_lifecycle_inject_then_evict():
-    """Full lifecycle: inject under-target when no objective, evict when objective returns."""
+def test_under_target_lifecycle_with_sync_stale():
+    """Full lifecycle: sync_stale injects, evicts, re-injects. auto_cluster clusters."""
+    from desloppify.engine._plan.sync.dimensions import sync_subjective_dimensions
+
     plan = empty_plan()
     ut = _under_target_state("design_coherence", "error_consistency", score=70.0)
 
-    # Phase 1: no objective items — under-target injected
+    # Phase 1: sync_stale injects, auto_cluster creates cluster
     state_empty = {**ut, "issues": {}}
-    auto_cluster_issues(plan, state_empty)
+    sync_subjective_dimensions(plan, state_empty)
 
     order = plan["queue_order"]
     assert "subjective::design_coherence" in order
     assert "subjective::error_consistency" in order
-    # Under-target cluster should exist
+
+    auto_cluster_issues(plan, state_empty)
     assert "auto/under-target-review" in plan["clusters"]
 
-    # Phase 2: objective issues appear — under-target evicted from queue
+    # Phase 2: objective issues appear — sync_stale evicts them
     state_obj = {
         **ut,
         "issues": {
@@ -439,17 +444,14 @@ def test_under_target_lifecycle_inject_then_evict():
             "u2": _issue("u2", "unused"),
         },
     }
-    changes = auto_cluster_issues(plan, state_obj)
-    assert changes >= 1
-
+    result = sync_subjective_dimensions(plan, state_obj)
     order = plan["queue_order"]
     assert "subjective::design_coherence" not in order
     assert "subjective::error_consistency" not in order
 
-    # Phase 3: objective resolved again — under-target re-injected
+    # Phase 3: objective resolved again — sync_stale re-injects
     state_empty2 = {**ut, "issues": {}}
-    auto_cluster_issues(plan, state_empty2)
-
+    result = sync_subjective_dimensions(plan, state_empty2)
     order = plan["queue_order"]
     assert "subjective::design_coherence" in order
     assert "subjective::error_consistency" in order

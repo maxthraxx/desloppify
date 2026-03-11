@@ -9,7 +9,7 @@ from datetime import datetime as _dt
 from desloppify.base.output.fallbacks import log_best_effort_failure
 from desloppify.intelligence.narrative._constants import _REMINDER_DECAY_THRESHOLD
 from desloppify.intelligence.narrative.reminders_rules_primary import _feedback_base_url
-from desloppify.state import StateModel
+from desloppify.state_io import StateModel
 
 logger = logging.getLogger(__name__)
 

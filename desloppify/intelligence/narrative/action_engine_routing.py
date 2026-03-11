@@ -55,9 +55,10 @@ def _build_refactor_entry(
 
     if detector == "subjective_review":
         command = "desloppify review --prepare"
+        suffix = "s" if count != 1 else ""
         description = (
-            f"{count} files need design review — run holistic review to refresh "
-            "subjective scores"
+            f"{count} subjective dimension{suffix} need review — run holistic "
+            "review to refresh subjective scores"
         )
     elif detector == "review":
         command = "desloppify show review --status open"

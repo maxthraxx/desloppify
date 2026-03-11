@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from desloppify.state import StateModel, score_snapshot
+from desloppify.state_io import StateModel
+from desloppify.state_scoring import score_snapshot
 
 from ._constants import _history_strict
 

@@ -63,6 +63,8 @@ def cmd_detect(args: argparse.Namespace) -> None:
     if getattr(args, "threshold", None) is None:
         if detector == "large":
             args.threshold = lang_cfg.large_threshold
+        elif detector == "complexity":
+            args.threshold = lang_cfg.complexity_threshold
         elif detector == "dupes":
             args.threshold = 0.8
 

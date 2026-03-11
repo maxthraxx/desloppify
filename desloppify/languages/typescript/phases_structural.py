@@ -9,6 +9,7 @@ from desloppify.engine.detectors import complexity as complexity_detector_mod
 from desloppify.engine.detectors import flat_dirs as flat_dirs_detector_mod
 from desloppify.engine.detectors import gods as gods_detector_mod
 from desloppify.engine.detectors import large as large_detector_mod
+from desloppify.engine._state.filtering import make_issue
 from desloppify.engine.policy.zones import adjust_potential
 from desloppify.languages._framework.base.structural import (
     add_structural_signal,
@@ -25,7 +26,7 @@ from desloppify.languages.typescript.phases_config import (
     TS_COMPLEXITY_SIGNALS,
     TS_GOD_RULES,
 )
-from desloppify.state import Issue, make_issue
+from desloppify.state_io import Issue
 
 
 def _detect_structural_signals(

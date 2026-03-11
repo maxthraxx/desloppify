@@ -9,6 +9,7 @@ from desloppify.app.commands.plan.triage.confirmations.basic import (
     MIN_ATTESTATION_LEN,
     validate_attestation,
 )
+from desloppify.app.commands.plan.triage.services import TriageServices
 from desloppify.engine._plan.schema import empty_plan
 from desloppify.engine._plan.constants import TRIAGE_STAGE_IDS
 
@@ -73,6 +74,35 @@ def _fake_args(**overrides) -> argparse.Namespace:
     }
     defaults.update(overrides)
     return argparse.Namespace(**defaults)
+
+
+def _fake_services(plan, state, save_plan_fn=None):
+    """Build a fake TriageServices with test stubs."""
+    return TriageServices(
+        command_runtime=lambda args: _fake_runtime(state),
+        load_plan=lambda *a, **kw: plan,
+        save_plan=save_plan_fn or (lambda p, *a, **kw: None),
+        collect_triage_input=lambda p, s: type("TI", (), {
+            "open_issues": s.get("issues", {}),
+            "resolved_issues": {},
+            "new_since_last": [],
+            "resolved_since_last": [],
+            "existing_clusters": {},
+        })(),
+        detect_recurring_patterns=lambda _a, _b: {},
+        append_log_entry=lambda *a, **kw: None,
+        extract_issue_citations=lambda text, ids: set(),
+        build_triage_prompt=lambda si: "prompt",
+    )
+
+
+def _patch_triage(monkeypatch, plan, state, save_plan_fn=None):
+    """Apply standard triage monkeypatches."""
+    monkeypatch.setattr(
+        triage_mod, "default_triage_services",
+        lambda: _fake_services(plan, state, save_plan_fn),
+    )
+    monkeypatch.setattr(triage_mod, "require_issue_inventory", lambda s: True)
 
 
 # ---------------------------------------------------------------------------
@@ -208,9 +238,7 @@ class TestConfirmObserveValidation:
         plan = _plan_with_stages("observe")
         state = _state_with_issues("r1", "r2", "r3", dimension="naming")
 
-        monkeypatch.setattr(triage_mod, "load_plan", lambda *a, **kw: plan)
-        monkeypatch.setattr(triage_mod, "command_runtime", lambda args: _fake_runtime(state))
-        monkeypatch.setattr(triage_mod, "require_completed_scan", lambda s: True)
+        _patch_triage(monkeypatch, plan, state)
 
         # 80+ chars but no dimension name
         attestation = "I have thoroughly reviewed all the issues in this codebase and considered every aspect of the analysis carefully"
@@ -229,10 +257,7 @@ class TestConfirmObserveValidation:
         state = _state_with_issues("r1", "r2", "r3", dimension="naming")
         saved = []
 
-        monkeypatch.setattr(triage_mod, "load_plan", lambda *a, **kw: plan)
-        monkeypatch.setattr(triage_mod, "command_runtime", lambda args: _fake_runtime(state))
-        monkeypatch.setattr(triage_mod, "save_plan", lambda p, *a, **kw: saved.append(True))
-        monkeypatch.setattr(triage_mod, "require_completed_scan", lambda s: True)
+        _patch_triage(monkeypatch, plan, state, save_plan_fn=lambda p, *a, **kw: saved.append(True))
 
         attestation = "I reviewed the naming dimension issues and identified 3 root causes across the codebase test modules thoroughly"
         assert len(attestation) >= 80

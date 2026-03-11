@@ -5,10 +5,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from desloppify import state as state_module
 from desloppify.app.commands.helpers.lang import resolve_lang
 from desloppify.app.commands.helpers.runtime import command_runtime
 from desloppify.base.output.fallbacks import warn_best_effort
+from desloppify.state_io import load_state
 
 
 def load_cmd_context(args: object) -> tuple[Path, object | None, dict | None]:
@@ -19,7 +19,7 @@ def load_cmd_context(args: object) -> tuple[Path, object | None, dict | None]:
     if not isinstance(state, dict):
         scan_state_path = runtime.state_path
         try:
-            state = state_module.load_state(scan_state_path)
+            state = load_state(scan_state_path)
         except (OSError, json.JSONDecodeError) as exc:
             warn_best_effort(
                 "Could not load scan state for visualization "

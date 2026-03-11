@@ -4,16 +4,16 @@ from __future__ import annotations
 
 from collections import defaultdict
 
-from desloppify import state as state_mod
 from desloppify.base.output.terminal import colorize
 from desloppify.base.discovery.paths import get_area
+from desloppify.engine._state.filtering import path_scoped_issues
 
 
 def collect_structural_areas(
     state: dict,
 ) -> list[tuple[str, list]] | None:
     """Collect T3/T4 structural issues grouped by area."""
-    issues = state_mod.path_scoped_issues(
+    issues = path_scoped_issues(
         state.get("issues", {}), state.get("scan_path")
     )
     structural = [
@@ -89,4 +89,3 @@ __all__ = [
     "collect_structural_areas",
     "render_area_workflow",
 ]
-

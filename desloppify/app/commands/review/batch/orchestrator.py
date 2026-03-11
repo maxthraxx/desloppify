@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
-import subprocess
+import subprocess  # nosec B404
 import sys
+from functools import partial
 from pathlib import Path
 from typing import cast
 
@@ -27,6 +27,12 @@ from desloppify.intelligence.review.prepare import (
 from ..helpers import parse_dimensions
 from ..importing.cmd import do_import as _do_import
 from ..importing.flags import ReviewImportConfig
+from ..packet.build import (
+    build_holistic_packet,
+    build_run_batches_next_command,
+    prepared_packet_contract,
+    resolve_review_packet_context,
+)
 from ..packet.policy import coerce_review_batch_file_limit, redacted_review_config
 from ..prompt_sections import explode_to_single_dimension
 from ..runner_failures import print_failures, print_failures_and_raise
@@ -94,35 +100,142 @@ ABSTRACTION_COMPONENT_NAMES = {
     "type_discipline": "Type Discipline",
 }
 
-def _config_hash_for_packet_contract(config: dict | None) -> str:
-    """Return a stable config hash used in prepared-packet reuse checks."""
-    redacted = redacted_review_config(config or {})
-    payload = json.dumps(redacted, sort_keys=True, separators=(",", ":"))
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+def _batch_live_log_interval_seconds(heartbeat_seconds: float) -> float:
+    """Clamp the live log polling interval derived from the heartbeat."""
+    if heartbeat_seconds <= 0:
+        return 5.0
+    return max(1.0, min(heartbeat_seconds, 10.0))
+
+
+def _prompt_fn_with_policy(*, policy_block: str, **kwargs):
+    """Render one batch prompt with the active queue policy block."""
+    return render_batch_prompt(**kwargs, policy_block=policy_block)
+
+
+def _selected_batch_indexes_for_args(args, *, batch_count: int) -> list[int]:
+    """Resolve the subset of investigation batches selected by CLI args."""
+    return selected_batch_indexes(
+        raw_selection=getattr(args, "only_batches", None),
+        batch_count=batch_count,
+        parse_fn=parse_batch_selection,
+        colorize_fn=colorize,
+    )
+
+
+def _build_codex_batch_runner_deps(policy) -> CodexBatchRunnerDeps:
+    """Build shared subprocess deps for one local codex batch run."""
+    return CodexBatchRunnerDeps(
+        timeout_seconds=policy.batch_timeout_seconds,
+        subprocess_run=subprocess.run,
+        timeout_error=subprocess.TimeoutExpired,
+        safe_write_text_fn=safe_write_text,
+        use_popen_runner=(getattr(subprocess.run, "__module__", "") == "subprocess"),
+        subprocess_popen=subprocess.Popen,
+        live_log_interval_seconds=_batch_live_log_interval_seconds(
+            policy.heartbeat_seconds
+        ),
+        stall_after_output_seconds=policy.stall_kill_seconds,
+        max_retries=policy.batch_max_retries,
+        retry_backoff_seconds=policy.batch_retry_backoff_seconds,
+    )
+
+
+def _build_followup_scan_deps(*, project_root: Path) -> FollowupScanDeps:
+    """Build follow-up scan deps for one post-import scan."""
+    return FollowupScanDeps(
+        project_root=project_root,
+        timeout_seconds=FOLLOWUP_SCAN_TIMEOUT_SECONDS,
+        python_executable=sys.executable,
+        subprocess_run=subprocess.run,
+        timeout_error=subprocess.TimeoutExpired,
+        colorize_fn=colorize,
+    )
+
+
+def _run_followup_scan_with_deps(
+    *,
+    lang_name,
+    scan_path,
+    deps: FollowupScanDeps,
+) -> int:
+    """Run a post-import scan with prebuilt scan deps."""
+    return run_followup_scan(
+        lang_name=lang_name,
+        scan_path=scan_path,
+        deps=deps,
+    )
+
+
+def _build_batch_run_deps(*, policy, project_root: Path) -> review_batches_mod.BatchRunDeps:
+    """Build the dependency bundle used by prepare/execute/import phases."""
+    from desloppify.engine.plan_state import load_policy_result, render_policy_block
+
+    policy_result = load_policy_result()
+    policy_block = render_policy_block(policy_result.policy)
+    if not policy_result.ok:
+        print(
+            colorize(
+                f"  Warning: ignoring malformed project policy ({policy_result.message or 'unknown error'}).",
+                "yellow",
+            )
+        )
+    codex_batch_deps = _build_codex_batch_runner_deps(policy)
+    followup_scan_deps = _build_followup_scan_deps(project_root=project_root)
+    return review_batches_mod.BatchRunDeps(
+        run_stamp_fn=run_stamp,
+        load_or_prepare_packet_fn=_load_or_prepare_packet,
+        selected_batch_indexes_fn=_selected_batch_indexes_for_args,
+        prepare_run_artifacts_fn=partial(
+            prepare_run_artifacts,
+            build_prompt_fn=partial(_prompt_fn_with_policy, policy_block=policy_block),
+            safe_write_text_fn=safe_write_text,
+            colorize_fn=colorize,
+        ),
+        run_codex_batch_fn=partial(
+            run_codex_batch,
+            deps=codex_batch_deps,
+        ),
+        execute_batches_fn=lambda **kwargs: execute_batches(
+            tasks=kwargs["tasks"],
+            options=BatchExecutionOptions(
+                run_parallel=kwargs["options"].run_parallel,
+                max_parallel_workers=kwargs["options"].max_parallel_workers,
+                heartbeat_seconds=kwargs["options"].heartbeat_seconds,
+            ),
+            progress_fn=kwargs.get("progress_fn"),
+            error_log_fn=kwargs.get("error_log_fn"),
+        ),
+        collect_batch_results_fn=lambda **kwargs: collect_batch_results(
+            selected_indexes=kwargs["selected_indexes"],
+            failures=kwargs["failures"],
+            output_files=kwargs["output_files"],
+            allowed_dims=kwargs["allowed_dims"],
+            extract_payload_fn=lambda raw: extract_json_payload(raw, log_fn=log),
+            normalize_result_fn=lambda payload, dims: normalize_batch_result(
+                payload,
+                dims,
+                max_batch_issues=max_batch_issues_for_dimension_count(len(dims)),
+                abstraction_sub_axes=ABSTRACTION_SUB_AXES,
+            ),
+        ),
+        print_failures_fn=print_failures,
+        print_failures_and_raise_fn=print_failures_and_raise,
+        merge_batch_results_fn=_merge_batch_results,
+        build_import_provenance_fn=build_batch_import_provenance,
+        do_import_fn=_do_import,
+        run_followup_scan_fn=partial(
+            _run_followup_scan_with_deps,
+            deps=followup_scan_deps,
+        ),
+        safe_write_text_fn=safe_write_text,
+        colorize_fn=colorize,
+    )
 
 
 def _build_prepared_packet_contract(args, *, config: dict | None) -> dict[str, object]:
     """Build normalized invocation contract for prepared packet reuse."""
-    requested_dims = sorted(parse_dimensions(args) or set())
-    retrospective = bool(getattr(args, "retrospective", False))
-    retrospective_max_issues = coerce_positive_int(
-        getattr(args, "retrospective_max_issues", None),
-        default=30,
-        minimum=1,
-    )
-    retrospective_max_batch_items = coerce_positive_int(
-        getattr(args, "retrospective_max_batch_items", None),
-        default=20,
-        minimum=1,
-    )
-    return {
-        "path": str(Path(getattr(args, "path", ".")).resolve()),
-        "dimensions": requested_dims,
-        "retrospective": retrospective,
-        "retrospective_max_issues": retrospective_max_issues,
-        "retrospective_max_batch_items": retrospective_max_batch_items,
-        "config_hash": _config_hash_for_packet_contract(config),
-    }
+    return prepared_packet_contract(resolve_review_packet_context(args), config=config)
 
 
 def _prepared_packet_contract_mismatch_reason(
@@ -268,51 +381,19 @@ def _load_or_prepare_packet(
                 )
             )
 
-    path = Path(args.path)
-    dimensions = list(dims) if dims else None
-    retrospective = bool(getattr(args, "retrospective", False))
-    retrospective_max_issues = coerce_positive_int(
-        getattr(args, "retrospective_max_issues", None),
-        default=30,
-        minimum=1,
-    )
-    retrospective_max_batch_items = coerce_positive_int(
-        getattr(args, "retrospective_max_batch_items", None),
-        default=20,
-        minimum=1,
-    )
-    lang_run, found_files = _setup_lang(lang, path, config)
-    lang_name = lang_run.name
-    narrative = narrative_mod.compute_narrative(
-        state,
-        context=narrative_mod.NarrativeContext(lang=lang_name, command="review"),
-    )
-
+    context = resolve_review_packet_context(args)
     blind_path = _blind_packet_path()
-    packet = prepare_holistic_review(
-        path,
-        lang_run,
-        state,
-        options=HolisticReviewPrepareOptions(
-            dimensions=dimensions,
-            files=found_files or None,
-            max_files_per_batch=coerce_review_batch_file_limit(config),
-            include_issue_history=retrospective,
-            issue_history_max_issues=retrospective_max_issues,
-            issue_history_max_batch_items=retrospective_max_batch_items,
-        ),
+    packet, _lang_name = build_holistic_packet(
+        state=state,
+        lang=lang,
+        config=config,
+        context=context,
+        setup_lang_fn=_setup_lang,
+        prepare_holistic_review_fn=prepare_holistic_review,
     )
     packet["config"] = redacted_review_config(config)
     packet[_PREPARED_PACKET_CONTRACT_KEY] = expected_contract
-    packet["narrative"] = narrative
-    next_command = "desloppify review --prepare"
-    if retrospective:
-        next_command += (
-            " --retrospective"
-            f" --retrospective-max-issues {retrospective_max_issues}"
-            f" --retrospective-max-batch-items {retrospective_max_batch_items}"
-        )
-    packet["next_command"] = next_command
+    packet["next_command"] = build_run_batches_next_command(context)
     write_query_best_effort(
         packet,
         context="review packet query update",
@@ -331,132 +412,14 @@ def _load_or_prepare_packet(
 
 def do_run_batches(args, state, lang, state_file, config: dict | None = None) -> None:
     """Run holistic investigation batches with a local subagent runner."""
-    from ..runtime.policy import resolve_batch_run_policy
+    from ..runtime.policy import resolve_batch_run_policy  # noqa: PLC0415
 
-    runtime_project_root = _runtime_project_root()
+    project_root = _runtime_project_root()
     subagent_runs_dir = _subagent_runs_dir()
     policy = resolve_batch_run_policy(args)
-    batch_timeout_seconds = policy.batch_timeout_seconds
-    batch_max_retries = policy.batch_max_retries
-    batch_retry_backoff_seconds = policy.batch_retry_backoff_seconds
-    batch_heartbeat_seconds = policy.heartbeat_seconds
-    batch_live_log_interval_seconds = (
-        max(1.0, min(batch_heartbeat_seconds, 10.0))
-        if batch_heartbeat_seconds > 0
-        else 5.0
-    )
-    batch_stall_kill_seconds = policy.stall_kill_seconds
-
-    from desloppify.engine.plan_state import load_policy, render_policy_block
-    _policy_block = render_policy_block(load_policy())
-
-    def _prompt_fn_with_policy(**kwargs):
-        return render_batch_prompt(**kwargs, policy_block=_policy_block)
-
-    def _adapted_selected_batch_indexes(_args, *, batch_count):
-        return selected_batch_indexes(
-            raw_selection=getattr(args, "only_batches", None),
-            batch_count=batch_count,
-            parse_fn=parse_batch_selection,
-            colorize_fn=colorize,
-        )
-
-    def _adapted_prepare_run_artifacts(
-        *, stamp, selected_indexes, batches, packet_path, run_root, repo_root
-    ):
-        return prepare_run_artifacts(
-            stamp=stamp,
-            selected_indexes=selected_indexes,
-            batches=batches,
-            packet_path=packet_path,
-            run_root=run_root,
-            repo_root=repo_root,
-            build_prompt_fn=_prompt_fn_with_policy,
-            safe_write_text_fn=safe_write_text,
-            colorize_fn=colorize,
-        )
-
-    def _adapted_run_codex_batch(*, prompt, repo_root, output_file, log_file):
-        return run_codex_batch(
-            prompt=prompt,
-            repo_root=repo_root,
-            output_file=output_file,
-            log_file=log_file,
-            deps=CodexBatchRunnerDeps(
-                timeout_seconds=batch_timeout_seconds,
-                subprocess_run=subprocess.run,
-                timeout_error=subprocess.TimeoutExpired,
-                safe_write_text_fn=safe_write_text,
-                use_popen_runner=(
-                    getattr(subprocess.run, "__module__", "") == "subprocess"
-                ),
-                subprocess_popen=subprocess.Popen,
-                live_log_interval_seconds=batch_live_log_interval_seconds,
-                stall_after_output_seconds=batch_stall_kill_seconds,
-                max_retries=batch_max_retries,
-                retry_backoff_seconds=batch_retry_backoff_seconds,
-            ),
-        )
-
-    def _adapted_execute_batches(**kwargs):
-        return execute_batches(
-            tasks=kwargs["tasks"],
-            options=BatchExecutionOptions(
-                run_parallel=kwargs["options"].run_parallel,
-                max_parallel_workers=kwargs["options"].max_parallel_workers,
-                heartbeat_seconds=kwargs["options"].heartbeat_seconds,
-            ),
-            progress_fn=kwargs.get("progress_fn"),
-            error_log_fn=kwargs.get("error_log_fn"),
-        )
-
-    def _adapted_collect_batch_results(
-        *, selected_indexes, failures, output_files, allowed_dims
-    ):
-        return collect_batch_results(
-            selected_indexes=selected_indexes,
-            failures=failures,
-            output_files=output_files,
-            allowed_dims=allowed_dims,
-            extract_payload_fn=lambda raw: extract_json_payload(raw, log_fn=log),
-            normalize_result_fn=lambda payload, dims: normalize_batch_result(
-                payload,
-                dims,
-                max_batch_issues=max_batch_issues_for_dimension_count(len(dims)),
-                abstraction_sub_axes=ABSTRACTION_SUB_AXES,
-            ),
-        )
-
-    def _adapted_run_followup_scan(*, lang_name, scan_path):
-        return run_followup_scan(
-            lang_name=lang_name,
-            scan_path=scan_path,
-            deps=FollowupScanDeps(
-                project_root=runtime_project_root,
-                timeout_seconds=FOLLOWUP_SCAN_TIMEOUT_SECONDS,
-                python_executable=sys.executable,
-                subprocess_run=subprocess.run,
-                timeout_error=subprocess.TimeoutExpired,
-                colorize_fn=colorize,
-            ),
-        )
-
-    batch_deps = review_batches_mod.BatchRunDeps(
-        run_stamp_fn=run_stamp,
-        load_or_prepare_packet_fn=_load_or_prepare_packet,
-        selected_batch_indexes_fn=_adapted_selected_batch_indexes,
-        prepare_run_artifacts_fn=_adapted_prepare_run_artifacts,
-        run_codex_batch_fn=_adapted_run_codex_batch,
-        execute_batches_fn=_adapted_execute_batches,
-        collect_batch_results_fn=_adapted_collect_batch_results,
-        print_failures_fn=print_failures,
-        print_failures_and_raise_fn=print_failures_and_raise,
-        merge_batch_results_fn=_merge_batch_results,
-        build_import_provenance_fn=build_batch_import_provenance,
-        do_import_fn=_do_import,
-        run_followup_scan_fn=_adapted_run_followup_scan,
-        safe_write_text_fn=safe_write_text,
-        colorize_fn=colorize,
+    batch_deps = _build_batch_run_deps(
+        policy=policy,
+        project_root=project_root,
     )
     prepared = review_batch_phases_mod.prepare_batch_run(
         args=args,
@@ -464,7 +427,7 @@ def do_run_batches(args, state, lang, state_file, config: dict | None = None) ->
         lang=lang,
         config=config or {},
         deps=batch_deps,
-        project_root=runtime_project_root,
+        project_root=project_root,
         subagent_runs_dir=subagent_runs_dir,
     )
     if prepared is None:
@@ -497,12 +460,12 @@ def _validate_run_dir(run_dir: Path) -> tuple[dict, Path, str]:
     except (OSError, json.JSONDecodeError) as exc:
         raise CommandError(f"Error reading run summary: {exc}", exit_code=1) from exc
 
-    successful = summary.get("successful_batches", [])
+    selected = summary.get("selected_batches", [])
     blind_packet_path = Path(str(summary.get("blind_packet", "")))
     immutable_packet_path = str(summary.get("immutable_packet", ""))
 
-    if not successful:
-        raise CommandError("no successful batches in run summary.", exit_code=1)
+    if not selected:
+        raise CommandError("no selected batches in run summary.", exit_code=1)
     if not blind_packet_path.exists():
         raise PacketValidationError(f"blind packet not found: {blind_packet_path}", exit_code=1)
 
@@ -538,13 +501,13 @@ def do_import_run(
 
     runner = str(summary.get("runner", "codex"))
     stamp = str(summary.get("run_stamp", ""))
-    successful = summary.get("successful_batches", [])
+    selected = summary.get("selected_batches", [])
     packet = summary.pop("_packet", {})
     allowed_dims = {str(d) for d in packet.get("dimensions", []) if isinstance(d, str)}
 
     # -- locate and parse raw batch results --
     results_dir = run_dir / "results"
-    selected_indexes = [idx - 1 for idx in successful]  # convert 1-based to 0-based
+    selected_indexes = [idx - 1 for idx in selected]  # convert 1-based to 0-based
     output_files = {
         idx: results_dir / f"batch-{idx + 1}.raw.txt"
         for idx in selected_indexes

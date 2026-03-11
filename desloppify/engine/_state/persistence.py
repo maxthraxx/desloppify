@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import errno
 import fcntl
 import json
 import logging
@@ -13,6 +14,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import cast
 
+from desloppify.base.exception_sets import PLAN_LOAD_EXCEPTIONS
 __all__ = [
     "load_state",
     "save_state",
@@ -21,6 +23,13 @@ __all__ = [
 
 from desloppify.base.discovery.file_paths import safe_write_text
 from desloppify.base.text_utils import is_numeric
+from desloppify.engine._plan.persistence import load_plan as load_plan_state
+from desloppify.engine._plan.persistence import plan_path_for_state
+from desloppify.engine.plan_state import PlanLoadStatus
+from desloppify.engine._state.recovery import (
+    has_saved_plan_without_scan,
+    reconstruct_state_from_saved_plan,
+)
 from desloppify.engine._state.schema import (
     CURRENT_VERSION,
     StateModel,
@@ -28,6 +37,7 @@ from desloppify.engine._state.schema import (
     ensure_state_defaults,
     get_state_file,
     json_default,
+    scan_source,
     validate_state_invariants,
 )
 
@@ -66,11 +76,56 @@ def _normalize_loaded_state(data: object) -> dict[str, object]:
     return normalized
 
 
+def _reconstruct_from_saved_plan_if_available(
+    state_path: Path,
+    state: StateModel,
+) -> StateModel:
+    plan_status = _saved_plan_load_status(state_path)
+    if plan_status.degraded:
+        logger.warning(
+            "Saved plan load degraded during state recovery for %s: %s",
+            state_path,
+            plan_status.error_kind,
+        )
+        if scan_source(state) == "plan_reconstruction":
+            return cast(StateModel, _normalize_loaded_state(empty_state()))
+        return state
+    plan = plan_status.plan
+    if plan is None:
+        if scan_source(state) == "plan_reconstruction":
+            return cast(StateModel, _normalize_loaded_state(empty_state()))
+        return state
+    if has_saved_plan_without_scan(state, plan):
+        reconstructed = reconstruct_state_from_saved_plan(empty_state(), plan)
+        return cast(StateModel, _normalize_loaded_state(reconstructed))
+    if scan_source(state) == "plan_reconstruction":
+        return cast(StateModel, _normalize_loaded_state(empty_state()))
+    return state
+
+
+def _saved_plan_load_status(state_path: Path) -> PlanLoadStatus:
+    plan_path = plan_path_for_state(state_path)
+    if not plan_path.exists():
+        return PlanLoadStatus(plan=None, degraded=False, error_kind=None)
+    try:
+        return PlanLoadStatus(
+            plan=load_plan_state(plan_path),
+            degraded=False,
+            error_kind=None,
+        )
+    except PLAN_LOAD_EXCEPTIONS as exc:
+        return PlanLoadStatus(
+            plan=None,
+            degraded=True,
+            error_kind=exc.__class__.__name__,
+        )
+
+
 def load_state(path: Path | None = None) -> StateModel:
     """Load state from disk, or return empty state on missing/corruption."""
     state_path = path or _default_state_file()
     if not state_path.exists():
-        return empty_state()
+        return _reconstruct_from_saved_plan_if_available(state_path, empty_state())
 
     try:
         data = _load_json(state_path)
@@ -94,7 +149,11 @@ def load_state(path: Path | None = None) -> StateModel:
                     f"  ⚠ State file corrupted ({ex}), loaded from backup.",
                     file=sys.stderr,
                 )
-                return _normalize_loaded_state(backup_data)
+                normalized_backup = _normalize_loaded_state(backup_data)
+                return _reconstruct_from_saved_plan_if_available(
+                    state_path,
+                    normalized_backup,
+                )
             except (
                 json.JSONDecodeError,
                 UnicodeDecodeError,
@@ -130,7 +189,7 @@ def load_state(path: Path | None = None) -> StateModel:
             logger.debug(
                 "Corrupted state file retained at original path: %s", state_path
             )
-        return empty_state()
+        return _reconstruct_from_saved_plan_if_available(state_path, empty_state())
 
     version = data.get("version", 1)
     if version > CURRENT_VERSION:
@@ -142,7 +201,8 @@ def load_state(path: Path | None = None) -> StateModel:
         )
 
     try:
-        return _normalize_loaded_state(data)
+        normalized = _normalize_loaded_state(data)
+        return _reconstruct_from_saved_plan_if_available(state_path, normalized)
     except (ValueError, TypeError, AttributeError) as normalize_ex:
         logger.warning(
             "State invariants invalid for %s; falling back to empty state: %s",
@@ -153,7 +213,7 @@ def load_state(path: Path | None = None) -> StateModel:
             f"  ⚠ State invariants invalid ({normalize_ex}). Starting fresh.",
             file=sys.stderr,
         )
-        return empty_state()
+        return _reconstruct_from_saved_plan_if_available(state_path, empty_state())
 
 
 def _coerce_integrity_target(value: object) -> float | None:
@@ -246,7 +306,10 @@ def state_lock(
             try:
                 fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 break
-            except OSError:
+            except OSError as exc:
+                if exc.errno not in (errno.EACCES, errno.EAGAIN):
+                    lock_fd.close()
+                    raise
                 if time.monotonic() >= deadline:
                     lock_fd.close()
                     raise TimeoutError(

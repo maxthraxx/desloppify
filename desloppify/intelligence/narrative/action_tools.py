@@ -7,7 +7,7 @@ from typing import Any
 from desloppify.intelligence.narrative._constants import DETECTOR_TOOLS
 from desloppify.intelligence.narrative.action_engine import supported_fixers
 from desloppify.intelligence.narrative.action_models import ToolFixer, ToolInventory
-from desloppify.state import StateModel
+from desloppify.state_io import StateModel
 
 
 def _move_reasons(by_detector: dict[str, int]) -> list[str]:

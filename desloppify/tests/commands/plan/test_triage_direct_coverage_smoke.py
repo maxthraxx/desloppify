@@ -7,7 +7,7 @@ import inspect
 import desloppify.app.commands.plan.triage.command as triage_command_mod
 import desloppify.app.commands.plan.triage.helpers as triage_helpers_mod
 import desloppify.app.commands.plan.triage.services as triage_services_mod
-import desloppify.app.commands.plan.triage.stage_completion_commands as triage_completion_mod
+import desloppify.app.commands.plan.triage.stages.completion as triage_completion_mod
 import desloppify.app.commands.plan.triage.workflow as triage_workflow_mod
 import desloppify.app.commands.plan.triage.runner.codex_runner as triage_codex_runner_mod
 import desloppify.app.commands.plan.triage.runner.orchestrator_common as triage_orchestrator_mod

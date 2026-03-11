@@ -14,7 +14,7 @@ from desloppify.app.output.tree_text import render_tree_lines
 from desloppify.base.discovery.file_paths import safe_write_text
 from desloppify.base.output.contract import OutputResult
 from desloppify.base.output.fallbacks import print_write_error
-from desloppify.state import score_snapshot
+from desloppify.state_scoring import score_snapshot
 
 D3_CDN_URL = "https://d3js.org/d3.v7.min.js"
 

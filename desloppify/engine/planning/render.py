@@ -9,11 +9,13 @@ from desloppify.base.output.terminal import LOC_COMPACT_THRESHOLD
 from desloppify.base.registry import dimension_action_type
 from desloppify.engine._scoring.policy.core import DIMENSIONS
 from desloppify.engine._scoring.subjective.core import DISPLAY_NAMES
-from desloppify.engine._work_queue.core import (
-    QueueBuildOptions,
-    build_work_queue,
+from desloppify.engine._work_queue.core import QueueBuildOptions
+from desloppify.engine.planning.queue_policy import (
+    build_backlog_queue,
+    build_execution_queue,
 )
 from desloppify.engine.planning.render_items import plan_item_sections as _plan_item_sections_core
+from desloppify.engine.planning.render_items import render_queue_item_sections as _render_queue_item_sections
 from desloppify.engine.planning.render_sections import (
     addressed_section as _addressed_section,
 )
@@ -30,7 +32,7 @@ from desloppify.engine.planning.render_sections import (
     summary_lines as _summary_lines,
 )
 from desloppify.engine.planning.types import PlanState
-from desloppify.state import score_snapshot
+from desloppify.state_scoring import score_snapshot
 
 
 def _plan_header(state: PlanState, stats: dict) -> list[str]:
@@ -189,9 +191,23 @@ def _plan_dimension_table(state: PlanState) -> list[str]:
     return lines
 
 
-def _plan_item_sections(issues: dict, *, state: PlanState | None = None) -> list[str]:
+def _plan_item_sections(
+    issues: dict,
+    *,
+    state: PlanState | None = None,
+    plan: dict | None = None,
+) -> list[str]:
     """Build per-file sections from the shared work-queue backend."""
-    return _plan_item_sections_core(issues, state=state)
+    return _plan_item_sections_core(issues, state=state, plan=plan)
+
+
+def _backlog_item_section(items: list[dict]) -> list[str]:
+    """Render backlog items as a dedicated markdown section."""
+    if not items:
+        return []
+    lines = ["---", f"## Backlog ({len(items)})", ""]
+    lines.extend(_render_queue_item_sections(items, include_header=False))
+    return lines
 
 
 def generate_plan_md(state: PlanState, plan: dict | None = None) -> str:
@@ -231,29 +247,32 @@ def generate_plan_md(state: PlanState, plan: dict | None = None) -> str:
     lines.extend(_summary_lines(stats))
 
     if has_plan:
-        # Build full queue for item lookup
-        queue = build_work_queue(
+        execution_queue = build_execution_queue(
             state,
             options=QueueBuildOptions(
                 count=None,
                 status="open",
                 include_subjective=True,
+                plan=plan,
             ),
         )
-        all_items = queue.get("items", [])
-        lines.extend(_plan_user_ordered_section(all_items, plan))
+        execution_items = execution_queue.get("items", [])
+        lines.extend(_plan_user_ordered_section(execution_items, plan))
+        lines.extend(_plan_item_sections(issues, state=state, plan=plan))
 
-        # Remaining: items NOT in queue_order or skipped
-        ordered_ids = set(plan.get("queue_order", []))
-        skipped_ids = set(plan.get("skipped", {}).keys())
-        plan_ids = ordered_ids | skipped_ids
-        remaining = [item for item in all_items if item.get("id") not in plan_ids]
-        if remaining:
-            lines.append("---")
-            lines.append(f"## Remaining (mechanical order, {len(remaining)} items)")
-            lines.append("")
+        backlog_queue = build_backlog_queue(
+            state,
+            options=QueueBuildOptions(
+                count=None,
+                status="open",
+                include_subjective=True,
+                plan=plan,
+            ),
+        )
+        backlog_items = backlog_queue.get("items", [])
+        lines.extend(_backlog_item_section(backlog_items))
 
-        lines.extend(_plan_item_sections(issues, state=state))
+        all_items = [*execution_items, *backlog_items]
         lines.extend(_plan_skipped_section(all_items, plan))
         lines.extend(_plan_superseded_section(plan))
     else:

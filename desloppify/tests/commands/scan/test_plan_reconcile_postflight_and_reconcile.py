@@ -35,7 +35,7 @@ class TestClearPlanStartScoresIfQueueEmpty:
 
         monkeypatch.setattr(
             "desloppify.app.commands.helpers.queue_progress.plan_aware_queue_breakdown",
-            lambda s, p: SimpleNamespace(objective_actionable=0, queue_total=0),
+            lambda s, p: SimpleNamespace(objective_actionable=0, queue_total=0, lifecycle_phase="execution"),
         )
         result = reconcile_mod._clear_plan_start_scores_if_queue_empty(state, plan)
         assert result is True
@@ -52,7 +52,7 @@ class TestClearPlanStartScoresIfQueueEmpty:
 
         monkeypatch.setattr(
             "desloppify.app.commands.helpers.queue_progress.plan_aware_queue_breakdown",
-            lambda s, p: SimpleNamespace(objective_actionable=3, queue_total=5),
+            lambda s, p: SimpleNamespace(objective_actionable=3, queue_total=5, lifecycle_phase="execution"),
         )
         result = reconcile_mod._clear_plan_start_scores_if_queue_empty(state, plan)
         assert result is False
@@ -73,7 +73,7 @@ class TestClearPlanStartScoresIfQueueEmpty:
 
         monkeypatch.setattr(
             "desloppify.app.commands.helpers.queue_progress.plan_aware_queue_breakdown",
-            lambda s, p: SimpleNamespace(objective_actionable=0, queue_total=3),
+            lambda s, p: SimpleNamespace(objective_actionable=0, queue_total=3, lifecycle_phase="execution"),
         )
         result = reconcile_mod._clear_plan_start_scores_if_queue_empty(state, plan)
         assert result is True

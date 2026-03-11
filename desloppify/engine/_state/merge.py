@@ -19,7 +19,7 @@ from desloppify.engine._state.merge_history import (
     _record_scan_metadata,
 )
 from desloppify.engine._state.merge_issues import (
-    auto_resolve_disappeared,
+    verify_disappeared,
     find_suspect_detectors,
     upsert_issues,
 )
@@ -34,25 +34,7 @@ from desloppify.engine._state.schema import (
 
 from desloppify.engine._state import _recompute_stats
 
-# Mechanical detectors → subjective dimensions they provide evidence for.
-# When issues from these detectors change during a scan, the corresponding
-# subjective assessments are marked stale so reviewers know to re-evaluate.
-_DETECTOR_SUBJECTIVE_DIMENSIONS: dict[str, tuple[str, ...]] = {
-    "structural": ("design_coherence", "abstraction_fitness"),
-    "smells": ("design_coherence", "error_consistency"),
-    "global_mutable_config": ("initialization_coupling",),
-    "coupling": ("cross_module_architecture",),
-    "layer_violation": ("cross_module_architecture",),
-    "private_imports": ("cross_module_architecture",),
-    "dupes": ("convention_outlier",),
-    "boilerplate_duplication": ("convention_outlier",),
-    "naming": ("convention_outlier",),
-    "flat_dirs": ("package_organization",),
-    "orphaned": ("design_coherence",),
-    "uncalled_functions": ("design_coherence",),
-    "responsibility_cohesion": ("design_coherence", "abstraction_fitness"),
-    "cycles": ("cross_module_architecture", "dependency_health"),
-}
+from desloppify.base.registry import get_detector_meta
 
 
 def _mark_stale_on_mechanical_change(
@@ -75,7 +57,8 @@ def _mark_stale_on_mechanical_change(
         meta = DETECTORS.get(detector)
         if meta is None or not meta.marks_dims_stale:
             continue
-        dims = _DETECTOR_SUBJECTIVE_DIMENSIONS.get(detector)
+        det_meta = get_detector_meta(detector)
+        dims = det_meta.subjective_dimensions if det_meta else ()
         if dims:
             affected_dims.update(dims)
             continue
@@ -175,7 +158,7 @@ def merge_scan(
         resolved_options.force_resolve,
         ran_detectors,
     )
-    auto_resolved, skipped_other_lang, resolved_out_of_scope, resolve_changed = auto_resolve_disappeared(
+    auto_resolved, skipped_other_lang, resolved_out_of_scope, resolve_changed = verify_disappeared(
         existing,
         current_ids,
         suspect_detectors,

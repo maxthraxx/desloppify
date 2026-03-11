@@ -7,7 +7,8 @@ from pathlib import Path
 from desloppify.base.discovery.file_paths import resolve_path
 from desloppify.base.discovery.file_paths import count_lines
 from desloppify.base.discovery.paths import get_project_root
-from desloppify.state import Issue, make_issue
+from desloppify.engine._state.filtering import make_issue
+from desloppify.state_io import Issue
 
 
 def add_structural_signal(structural: dict, file: str, signal: str, detail: dict):

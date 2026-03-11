@@ -6,10 +6,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from desloppify import state as state_mod
 from desloppify.app.commands.helpers.state import state_path
 from desloppify.base.config import load_config
-from desloppify.engine._state.schema import StateModel
+from desloppify.state_io import StateModel, load_state
 
 
 @dataclass(frozen=True)
@@ -32,7 +31,7 @@ def command_runtime(args: argparse.Namespace) -> CommandRuntime:
     if isinstance(state_file, str):
         state_file = Path(state_file)
 
-    state = state_mod.load_state(state_file)
+    state = load_state(state_file)
 
     return CommandRuntime(config=config, state=state, state_path=state_file)
 

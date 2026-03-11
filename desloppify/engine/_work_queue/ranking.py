@@ -6,6 +6,7 @@ import logging
 from typing import Any, cast
 
 from desloppify.base.registry import DETECTORS
+from desloppify.engine.plan_triage import TRIAGE_STAGE_ORDER
 from desloppify.engine._scoring.results.health import compute_health_breakdown
 from desloppify.engine._scoring.results.impact import get_dimension_for_detector
 from desloppify.engine._state.filtering import path_scoped_issues
@@ -46,14 +47,6 @@ _RANK_TRIAGE_STAGE = -1     # Epic triage workflow stages
 _RANK_CLUSTER = 0           # Auto-clustered issues
 _RANK_ISSUE = 1           # Individual issues + assessed subjective
 
-_TRIAGE_STAGE_ORDER = {
-    "observe": 0,
-    "reflect": 1,
-    "organize": 2,
-    "commit": 3,
-}
-
-
 def _workflow_stage_index(item: WorkQueueItem) -> int:
     raw_index = item.get("stage_index")
     if raw_index is not None:
@@ -64,7 +57,7 @@ def _workflow_stage_index(item: WorkQueueItem) -> int:
             if stripped.lstrip("-").isdigit():
                 return int(stripped)
         logger.warning("Invalid workflow stage index %r", raw_index)
-    return _TRIAGE_STAGE_ORDER.get(workflow_stage_name(item).lower(), 0)
+    return TRIAGE_STAGE_ORDER.get(workflow_stage_name(item).lower(), 0)
 
 
 def enrich_with_impact(

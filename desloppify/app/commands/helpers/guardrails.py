@@ -128,7 +128,8 @@ def require_triage_current_or_exit(
     lines.append("  Manual fallback:    desloppify plan triage")
     lines.append("  (Review new issues, then either --confirm-existing or re-plan.)")
     lines.append("")
-    lines.append("  View new items:  desloppify plan queue --sort recent")
+    lines.append("  View new execution items:  desloppify plan queue --sort recent")
+    lines.append("  View broader backlog:      desloppify backlog")
     lines.append('  To bypass: --force-resolve --attest "I understand the plan may be stale..."')
     raise CommandError("\n".join(lines))
 

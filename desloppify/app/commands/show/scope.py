@@ -164,7 +164,7 @@ def _lookup_dimension_score(
 
 def _detector_names_hint() -> str:
     """Return a compact list of detector names for the help message."""
-    names = getattr(registry_mod, "DISPLAY_ORDER", [])
+    names = tuple(getattr(registry_mod, "_DISPLAY_ORDER", ()))
     if names:
         return ", ".join(names[:10]) + (", ..." if len(names) > 10 else "")
     return "smells, structural, security, review, ..."

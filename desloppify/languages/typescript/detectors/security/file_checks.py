@@ -14,6 +14,18 @@ from desloppify.languages.typescript.detectors.security.patterns import (
     _SECURITY_INVOKER_RE,
     _SERVE_ASYNC_RE,
 )
+from desloppify.base.signal_patterns import AUTH_LOOKUP_TOKEN_RE
+
+_AUTH_DENIAL_RE = re.compile(
+    r"\b(?:401|403|unauthori[sz]ed|forbidden)\b"
+    r"|NextResponse\.redirect\b|\bredirect\s*\("
+    r"|new\s+Response\s*\([^)]*status\s*:\s*(?:401|403)",
+    re.IGNORECASE,
+)
+_NEGATED_AUTH_BRANCH_RE = re.compile(
+    r"\bif\s*\(\s*!\s*[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)?\s*\)",
+    re.IGNORECASE,
+)
 
 
 def _file_level_security_issues(
@@ -83,8 +95,19 @@ def _handler_has_auth_check(content: str) -> bool:
     """Check if auth patterns exist inside handler body, not just file-level."""
     handler_body = _extract_handler_body(content)
     if handler_body is None:
-        return bool(_AUTH_CHECK_RE.search(content))
-    return bool(_AUTH_CHECK_RE.search(handler_body))
+        return _has_auth_enforcement(content)
+    return _has_auth_enforcement(handler_body)
+
+
+def _has_auth_enforcement(content: str) -> bool:
+    """Return True when handler code actually enforces auth, not just looks it up."""
+    if _AUTH_CHECK_RE.search(content):
+        return True
+    return bool(
+        AUTH_LOOKUP_TOKEN_RE.search(content)
+        and _NEGATED_AUTH_BRANCH_RE.search(content)
+        and _AUTH_DENIAL_RE.search(content)
+    )
 
 
 def _is_in_try_scope(lines: list[str], target_line: int) -> bool:

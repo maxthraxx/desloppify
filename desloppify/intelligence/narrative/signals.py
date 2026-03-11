@@ -21,14 +21,9 @@ from desloppify.intelligence.narrative.types import (
     StrictTarget,
     VerificationStep,
 )
-from desloppify.state import (
-    Issue,
-    StateModel,
-    path_scoped_issues,
-)
-from desloppify.state import (
-    score_snapshot as state_score_snapshot,
-)
+from desloppify.engine._state.filtering import path_scoped_issues
+from desloppify.state_io import Issue, StateModel
+from desloppify.state_scoring import score_snapshot as state_score_snapshot
 
 _RISK_SEVERITY_ORDER = {
     "critical": 0,

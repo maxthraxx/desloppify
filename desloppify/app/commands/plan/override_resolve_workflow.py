@@ -112,6 +112,220 @@ def _print_stage_coaching(next_stage: str) -> None:
             print(colorize(line, "dim"))
 
 
+def _resolve_missing_triage_stages(plan: dict) -> set[str]:
+    meta = plan.get("epic_triage_meta", {})
+    if meta.get("last_completed_at"):
+        return set()
+    confirmed_stages = confirmed_triage_stage_names(meta)
+    required_stages = {"observe", "reflect", "organize", "enrich", "commit"}
+    return required_stages - confirmed_stages
+
+
+def _ensure_triage_queue(plan: dict) -> None:
+    if has_triage_in_queue(plan):
+        return
+    inject_triage_stages(plan)
+    meta = plan.get("epic_triage_meta", {})
+    meta.setdefault("triage_stages", {})
+    plan["epic_triage_meta"] = meta
+    save_plan(plan)
+
+
+def _log_workflow_blocked(
+    plan: dict,
+    *,
+    gated_ids: list[str],
+    note: str | None,
+    missing: set[str],
+    next_stage: str,
+) -> None:
+    append_log_entry(
+        plan,
+        "workflow_blocked",
+        issue_ids=gated_ids,
+        actor="user",
+        note=note,
+        detail={"missing_stages": sorted(missing), "next_stage": next_stage},
+    )
+    save_plan(plan)
+
+
+def _print_triage_gate_block(gated_ids: list[str], *, missing: set[str], next_stage: str) -> None:
+    for workflow_id in gated_ids:
+        print(colorize(f"  Cannot resolve {workflow_id} — triage not complete.", "red"))
+    print()
+    _print_stage_runner_guidance(next_stage)
+    print(
+        colorize(
+            f"  Manual fallback: {triage_manual_stage_command(next_stage)}",
+            "dim",
+        )
+    )
+    print()
+    _print_stage_coaching(next_stage)
+    print()
+    print(colorize(f"  Remaining stages: {', '.join(sorted(missing))}", "dim"))
+    print(
+        colorize(
+            "  To skip triage: --force-resolve --note 'reason for skipping triage'",
+            "dim",
+        )
+    )
+
+
+def _handle_missing_triage_stages(
+    plan: dict,
+    *,
+    gated_ids: list[str],
+    note: str | None,
+    force: bool,
+) -> WorkflowResolveOutcome | None:
+    missing = _resolve_missing_triage_stages(plan)
+    if not missing:
+        return None
+    if force:
+        if not note or len(note.strip()) < 50:
+            print(
+                colorize(
+                    "  --force-resolve still requires --note (min 50 chars) explaining "
+                    "why you're skipping triage.",
+                    "red",
+                )
+            )
+            return WorkflowResolveOutcome(status="blocked", remaining_patterns=[])
+        print(colorize("  WARNING: Skipping triage requirement — this is logged.", "yellow"))
+        append_log_entry(
+            plan,
+            "workflow_force_skip",
+            issue_ids=gated_ids,
+            actor="user",
+            note=note,
+            detail={"forced": True, "missing_stages": sorted(missing)},
+        )
+        save_plan(plan)
+        return None
+
+    _ensure_triage_queue(plan)
+    stage_order = ["observe", "reflect", "organize", "enrich", "commit"]
+    next_stage = next((stage for stage in stage_order if stage in missing), "observe")
+    _print_triage_gate_block(gated_ids, missing=missing, next_stage=next_stage)
+    _log_workflow_blocked(
+        plan,
+        gated_ids=gated_ids,
+        note=note,
+        missing=missing,
+        next_stage=next_stage,
+    )
+    return WorkflowResolveOutcome(status="blocked", remaining_patterns=[])
+
+
+def _scan_gate_status(args: argparse.Namespace, plan: dict) -> tuple[bool, int, int] | None:
+    scan_count_at_start = plan.get("scan_count_at_plan_start")
+    if scan_count_at_start is None:
+        return None
+    resolved_state_path = state_path(args)
+    state_data = state_mod.load_state(resolved_state_path)
+    current_scan_count = int(state_data.get("scan_count", 0) or 0)
+    scan_ran = current_scan_count > scan_count_at_start
+    return scan_ran, int(scan_count_at_start), current_scan_count
+
+
+def _print_scan_gate_block(
+    gated_ids: list[str],
+    *,
+    scan_count_at_start: int,
+    current_scan_count: int,
+) -> None:
+    for workflow_id in gated_ids:
+        print(
+            colorize(
+                f"  Cannot resolve {workflow_id} — no scan has run this cycle.",
+                "red",
+            )
+        )
+    print()
+    print(
+        colorize(
+            "  You must run a scan before resolving workflow items:",
+            "yellow",
+        )
+    )
+    print(colorize("    desloppify scan", "dim"))
+    print()
+    print(
+        colorize(
+            f"  Scans at cycle start: {scan_count_at_start}  "
+            f"Current: {current_scan_count}",
+            "dim",
+        )
+    )
+    print(
+        colorize(
+            "  To skip scan requirement: desloppify plan scan-gate --skip "
+            '--note "reason for skipping scan"',
+            "dim",
+        )
+    )
+    print(
+        colorize(
+            "  Or use: --force-resolve --note 'reason for skipping'",
+            "dim",
+        )
+    )
+
+
+def _handle_scan_gate(
+    args: argparse.Namespace,
+    plan: dict,
+    *,
+    gated_ids: list[str],
+    note: str | None,
+    force: bool,
+) -> WorkflowResolveOutcome | None:
+    status = _scan_gate_status(args, plan)
+    if status is None:
+        return None
+    scan_ran, scan_count_at_start, current_scan_count = status
+    scan_skipped = plan.get("scan_gate_skipped", False)
+    if scan_ran or scan_skipped or force:
+        return None
+
+    _print_scan_gate_block(
+        gated_ids,
+        scan_count_at_start=scan_count_at_start,
+        current_scan_count=current_scan_count,
+    )
+    append_log_entry(
+        plan,
+        "scan_gate_blocked",
+        issue_ids=gated_ids,
+        actor="user",
+        note=note,
+        detail={
+            "scan_count_at_start": scan_count_at_start,
+            "current_scan_count": current_scan_count,
+        },
+    )
+    save_plan(plan)
+    return WorkflowResolveOutcome(status="blocked", remaining_patterns=[])
+
+
+def _finalize_workflow_resolution(
+    plan: dict,
+    *,
+    synthetic_ids: list[str],
+    note: str | None,
+) -> None:
+    purge_ids(plan, synthetic_ids)
+    step_messages = auto_complete_steps(plan)
+    for message in step_messages:
+        print(colorize(message, "green"))
+    append_log_entry(plan, "done", issue_ids=synthetic_ids, actor="user", note=note)
+    save_plan(plan)
+    for synthetic_id in synthetic_ids:
+        print(colorize(f"  Resolved: {synthetic_id}", "green"))
+
+
 def resolve_workflow_patterns(
     args: argparse.Namespace,
     *,
@@ -124,6 +338,7 @@ def resolve_workflow_patterns(
         return WorkflowResolveOutcome(status="fall_through", remaining_patterns=real_patterns)
 
     plan = load_plan()
+    force = getattr(args, "force_resolve", False)
 
     blocked_map = blocked_triage_stages(plan)
     for synthetic_id in synthetic_ids:
@@ -142,157 +357,34 @@ def resolve_workflow_patterns(
                 "dim",
             )
         )
-        if not getattr(args, "force_resolve", False):
+        if not force:
             return WorkflowResolveOutcome(status="blocked", remaining_patterns=[])
 
     gated_ids = [synthetic_id for synthetic_id in synthetic_ids if synthetic_id in WORKFLOW_GATE_IDS]
     if gated_ids:
-        force = getattr(args, "force_resolve", False)
-        meta = plan.get("epic_triage_meta", {})
-        triage_ever_completed = bool(meta.get("last_completed_at"))
-        if triage_ever_completed:
-            missing: set[str] = set()
-        else:
-            confirmed_stages = confirmed_triage_stage_names(meta)
-            required_stages = {"observe", "reflect", "organize", "enrich", "commit"}
-            missing = required_stages - confirmed_stages
+        blocked = _handle_missing_triage_stages(
+            plan,
+            gated_ids=gated_ids,
+            note=note,
+            force=force,
+        )
+        if blocked is not None:
+            return blocked
+        blocked = _handle_scan_gate(
+            args,
+            plan,
+            gated_ids=gated_ids,
+            note=note,
+            force=force,
+        )
+        if blocked is not None:
+            return blocked
 
-        if missing and not force:
-            if not has_triage_in_queue(plan):
-                inject_triage_stages(plan)
-                meta.setdefault("triage_stages", {})
-                plan["epic_triage_meta"] = meta
-                save_plan(plan)
-
-            stage_order = ["observe", "reflect", "organize", "enrich", "commit"]
-            next_stage = next((stage for stage in stage_order if stage in missing), "observe")
-
-            for workflow_id in gated_ids:
-                print(colorize(f"  Cannot resolve {workflow_id} — triage not complete.", "red"))
-            print()
-
-            _print_stage_runner_guidance(next_stage)
-            print(
-                colorize(
-                    f"  Manual fallback: {triage_manual_stage_command(next_stage)}",
-                    "dim",
-                )
-            )
-            print()
-
-            _print_stage_coaching(next_stage)
-
-            print()
-            print(colorize(f"  Remaining stages: {', '.join(sorted(missing))}", "dim"))
-            print(
-                colorize(
-                    "  To skip triage: --force-resolve --note 'reason for skipping triage'",
-                    "dim",
-                )
-            )
-
-            append_log_entry(
-                plan,
-                "workflow_blocked",
-                issue_ids=gated_ids,
-                actor="user",
-                note=note,
-                detail={"missing_stages": sorted(missing), "next_stage": next_stage},
-            )
-            save_plan(plan)
-            return WorkflowResolveOutcome(status="blocked", remaining_patterns=[])
-
-        if missing and force:
-            if not note or len(note.strip()) < 50:
-                print(
-                    colorize(
-                        "  --force-resolve still requires --note (min 50 chars) explaining "
-                        "why you're skipping triage.",
-                        "red",
-                    )
-                )
-                return WorkflowResolveOutcome(status="blocked", remaining_patterns=[])
-            print(colorize("  WARNING: Skipping triage requirement — this is logged.", "yellow"))
-            append_log_entry(
-                plan,
-                "workflow_force_skip",
-                issue_ids=gated_ids,
-                actor="user",
-                note=note,
-                detail={"forced": True, "missing_stages": sorted(missing)},
-            )
-            save_plan(plan)
-
-    if gated_ids:
-        scan_count_at_start = plan.get("scan_count_at_plan_start")
-        force = getattr(args, "force_resolve", False)
-        if scan_count_at_start is not None:
-            resolved_state_path = state_path(args)
-            state_data = state_mod.load_state(resolved_state_path)
-            current_scan_count = int(state_data.get("scan_count", 0) or 0)
-            scan_ran = current_scan_count > scan_count_at_start
-            scan_skipped = plan.get("scan_gate_skipped", False)
-
-            if not scan_ran and not scan_skipped and not force:
-                for workflow_id in gated_ids:
-                    print(
-                        colorize(
-                            f"  Cannot resolve {workflow_id} — no scan has run this cycle.",
-                            "red",
-                        )
-                    )
-                print()
-                print(
-                    colorize(
-                        "  You must run a scan before resolving workflow items:",
-                        "yellow",
-                    )
-                )
-                print(colorize("    desloppify scan", "dim"))
-                print()
-                print(
-                    colorize(
-                        f"  Scans at cycle start: {scan_count_at_start}  "
-                        f"Current: {current_scan_count}",
-                        "dim",
-                    )
-                )
-                print(
-                    colorize(
-                        "  To skip scan requirement: desloppify plan scan-gate --skip "
-                        '--note "reason for skipping scan"',
-                        "dim",
-                    )
-                )
-                print(
-                    colorize(
-                        "  Or use: --force-resolve --note 'reason for skipping'",
-                        "dim",
-                    )
-                )
-
-                append_log_entry(
-                    plan,
-                    "scan_gate_blocked",
-                    issue_ids=gated_ids,
-                    actor="user",
-                    note=note,
-                    detail={
-                        "scan_count_at_start": scan_count_at_start,
-                        "current_scan_count": current_scan_count,
-                    },
-                )
-                save_plan(plan)
-                return WorkflowResolveOutcome(status="blocked", remaining_patterns=[])
-
-    purge_ids(plan, synthetic_ids)
-    step_messages = auto_complete_steps(plan)
-    for message in step_messages:
-        print(colorize(message, "green"))
-    append_log_entry(plan, "done", issue_ids=synthetic_ids, actor="user", note=note)
-    save_plan(plan)
-    for synthetic_id in synthetic_ids:
-        print(colorize(f"  Resolved: {synthetic_id}", "green"))
+    _finalize_workflow_resolution(
+        plan,
+        synthetic_ids=synthetic_ids,
+        note=note,
+    )
 
     if not real_patterns:
         return WorkflowResolveOutcome(status="handled", remaining_patterns=[])

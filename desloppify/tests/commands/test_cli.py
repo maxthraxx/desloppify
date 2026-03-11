@@ -24,7 +24,9 @@ from desloppify.base.config import (
 from desloppify.cli import (
     _apply_persisted_exclusions,
     _get_detector_names,
+    _running_installed_package_from_checkout,
     _resolve_default_path,
+    _warn_if_running_installed_package_from_checkout,
     create_parser,
     state_path,
 )
@@ -40,6 +42,62 @@ class TestModuleImport:
         """Verify the cli module can be imported without side effects."""
         assert hasattr(cli_mod, "main")
         assert hasattr(cli_mod, "create_parser")
+
+
+class TestInstalledPackageCheckoutWarning:
+    def test_detects_installed_package_running_from_checkout(
+        self, tmp_path: Path
+    ) -> None:
+        (tmp_path / "desloppify").mkdir()
+        (tmp_path / "desloppify" / "__init__.py").write_text("__all__ = []\n")
+        (tmp_path / "pyproject.toml").write_text(
+            '[project]\nname = "desloppify"\nversion = "0.0.0"\n'
+        )
+
+        assert _running_installed_package_from_checkout(
+            cwd_root=tmp_path,
+            module_file="/tmp/site-packages/desloppify/cli.py",
+        )
+
+    def test_does_not_flag_local_checkout_execution(self, tmp_path: Path) -> None:
+        (tmp_path / "desloppify").mkdir()
+        (tmp_path / "desloppify" / "__init__.py").write_text("__all__ = []\n")
+        (tmp_path / "pyproject.toml").write_text(
+            '[project]\nname = "desloppify"\nversion = "0.0.0"\n'
+        )
+
+        assert not _running_installed_package_from_checkout(
+            cwd_root=tmp_path,
+            module_file=tmp_path / "desloppify" / "cli.py",
+        )
+
+    def test_does_not_flag_non_checkout_project(self, tmp_path: Path) -> None:
+        (tmp_path / "pyproject.toml").write_text(
+            '[project]\nname = "other-project"\nversion = "0.0.0"\n'
+        )
+
+        assert not _running_installed_package_from_checkout(
+            cwd_root=tmp_path,
+            module_file="/tmp/site-packages/desloppify/cli.py",
+        )
+
+    def test_warns_when_running_installed_package_from_checkout(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys
+    ) -> None:
+        (tmp_path / "desloppify").mkdir()
+        (tmp_path / "desloppify" / "__init__.py").write_text("__all__ = []\n")
+        (tmp_path / "pyproject.toml").write_text(
+            '[project]\nname = "desloppify"\nversion = "0.0.0"\n'
+        )
+
+        monkeypatch.setattr(cli_mod, "get_project_root", lambda: tmp_path)
+        monkeypatch.setattr(cli_mod, "__file__", "/tmp/site-packages/desloppify/cli.py")
+
+        _warn_if_running_installed_package_from_checkout()
+
+        err = capsys.readouterr().err
+        assert "running installed desloppify package" in err
+        assert "python -m desloppify" in err
 
 
 # ===========================================================================
@@ -144,6 +202,11 @@ class TestCreateParser:
     def test_next_command(self, parser):
         args = parser.parse_args(["next"])
         assert args.command == "next"
+        assert args.count == 1
+
+    def test_backlog_command(self, parser):
+        args = parser.parse_args(["backlog"])
+        assert args.command == "backlog"
         assert args.count == 1
 
     def test_next_with_scope_status_group_and_format(self, parser):
@@ -813,6 +876,20 @@ class TestResolveLang:
 
         lang_helpers_mod._lang_config_markers.cache_clear()
 
+    def test_lang_config_markers_raises_for_broken_plugin(self, monkeypatch):
+        lang_helpers_mod._lang_config_markers.cache_clear()
+        monkeypatch.setattr("desloppify.languages.available_langs", lambda: ["dummy"])
+        monkeypatch.setattr(
+            "desloppify.languages.get_lang",
+            lambda _name: (_ for _ in ()).throw(ImportError("broken plugin")),
+        )
+
+        with pytest.raises(lang_helpers_mod.LangResolutionError) as exc:
+            lang_helpers_mod._lang_config_markers()
+
+        assert "failed to load" in str(exc.value)
+        lang_helpers_mod._lang_config_markers.cache_clear()
+
     def test_resolve_detection_root_uses_plugin_marker(self, tmp_path, monkeypatch):
         cwd_root = tmp_path / "cwd_project"
         cwd_root.mkdir()
@@ -832,4 +909,3 @@ class TestResolveLang:
         args = SimpleNamespace(path=str(target_src))
         resolved = lang_helpers_mod.resolve_detection_root(args)
         assert resolved == target_root
-

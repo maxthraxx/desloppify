@@ -103,30 +103,50 @@ def update_holistic_review_cache(
     review_cache["holistic"] = holistic_entry
 
 
+def _assessed_dimension_keys(state: StateModel) -> set[str]:
+    """Return dimension keys that have real (non-placeholder) assessments."""
+    assessments = state.get("subjective_assessments", {})
+    if not isinstance(assessments, dict):
+        return set()
+    keys: set[str] = set()
+    for dim_key, payload in assessments.items():
+        if not isinstance(payload, dict):
+            continue
+        if payload.get("placeholder") is True:
+            continue
+        if payload.get("source") == "scan_reset_subjective":
+            continue
+        if payload.get("reset_by") == "scan_reset_subjective":
+            continue
+        keys.add(str(dim_key))
+    return keys
+
+
 def resolve_holistic_coverage_issues(
     state: StateModel,
     diff: dict[str, Any],
     *,
     utc_now_fn=utc_now,
 ) -> None:
-    """Resolve stale holistic coverage entries after successful holistic import."""
+    """Mark dimension-level subjective_review issues fixed when import covers them."""
+    assessed = _assessed_dimension_keys(state)
+    if not assessed:
+        return
     now = utc_now_fn()
     for issue in state.get("issues", {}).values():
         if issue.get("status") != "open":
             continue
         if issue.get("detector") != "subjective_review":
             continue
-
-        issue_id = issue.get("id", "")
-        if "::holistic_unreviewed" not in issue_id and "::holistic_stale" not in issue_id:
+        dim_key = (issue.get("detail") or {}).get("dimension", "")
+        if dim_key not in assessed:
             continue
-
-        issue["status"] = "auto_resolved"
+        issue["status"] = "fixed"
         issue["resolved_at"] = now
-        issue["note"] = "resolved by holistic review import"
+        issue["note"] = "completed by review import"
         issue["resolution_attestation"] = {
             "kind": "agent_import",
-            "text": "Holistic review refreshed; coverage marker superseded",
+            "text": "Dimension assessment imported; coverage marker superseded",
             "attested_at": now,
             "scan_verified": False,
         }
@@ -140,39 +160,10 @@ def resolve_reviewed_file_coverage_issues(
     *,
     utc_now_fn=utc_now,
 ) -> None:
-    """Resolve per-file subjective coverage markers for freshly reviewed files."""
-    if not reviewed_files:
-        return
+    """No-op — per-file coverage issues no longer exist.
 
-    reviewed_set = {path for path in reviewed_files if isinstance(path, str) and path}
-    if not reviewed_set:
-        return
-
-    now = utc_now_fn()
-    for issue in state.get("issues", {}).values():
-        if issue.get("status") != "open":
-            continue
-        if issue.get("detector") != "subjective_review":
-            continue
-
-        issue_id = issue.get("id", "")
-        if "::holistic_unreviewed" in issue_id or "::holistic_stale" in issue_id:
-            continue
-
-        issue_file = issue.get("file", "")
-        if issue_file not in reviewed_set:
-            continue
-
-        issue["status"] = "auto_resolved"
-        issue["resolved_at"] = now
-        issue["note"] = "resolved by reviewed_files cache refresh"
-        issue["resolution_attestation"] = {
-            "kind": "agent_import",
-            "text": "Per-file review cache refreshed for this file",
-            "attested_at": now,
-            "scan_verified": False,
-        }
-        diff["auto_resolved"] += 1
+    Kept for backward compatibility with callers that still invoke this.
+    """
 
 
 __all__ = [

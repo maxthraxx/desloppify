@@ -11,10 +11,9 @@ Internal layout:
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
-from dataclasses import dataclass
 
 from desloppify.base.output.fallbacks import log_best_effort_failure
+from .types import TreeSitterLangSpec
 
 logger = logging.getLogger(__name__)
 
@@ -53,30 +52,6 @@ def is_parse_cache_enabled() -> bool:
     return _is_enabled()
 
 
-@dataclass(frozen=True)
-class TreeSitterLangSpec:
-    """Per-language tree-sitter configuration."""
-
-    grammar: str
-    function_query: str
-    comment_node_types: frozenset[str]
-    string_node_types: frozenset[str] = frozenset()
-
-    import_query: str = ""
-    resolve_import: Callable[[str, str, str], str | None] | None = None
-
-    class_query: str = ""
-
-    log_patterns: tuple[str, ...] = (
-        r"^\s*(?:fmt\.Print|log\.)",
-        r"^\s*(?:println!|eprintln!|dbg!)",
-        r"^\s*(?:puts |p |pp )",
-        r"^\s*(?:print\(|NSLog)",
-        r"^\s*(?:System\.out\.|Logger\.)",
-        r"^\s*console\.",
-    )
-
-
 PARSE_INIT_ERRORS: tuple[type[Exception], ...] = (
     ImportError,
     OSError,
@@ -99,6 +74,7 @@ from .specs.specs import (  # noqa: E402
     HASKELL_SPEC,
     JAVA_SPEC,
     JS_SPEC,
+    JULIA_SPEC,
     KOTLIN_SPEC,
     LUA_SPEC,
     NIM_SPEC,
@@ -151,6 +127,7 @@ __all__ = [
     "HASKELL_SPEC",
     "JAVA_SPEC",
     "JS_SPEC",
+    "JULIA_SPEC",
     "KOTLIN_SPEC",
     "LUA_SPEC",
     "NIM_SPEC",

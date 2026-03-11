@@ -16,6 +16,7 @@ def compute_headline(
     stats: dict,
     history: list[dict],
     open_by_detector: dict | None = None,
+    scan_source: str | None = None,
 ) -> str | None:
     """Compute one computed sentence for terminal display."""
     # Security callout prefix — prepended to any headline when security issues exist
@@ -39,7 +40,16 @@ def compute_headline(
             review_suffix = f" ({review_count} review issue{s} pending)"
 
     headline = _compute_headline_inner(
-        phase, dimensions, debt, milestone, diff, obj_strict, obj_score, stats, history
+        phase,
+        dimensions,
+        debt,
+        milestone,
+        diff,
+        obj_strict,
+        obj_score,
+        stats,
+        history,
+        scan_source=scan_source,
     )
 
     if headline is None and not security_prefix and not review_suffix:
@@ -57,8 +67,13 @@ def _compute_headline_inner(
     overall_score: float | None,
     stats: dict,
     history: list[dict],
+    *,
+    scan_source: str | None = None,
 ) -> str | None:
     """Compute the base headline (without security prefix)."""
+    if scan_source == "plan_reconstruction":
+        return "Scan metrics unavailable. Issue inventory reconstructed from saved plan."
+
     # Milestone takes priority
     if milestone:
         return milestone

@@ -8,7 +8,7 @@ from datetime import datetime as _dt
 
 from desloppify.base.output.fallbacks import log_best_effort_failure
 from desloppify.intelligence.narrative._constants import _FEEDBACK_URL, STRUCTURAL_MERGE
-from desloppify.state import StateModel
+from desloppify.state_io import StateModel
 
 logger = logging.getLogger(__name__)
 

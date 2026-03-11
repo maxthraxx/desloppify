@@ -14,7 +14,6 @@ from ..batches_runtime import (
     build_batch_tasks,
     make_run_log_writer,
     resolve_run_log_path,
-    write_run_summary as write_run_summary_impl,
 )
 from ..prompt_sections import explode_to_single_dimension
 from ..runner_parallel import BatchExecutionOptions
@@ -33,6 +32,7 @@ from .execution_results import (
     log_run_start,
     merge_and_write_results,
 )
+from .execution_summary import build_run_summary_writer
 from .scope import (
     normalize_dimension_list,
     print_preflight_dimension_scope_notice,
@@ -96,32 +96,29 @@ class ExecutedBatchRunContext:
     failure_set: set[int]
 
 
-def prepare_batch_run(
+def _resolve_runtime_policy(args) -> tuple[bool, int, float, float, int, float, float, float]:
+    policy = resolve_batch_run_policy(args)
+    return (
+        policy.run_parallel,
+        policy.max_parallel_batches,
+        policy.heartbeat_seconds,
+        policy.batch_timeout_seconds,
+        policy.batch_max_retries,
+        policy.batch_retry_backoff_seconds,
+        policy.stall_warning_seconds,
+        policy.stall_kill_seconds,
+    )
+
+
+def _prepare_packet_scope(
     *,
     args,
     state,
     lang,
     config: dict[str, Any],
     deps: BatchRunDeps,
-    project_root: Path,
-    subagent_runs_dir: Path,
-) -> PreparedBatchRunContext | None:
-    """Prepare packet/artifacts and return execution context; None for dry-run."""
-    runner = getattr(args, "runner", "codex")
-    validate_runner(runner, colorize_fn=deps.colorize_fn)
-    allow_partial = bool(getattr(args, "allow_partial", False))
-
-    policy = resolve_batch_run_policy(args)
-    run_parallel = policy.run_parallel
-    max_parallel_batches = policy.max_parallel_batches
-    heartbeat_seconds = policy.heartbeat_seconds
-    batch_timeout_seconds = policy.batch_timeout_seconds
-    batch_max_retries = policy.batch_max_retries
-    batch_retry_backoff_seconds = policy.batch_retry_backoff_seconds
-    stall_warning_seconds = policy.stall_warning_seconds
-    stall_kill_seconds = policy.stall_kill_seconds
-
-    stamp = deps.run_stamp_fn()
+    stamp: str,
+) -> tuple[dict[str, Any], Path, Path, str, list[str], list[str], list[dict[str, Any]], list[int]]:
     packet, immutable_packet_path, prompt_packet_path = deps.load_or_prepare_packet_fn(
         args,
         state=state,
@@ -129,7 +126,6 @@ def prepare_batch_run(
         config=config,
         stamp=stamp,
     )
-
     scan_path = str(getattr(args, "path", ".") or ".")
     packet_dimensions = normalize_dimension_list(packet.get("dimensions", []))
     scored_dimensions = scored_dimensions_for_lang(lang.name)
@@ -140,7 +136,6 @@ def prepare_batch_run(
         scan_path=scan_path,
         colorize_fn=deps.colorize_fn,
     )
-
     suggested_prepare_cmd = f"desloppify review --prepare --path {scan_path}"
     raw_dim_prompts = packet.get("dimension_prompts")
     batches = explode_to_single_dimension(
@@ -152,11 +147,29 @@ def prepare_batch_run(
         dimension_prompts=raw_dim_prompts if isinstance(raw_dim_prompts, dict) else None,
     )
     selected_indexes = deps.selected_batch_indexes_fn(args, batch_count=len(batches))
-    total_batches = len(selected_indexes)
+    return (
+        packet,
+        immutable_packet_path,
+        prompt_packet_path,
+        scan_path,
+        packet_dimensions,
+        scored_dimensions,
+        batches,
+        selected_indexes,
+    )
+
+
+def _print_runtime_expectation(
+    *,
+    deps: BatchRunDeps,
+    total_batches: int,
+    run_parallel: bool,
+    max_parallel_batches: int,
+    batch_timeout_seconds: float,
+) -> None:
     effective_workers = min(total_batches, max_parallel_batches) if run_parallel else 1
     waves = max(1, math.ceil(total_batches / max(1, effective_workers)))
-    worst_case_seconds = waves * batch_timeout_seconds
-    worst_case_minutes = max(1, math.ceil(worst_case_seconds / 60))
+    worst_case_minutes = max(1, math.ceil((waves * batch_timeout_seconds) / 60))
     print(
         deps.colorize_fn(
             "  Runtime expectation: "
@@ -167,6 +180,42 @@ def prepare_batch_run(
         )
     )
 
+
+def _prepare_run_runtime(
+    *,
+    args,
+    deps: BatchRunDeps,
+    stamp: str,
+    selected_indexes: list[int],
+    batches: list[dict[str, Any]],
+    prompt_packet_path: Path,
+    immutable_packet_path: Path,
+    project_root: Path,
+    subagent_runs_dir: Path,
+    runner: str,
+    allow_partial: bool,
+    run_parallel: bool,
+    max_parallel_batches: int,
+    heartbeat_seconds: float,
+    batch_timeout_seconds: float,
+    batch_max_retries: int,
+    batch_retry_backoff_seconds: float,
+    stall_warning_seconds: float,
+    stall_kill_seconds: float,
+) -> tuple[
+    Path,
+    Path,
+    dict[int, Path],
+    dict[int, Path],
+    dict[int, Path],
+    Path,
+    Any,
+    dict[int, int],
+    dict[str, dict[str, object]],
+    Any,
+    Any,
+    Any,
+]:
     run_dir, logs_dir, prompt_files, output_files, log_files = deps.prepare_run_artifacts_fn(
         stamp=stamp,
         selected_indexes=selected_indexes,
@@ -181,6 +230,10 @@ def prepare_batch_run(
         run_dir=run_dir,
     )
     append_run_log = make_run_log_writer(run_log_path)
+    total_batches = len(selected_indexes)
+    effective_workers = min(total_batches, max_parallel_batches) if run_parallel else 1
+    waves = max(1, math.ceil(total_batches / max(1, effective_workers)))
+    worst_case_minutes = max(1, math.ceil((waves * batch_timeout_seconds) / 60))
     log_run_start(
         append_run_log=append_run_log,
         colorize_fn=deps.colorize_fn,
@@ -200,6 +253,157 @@ def prepare_batch_run(
         worst_case_minutes=worst_case_minutes,
         selected_indexes=selected_indexes,
     )
+    batch_positions = {batch_idx: pos + 1 for pos, batch_idx in enumerate(selected_indexes)}
+    batch_status = build_initial_batch_status(
+        selected_indexes=selected_indexes,
+        batch_positions=batch_positions,
+        prompt_files=prompt_files,
+        output_files=output_files,
+        log_files=log_files,
+    )
+    stall_warned_batches: set[int] = set()
+    report_progress = build_progress_reporter(
+        batch_positions=batch_positions,
+        batch_status=batch_status,
+        stall_warned_batches=stall_warned_batches,
+        total_batches=total_batches,
+        stall_warning_seconds=stall_warning_seconds,
+        prompt_files=prompt_files,
+        output_files=output_files,
+        log_files=log_files,
+        append_run_log=append_run_log,
+        colorize_fn=deps.colorize_fn,
+    )
+    record_issue = partial(record_execution_issue, append_run_log)
+    write_run_summary = build_run_summary_writer(
+        run_dir=run_dir,
+        summary_config=BatchRunSummaryConfig(
+            created_at=datetime.now(UTC).isoformat(timespec="seconds"),
+            run_stamp=stamp,
+            runner=runner,
+            run_parallel=run_parallel,
+            selected_indexes=selected_indexes,
+            allow_partial=allow_partial,
+            max_parallel_batches=max_parallel_batches,
+            batch_timeout_seconds=batch_timeout_seconds,
+            batch_max_retries=batch_max_retries,
+            batch_retry_backoff_seconds=batch_retry_backoff_seconds,
+            heartbeat_seconds=heartbeat_seconds,
+            stall_warning_seconds=stall_warning_seconds,
+            stall_kill_seconds=stall_kill_seconds,
+            immutable_packet_path=immutable_packet_path,
+            prompt_packet_path=prompt_packet_path,
+            run_dir=run_dir,
+            logs_dir=logs_dir,
+            run_log_path=run_log_path,
+        ),
+        batch_status=batch_status,
+        safe_write_text_fn=deps.safe_write_text_fn,
+        colorize_fn=deps.colorize_fn,
+        append_run_log=append_run_log,
+    )
+    return (
+        run_dir,
+        logs_dir,
+        prompt_files,
+        output_files,
+        log_files,
+        run_log_path,
+        append_run_log,
+        batch_positions,
+        batch_status,
+        report_progress,
+        record_issue,
+        write_run_summary,
+    )
+
+
+def prepare_batch_run(
+    *,
+    args,
+    state,
+    lang,
+    config: dict[str, Any],
+    deps: BatchRunDeps,
+    project_root: Path,
+    subagent_runs_dir: Path,
+) -> PreparedBatchRunContext | None:
+    """Prepare packet/artifacts and return execution context; None for dry-run."""
+    runner = getattr(args, "runner", "codex")
+    validate_runner(runner, colorize_fn=deps.colorize_fn)
+    allow_partial = bool(getattr(args, "allow_partial", False))
+
+    (
+        run_parallel,
+        max_parallel_batches,
+        heartbeat_seconds,
+        batch_timeout_seconds,
+        batch_max_retries,
+        batch_retry_backoff_seconds,
+        stall_warning_seconds,
+        stall_kill_seconds,
+    ) = _resolve_runtime_policy(args)
+
+    stamp = deps.run_stamp_fn()
+    (
+        packet,
+        immutable_packet_path,
+        prompt_packet_path,
+        scan_path,
+        packet_dimensions,
+        scored_dimensions,
+        batches,
+        selected_indexes,
+    ) = _prepare_packet_scope(
+        args=args,
+        state=state,
+        lang=lang,
+        config=config,
+        deps=deps,
+        stamp=stamp,
+    )
+    total_batches = len(selected_indexes)
+    _print_runtime_expectation(
+        deps=deps,
+        total_batches=total_batches,
+        run_parallel=run_parallel,
+        max_parallel_batches=max_parallel_batches,
+        batch_timeout_seconds=batch_timeout_seconds,
+    )
+    (
+        run_dir,
+        logs_dir,
+        prompt_files,
+        output_files,
+        log_files,
+        run_log_path,
+        append_run_log,
+        batch_positions,
+        batch_status,
+        report_progress,
+        record_issue,
+        write_run_summary,
+    ) = _prepare_run_runtime(
+        args=args,
+        deps=deps,
+        stamp=stamp,
+        selected_indexes=selected_indexes,
+        batches=batches,
+        prompt_packet_path=prompt_packet_path,
+        immutable_packet_path=immutable_packet_path,
+        project_root=project_root,
+        subagent_runs_dir=subagent_runs_dir,
+        runner=runner,
+        allow_partial=allow_partial,
+        run_parallel=run_parallel,
+        max_parallel_batches=max_parallel_batches,
+        heartbeat_seconds=heartbeat_seconds,
+        batch_timeout_seconds=batch_timeout_seconds,
+        batch_max_retries=batch_max_retries,
+        batch_retry_backoff_seconds=batch_retry_backoff_seconds,
+        stall_warning_seconds=stall_warning_seconds,
+        stall_kill_seconds=stall_kill_seconds,
+    )
     if maybe_handle_dry_run(
         args=args,
         stamp=stamp,
@@ -216,16 +420,6 @@ def prepare_batch_run(
     ):
         return None
 
-    batch_positions = {batch_idx: pos + 1 for pos, batch_idx in enumerate(selected_indexes)}
-    summary_created_at = datetime.now(UTC).isoformat(timespec="seconds")
-    stall_warned_batches: set[int] = set()
-    batch_status = build_initial_batch_status(
-        selected_indexes=selected_indexes,
-        batch_positions=batch_positions,
-        prompt_files=prompt_files,
-        output_files=output_files,
-        log_files=log_files,
-    )
     if run_parallel:
         print(
             deps.colorize_fn(
@@ -235,48 +429,6 @@ def prepare_batch_run(
                 "dim",
             )
         )
-    report_progress = build_progress_reporter(
-        batch_positions=batch_positions,
-        batch_status=batch_status,
-        stall_warned_batches=stall_warned_batches,
-        total_batches=total_batches,
-        stall_warning_seconds=stall_warning_seconds,
-        prompt_files=prompt_files,
-        output_files=output_files,
-        log_files=log_files,
-        append_run_log=append_run_log,
-        colorize_fn=deps.colorize_fn,
-    )
-    record_issue = partial(record_execution_issue, append_run_log)
-    summary_config = BatchRunSummaryConfig(
-        created_at=summary_created_at,
-        run_stamp=stamp,
-        runner=runner,
-        run_parallel=run_parallel,
-        selected_indexes=selected_indexes,
-        allow_partial=allow_partial,
-        max_parallel_batches=max_parallel_batches,
-        batch_timeout_seconds=batch_timeout_seconds,
-        batch_max_retries=batch_max_retries,
-        batch_retry_backoff_seconds=batch_retry_backoff_seconds,
-        heartbeat_seconds=heartbeat_seconds,
-        stall_warning_seconds=stall_warning_seconds,
-        stall_kill_seconds=stall_kill_seconds,
-        immutable_packet_path=immutable_packet_path,
-        prompt_packet_path=prompt_packet_path,
-        run_dir=run_dir,
-        logs_dir=logs_dir,
-        run_log_path=run_log_path,
-    )
-    write_run_summary = partial(
-        write_run_summary_impl,
-        summary_path=run_dir / "run_summary.json",
-        summary_config=summary_config,
-        batch_status=batch_status,
-        safe_write_text_fn=deps.safe_write_text_fn,
-        colorize_fn=deps.colorize_fn,
-        append_run_log_fn=append_run_log,
-    )
 
     return PreparedBatchRunContext(
         stamp=stamp,
@@ -457,6 +609,10 @@ def merge_and_import_batch_run(
 __all__ = [
     "ExecutedBatchRunContext",
     "PreparedBatchRunContext",
+    "_prepare_packet_scope",
+    "_prepare_run_runtime",
+    "_print_runtime_expectation",
+    "_resolve_runtime_policy",
     "execute_batch_run",
     "merge_and_import_batch_run",
     "prepare_batch_run",

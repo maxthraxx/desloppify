@@ -19,7 +19,7 @@ from desloppify.languages._framework.base.types import (
 from desloppify.languages._framework.registration import register_full_plugin
 from desloppify.languages.typescript import test_coverage as ts_test_coverage_hooks
 from desloppify.languages.typescript._fixers import get_ts_fixers
-import desloppify.languages.typescript.detectors.cli as ts_detector_cli_mod
+import desloppify.languages.typescript.commands as ts_commands_mod
 import desloppify.languages.typescript.detectors.deps as deps_detector_mod
 from desloppify.languages.typescript.detectors.security.detector import detect_ts_security
 from desloppify.languages.typescript.extractors_functions import extract_ts_functions
@@ -123,7 +123,7 @@ class TypeScriptConfig(LangConfig):
             ],
             fixers=get_ts_fixers(),
             get_area=get_area,
-            detect_commands=ts_detector_cli_mod.get_detect_commands(),
+            detect_commands=ts_commands_mod.get_detect_commands(),
             boundaries=[
                 BoundaryRule("shared/", "tools/", "shared→tools"),
             ],

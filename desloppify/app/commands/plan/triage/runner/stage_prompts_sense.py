@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from ..helpers import cluster_issue_ids
+
 
 def build_sense_check_content_prompt(
     *,
@@ -17,7 +19,7 @@ def build_sense_check_content_prompt(
     """Build a content-verification prompt for a single cluster."""
     cluster = plan.get("clusters", {}).get(cluster_name, {})
     steps = cluster.get("action_steps", [])
-    issue_ids = cluster.get("issue_ids", [])
+    issue_ids = cluster_issue_ids(cluster)
 
     parts: list[str] = []
     parts.append(
@@ -208,7 +210,7 @@ def build_sense_check_structure_prompt(
             continue
         steps = c.get("action_steps", [])
         deps = c.get("depends_on_clusters", [])
-        issues = c.get("issue_ids", [])
+        issues = cluster_issue_ids(c)
         header = f"### {name} ({len(steps)} steps, {len(issues)} issues)"
         if deps:
             header += f"\n  depends_on: {', '.join(deps)}"

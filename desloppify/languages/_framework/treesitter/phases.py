@@ -14,9 +14,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from desloppify.base.output.terminal import log
+from desloppify.engine._state.filtering import make_issue
 from desloppify.languages._framework.base.smell_contracts import normalize_smell_matches
 from desloppify.languages._framework.base.types import DetectorPhase
-from desloppify.state import Issue, make_issue
+from desloppify.state_io import Issue
 
 if TYPE_CHECKING:
     from desloppify.languages._framework.base.types import LangRuntimeContract

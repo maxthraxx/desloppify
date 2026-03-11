@@ -1,4 +1,4 @@
-"""Dismissal helpers for epic triage plan mutations."""
+"""Dismissal helpers for cluster triage plan mutations."""
 
 from __future__ import annotations
 
@@ -51,7 +51,7 @@ def dismiss_triage_issues(
         )
         dismiss_count += 1
 
-    for epic_data in triage.epics:
+    for epic_data in triage.clusters:
         for issue_id in epic_data.get("dismissed", []):
             if issue_id in dismissed_ids or issue_id not in order:
                 continue

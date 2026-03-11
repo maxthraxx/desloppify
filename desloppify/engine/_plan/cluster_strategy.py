@@ -2,30 +2,16 @@
 
 from __future__ import annotations
 
-import os
-
 from desloppify.base.registry import DetectorMeta
 from desloppify.engine._plan.constants import AUTO_PREFIX
 
 
-def extract_subtype(issue: dict) -> str | None:
-    """Extract the subtype/kind from a issue."""
-    detail = issue.get("detail") or {}
-    kind = detail.get("kind")
-    if kind:
-        return kind
-
-    issue_id = issue.get("id", "")
-    parts = issue_id.split("::")
-    if len(parts) >= 3:
-        candidate = parts[-1]
-        if "/" not in candidate and "." not in candidate:
-            return candidate
-    return None
-
-
 def grouping_key(issue: dict, meta: DetectorMeta | None) -> str | None:
-    """Compute a deterministic grouping key for a issue."""
+    """Compute a deterministic grouping key for a issue.
+
+    Returns ``None`` for judgment-required detectors — these flow through the
+    review process as mechanical evidence rather than becoming auto-tasks.
+    """
     detector = issue.get("detector", "")
 
     if meta is None:
@@ -38,18 +24,10 @@ def grouping_key(issue: dict, meta: DetectorMeta | None) -> str | None:
             return f"review::{dimension}"
         return f"detector::{detector}"
 
-    if meta.needs_judgment and detector in ("structural", "responsibility_cohesion"):
-        file_path = issue.get("file", "")
-        if file_path:
-            basename = os.path.basename(file_path)
-            return f"file::{detector}::{basename}"
-
     if meta.needs_judgment:
-        subtype = extract_subtype(issue)
-        if subtype:
-            return f"typed::{detector}::{subtype}"
+        return None
 
-    if meta.action_type == "auto_fix" and not meta.needs_judgment:
+    if meta.action_type == "auto_fix":
         return f"auto::{detector}"
 
     return f"detector::{detector}"
@@ -69,13 +47,10 @@ def cluster_name_from_key(key: str) -> str:
 
 
 def generate_description(
-    cluster_name: str,
     members: list[dict],
     meta: DetectorMeta | None,
-    subtype: str | None,
 ) -> str:
     """Generate a human-readable cluster description."""
-    _ = cluster_name
     count = len(members)
     detector = members[0].get("detector", "") if members else ""
 
@@ -84,18 +59,9 @@ def generate_description(
         dimension = detail.get("dimension", detector)
         return f"Address {count} {dimension} review issues"
 
-    if detector == "structural":
-        files = {os.path.basename(member.get("file", "")) for member in members}
-        if len(files) == 1:
-            return f"Review file size: {next(iter(files))}"
-        return f"Review {count} large files"
-
     display = meta.display if meta else detector
-    if subtype:
-        label = subtype.replace("_", " ")
-        return f"Fix {count} {label} issues"
 
-    if meta and meta.action_type == "auto_fix" and not meta.needs_judgment:
+    if meta and meta.action_type == "auto_fix":
         return f"Remove {count} {display} issues"
 
     return f"Fix {count} {display} issues"
@@ -140,7 +106,7 @@ def generate_action(
         matched_fixer = subtype_has_fixer(meta, subtype)
         if matched_fixer:
             return f"desloppify autofix {matched_fixer} --dry-run"
-    elif meta.action_type == "auto_fix" and meta.fixers and not meta.needs_judgment:
+    elif meta.action_type == "auto_fix" and meta.fixers:
         return f"desloppify autofix {meta.fixers[0]} --dry-run"
 
     if meta.tool == "move":

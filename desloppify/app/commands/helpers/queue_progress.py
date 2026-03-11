@@ -10,11 +10,20 @@ from typing import TYPE_CHECKING
 
 from desloppify.base.exception_sets import PLAN_LOAD_EXCEPTIONS
 from desloppify.base.output.terminal import colorize
+from desloppify.engine.plan_queue import (
+    LIFECYCLE_PHASE_EXECUTE,
+    LIFECYCLE_PHASE_REVIEW,
+    LIFECYCLE_PHASE_SCAN,
+    LIFECYCLE_PHASE_TRIAGE,
+    LIFECYCLE_PHASE_WORKFLOW,
+)
 from desloppify.engine.plan_state import load_plan
 from desloppify.state_scoring import score_snapshot
-from desloppify.engine._work_queue import core as work_queue_core_mod
+from desloppify.engine._work_queue.core import QueueBuildOptions
 from desloppify.engine._work_queue.helpers import is_subjective_queue_item
+from desloppify.engine._work_queue.lifecycle import resolve_lifecycle_phase
 from desloppify.engine._work_queue.plan_order import collapse_clusters
+from desloppify.engine.planning.queue_policy import build_execution_queue
 from desloppify.app.commands.helpers.queue_progress_render import (
     format_plan_delta,
     format_queue_block,
@@ -40,6 +49,7 @@ class QueueBreakdown:
     skipped: int = 0
     subjective: int = 0
     workflow: int = 0
+    lifecycle_phase: str | None = None
     focus_cluster: str | None = None
     focus_cluster_count: int = 0
     focus_cluster_total: int = 0
@@ -52,6 +62,13 @@ class QueueBreakdown:
         frozen vs live display.  Do not use it directly for gating —
         use ``score_display_mode()`` instead.
         """
+        if self.lifecycle_phase in {
+            LIFECYCLE_PHASE_SCAN,
+            LIFECYCLE_PHASE_REVIEW,
+            LIFECYCLE_PHASE_WORKFLOW,
+            LIFECYCLE_PHASE_TRIAGE,
+        }:
+            return 0
         return max(0, self.queue_total - self.subjective - self.workflow)
 
 
@@ -86,6 +103,16 @@ def score_display_mode(
         return ScoreDisplayMode.LIVE
     if breakdown is None:
         return ScoreDisplayMode.LIVE
+    if breakdown.lifecycle_phase == LIFECYCLE_PHASE_SCAN:
+        return ScoreDisplayMode.LIVE
+    if breakdown.lifecycle_phase == LIFECYCLE_PHASE_EXECUTE:
+        return ScoreDisplayMode.FROZEN
+    if breakdown.lifecycle_phase in {
+        LIFECYCLE_PHASE_REVIEW,
+        LIFECYCLE_PHASE_WORKFLOW,
+        LIFECYCLE_PHASE_TRIAGE,
+    }:
+        return ScoreDisplayMode.PHASE_TRANSITION
     if breakdown.objective_actionable > 0:
         return ScoreDisplayMode.FROZEN
     if breakdown.queue_total > 0:
@@ -106,9 +133,9 @@ def plan_aware_queue_breakdown(
     """
     effective_plan = context.plan if context is not None else plan
 
-    result = work_queue_core_mod.build_work_queue(
+    result = build_execution_queue(
         state,
-        options=work_queue_core_mod.QueueBuildOptions(
+        options=QueueBuildOptions(
             status="open",
             count=None,
             plan=effective_plan if context is None else None,
@@ -119,6 +146,7 @@ def plan_aware_queue_breakdown(
 
     # Collapse clusters for display-level counting
     items = result.get("items", [])
+    lifecycle_phase = resolve_lifecycle_phase(items, plan=effective_plan)
     if effective_plan and not effective_plan.get("active_cluster"):
         items = collapse_clusters(items, effective_plan)
 
@@ -170,6 +198,7 @@ def plan_aware_queue_breakdown(
         skipped=skipped,
         subjective=subjective,
         workflow=workflow,
+        lifecycle_phase=lifecycle_phase,
         focus_cluster=focus_cluster,
         focus_cluster_count=focus_cluster_count,
         focus_cluster_total=focus_cluster_total,

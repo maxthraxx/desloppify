@@ -56,15 +56,32 @@ def test_queue_order_guard_warns_when_plan_load_is_degraded(monkeypatch) -> None
 
 
 def test_plan_load_warning_prints_once(capsys) -> None:
-    plan_load_mod._reset_degraded_plan_warning_for_tests()
+    warning_state = plan_load_mod.DegradedPlanWarningState()
     plan_load_mod.warn_plan_load_degraded_once(
         error_kind="RuntimeError",
         behavior="Queue-order enforcement is disabled until recovery.",
+        warning_state=warning_state,
     )
     plan_load_mod.warn_plan_load_degraded_once(
         error_kind="RuntimeError",
         behavior="Cluster expansion is disabled until recovery.",
+        warning_state=warning_state,
     )
     err = capsys.readouterr().err
     assert err.count("Warning: resolve is running in degraded mode") == 1
     assert "Queue-order enforcement is disabled until recovery." in err
+
+
+def test_plan_load_warning_dedupe_does_not_leak_across_attempts(capsys) -> None:
+    plan_load_mod.warn_plan_load_degraded_once(
+        error_kind="RuntimeError",
+        behavior="Queue-order enforcement is disabled until recovery.",
+        warning_state=plan_load_mod.DegradedPlanWarningState(),
+    )
+    plan_load_mod.warn_plan_load_degraded_once(
+        error_kind="RuntimeError",
+        behavior="Cluster expansion is disabled until recovery.",
+        warning_state=plan_load_mod.DegradedPlanWarningState(),
+    )
+    err = capsys.readouterr().err
+    assert err.count("Warning: resolve is running in degraded mode") == 2

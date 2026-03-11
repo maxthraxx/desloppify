@@ -396,7 +396,7 @@ def test_override_skip_helpers_and_commands(monkeypatch, capsys) -> None:
         state_path=None,
     )
     monkeypatch.setattr(override_skip_mod, "command_runtime", lambda _args: runtime)
-    monkeypatch.setattr(override_skip_mod, "require_completed_scan", lambda _state: True)
+    monkeypatch.setattr(override_skip_mod, "require_issue_inventory", lambda _state: True)
     monkeypatch.setattr(override_skip_mod, "load_plan", lambda _plan_file=None: {"queue_order": []})
     monkeypatch.setattr(
         override_skip_mod,
@@ -460,7 +460,7 @@ def test_cmd_plan_skip_invalid_permanent_skip_exits_nonzero(monkeypatch) -> None
         state_path=None,
     )
     monkeypatch.setattr(override_skip_mod, "command_runtime", lambda _args: runtime)
-    monkeypatch.setattr(override_skip_mod, "require_completed_scan", lambda _state: True)
+    monkeypatch.setattr(override_skip_mod, "require_issue_inventory", lambda _state: True)
 
     with pytest.raises(CommandError) as excinfo:
         override_skip_mod.cmd_plan_skip(

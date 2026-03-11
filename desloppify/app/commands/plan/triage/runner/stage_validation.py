@@ -14,18 +14,19 @@ from ..stages.evidence_parsing import (
     validate_report_has_file_paths,
     validate_report_references_clusters,
 )
+from ..validation.enrich_quality import evaluate_enrich_quality
 from ..validation.core import (
     _cluster_file_overlaps,
     _clusters_with_directory_scatter,
     _clusters_with_high_step_ratio,
-    _steps_missing_issue_refs,
-    _steps_referencing_skipped_issues,
-    _steps_with_bad_paths,
-    _steps_with_vague_detail,
-    _steps_without_effort,
-    _underspecified_steps,
 )
-from ..helpers import count_log_activity_since, manual_clusters_with_issues, observe_dimension_breakdown
+from ..helpers import (
+    cluster_issue_ids,
+    count_log_activity_since,
+    manual_clusters_with_issues,
+    observe_dimension_breakdown,
+    open_review_ids_from_state,
+)
 from ..stages.helpers import unclustered_review_issues, unenriched_clusters
 
 
@@ -44,83 +45,194 @@ def run_enrich_quality_checks(
     phase_label: str,
 ) -> list[EnrichQualityFailure]:
     """Run enrich-level executor-readiness checks for a phase."""
-    sense_suffix = f" after {phase_label}" if phase_label == "sense-check" else ""
-    failures: list[EnrichQualityFailure] = []
+    report = evaluate_enrich_quality(
+        plan,
+        repo_root,
+        phase_label=phase_label,
+        bad_paths_severity="failure",
+        missing_effort_severity="failure",
+        include_missing_issue_refs=True,
+        include_vague_detail=True,
+        stale_issue_refs_severity="failure",
+    )
+    code_map = {"underspecified": "underspecified_steps", "bad_paths": "missing_paths"}
+    return [
+        EnrichQualityFailure(
+            code=code_map.get(issue.code, issue.code),
+            message=issue.message,
+        )
+        for issue in report.failures
+    ]
 
-    underspec = _underspecified_steps(plan)
-    if underspec:
-        total = sum(n for _, n, _ in underspec)
-        failures.append(
-            EnrichQualityFailure(
-                code="underspecified_steps",
-                message=f"{total} step(s) still lack detail or issue_refs{sense_suffix}.",
+
+def _validate_observe_stage(
+    *,
+    stages: dict,
+    triage_input: TriageInput | None,
+) -> tuple[bool, str]:
+    """Validate recorded observe-stage content."""
+    if "observe" not in stages:
+        return False, "Observe stage not recorded."
+    report = stages["observe"].get("report", "")
+    if len(report) < 100:
+        return False, f"Observe report too short ({len(report)} chars, need 100+)."
+    cited = stages["observe"].get("cited_ids", [])
+    issue_count = stages["observe"].get("issue_count", 0)
+    if issue_count <= 0:
+        return True, ""
+    min_citations = min(5, max(1, issue_count // 10))
+    if len(cited) < min_citations:
+        return False, (
+            f"Observe report cites only {len(cited)} issue(s) "
+            f"(need {min_citations}+). Reference specific issue "
+            f"hashes to prove you read them."
+        )
+    valid_ids = set(triage_input.open_issues.keys()) if triage_input else set()
+    evidence = parse_observe_evidence(report, valid_ids)
+    ev_failures = validate_observe_evidence(evidence, issue_count)
+    blocking = [failure for failure in ev_failures if failure.blocking]
+    if blocking:
+        return False, blocking[0].message
+    return True, ""
+
+
+def _validate_reflect_stage(stages: dict) -> tuple[bool, str]:
+    """Validate recorded reflect-stage content."""
+    if "reflect" not in stages:
+        return False, "Reflect stage not recorded."
+    report = stages["reflect"].get("report", "")
+    if len(report) < 100:
+        return False, f"Reflect report too short ({len(report)} chars, need 100+)."
+    for field_name, label in (
+        ("missing_issue_ids", "unaccounted for"),
+        ("duplicate_issue_ids", "duplicates"),
+    ):
+        ids = stages["reflect"].get(field_name, [])
+        if ids:
+            return False, f"Reflect report {label} {len(ids)} issue(s)."
+    issue_count = int(stages["reflect"].get("issue_count", 0) or 0)
+    cited = stages["reflect"].get("cited_ids", [])
+    if issue_count > 0 and len(cited) < issue_count:
+        return False, (
+            f"Reflect report cites only {len(cited)}/{issue_count} issue(s). "
+            "A reflect blueprint must account for every open review issue."
+        )
+    skip_failures = validate_reflect_skip_evidence(report)
+    blocking_skips = [failure for failure in skip_failures if failure.blocking]
+    if blocking_skips:
+        return False, blocking_skips[0].message
+    return True, ""
+
+
+def _organize_stage_warnings(plan: dict) -> list[str]:
+    """Collect advisory organize-stage warnings."""
+    warnings: list[str] = []
+    overlaps = _cluster_file_overlaps(plan)
+    if overlaps:
+        warnings.append(f"{len(overlaps)} cluster pair(s) share files without dependencies")
+    scattered = _clusters_with_directory_scatter(plan)
+    if scattered:
+        names = ", ".join(name for name, _, _ in scattered)
+        warnings.append(f"Theme-grouped clusters (5+ dirs): {names}")
+    high_ratio = _clusters_with_high_step_ratio(plan)
+    if high_ratio:
+        names = ", ".join(name for name, _, _, _ in high_ratio)
+        warnings.append(f"1:1 step-to-issue ratio: {names}")
+    clusters = plan.get("clusters", {})
+    orphaned = [
+        name for name, cluster in clusters.items()
+        if not cluster.get("auto") and not cluster_issue_ids(cluster) and cluster.get("action_steps")
+    ]
+    if orphaned:
+        warnings.append(f"Orphaned clusters (steps, no issues): {', '.join(orphaned)}")
+    return warnings
+
+
+def _validate_organize_stage(plan: dict, state: dict, stages: dict) -> tuple[bool, str]:
+    """Validate recorded organize-stage content."""
+    if "organize" not in stages:
+        return False, "Organize stage not recorded."
+    open_review_ids = open_review_ids_from_state(state)
+    manual = manual_clusters_with_issues(plan)
+    if not open_review_ids and not manual:
+        report = stages["organize"].get("report", "")
+        if len(report) < 100:
+            return False, f"Organize report too short ({len(report)} chars, need 100+)."
+        return True, ""
+    if not manual:
+        return False, "No manual clusters with issues exist."
+    gaps = unenriched_clusters(plan)
+    if gaps:
+        names = ", ".join(name for name, _ in gaps)
+        return False, f"Unenriched clusters: {names}"
+    unclustered = unclustered_review_issues(plan, state)
+    if unclustered:
+        return False, f"{len(unclustered)} review issue(s) not in any cluster."
+    report = stages["organize"].get("report", "")
+    cluster_ref_failures = validate_report_references_clusters(report, manual)
+    blocking_refs = [failure for failure in cluster_ref_failures if failure.blocking]
+    if blocking_refs:
+        return False, blocking_refs[0].message
+    reflect_ts = stages.get("reflect", {}).get("timestamp", "")
+    if reflect_ts:
+        activity = count_log_activity_since(plan, reflect_ts)
+        cluster_ops = sum(
+            activity.get(key, 0)
+            for key in ("cluster_create", "cluster_add", "cluster_update", "cluster_remove")
+        )
+        min_ops = max(3, len(manual))
+        if cluster_ops < min_ops:
+            return False, (
+                f"Only {cluster_ops} cluster op(s) logged since reflect "
+                f"(need {min_ops}+). Run cluster create/add/update commands."
             )
-        )
+    warnings = _organize_stage_warnings(plan)
+    if warnings:
+        return True, "Advisory: " + "; ".join(warnings)
+    return True, ""
 
-    bad_paths = _steps_with_bad_paths(plan, repo_root)
-    if bad_paths:
-        total = sum(len(bp) for _, _, bp in bad_paths)
-        if phase_label == "sense-check":
-            message = f"{total} file path(s) don't exist on disk{sense_suffix}."
-        else:
-            message = f"{total} file path(s) in step details don't exist on disk."
-        failures.append(
-            EnrichQualityFailure(code="missing_paths", message=message)
-        )
 
-    untagged = _steps_without_effort(plan)
-    if untagged:
-        total = sum(n for _, n, _ in untagged)
-        if phase_label == "sense-check":
-            message = f"{total} step(s) have no effort tag{sense_suffix}."
-        else:
-            message = (
-                f"{total} step(s) have no effort tag "
-                "(trivial/small/medium/large)."
-            )
-        failures.append(
-            EnrichQualityFailure(code="missing_effort", message=message)
-        )
+def _validate_enrich_stage(plan: dict, repo_root: Path, stages: dict) -> tuple[bool, str]:
+    """Validate recorded enrich-stage content."""
+    if "enrich" not in stages:
+        return False, "Enrich stage not recorded."
+    failures = run_enrich_quality_checks(plan, repo_root, phase_label="enrich")
+    if failures:
+        return False, failures[0].message
+    return True, ""
 
-    no_refs = _steps_missing_issue_refs(plan)
-    if no_refs:
-        total = sum(n for _, n, _ in no_refs)
-        if phase_label == "sense-check":
-            message = f"{total} step(s) have no issue_refs{sense_suffix}."
-        else:
-            message = f"{total} step(s) have no issue_refs for traceability."
-        failures.append(
-            EnrichQualityFailure(code="missing_issue_refs", message=message)
-        )
 
-    vague = _steps_with_vague_detail(plan, repo_root)
-    if vague:
-        if phase_label == "sense-check":
-            message = f"{len(vague)} step(s) have vague detail{sense_suffix}."
-        else:
-            message = (
-                f"{len(vague)} step(s) have vague detail (< 80 chars, no file paths). "
-                "Executor-ready means: file path + specific instruction."
-            )
-        failures.append(
-            EnrichQualityFailure(code="vague_detail", message=message)
-        )
-
-    # Steps referencing skipped/wontfixed issues
-    stale_refs = _steps_referencing_skipped_issues(plan)
-    if stale_refs:
-        total_stale = sum(len(refs) for _, _, refs in stale_refs)
-        failures.append(
-            EnrichQualityFailure(
-                code="stale_issue_refs",
-                message=(
-                    f"{total_stale} step issue_ref(s) point to skipped/wontfixed issues"
-                    f"{sense_suffix}. Remove stale refs."
-                ),
-            )
-        )
-
-    return failures
+def _validate_sense_check_stage(
+    plan: dict,
+    state: dict,
+    repo_root: Path,
+    stages: dict,
+) -> tuple[bool, str]:
+    """Validate recorded sense-check-stage content."""
+    if "sense-check" not in stages:
+        return False, "Sense-check stage not recorded."
+    report = stages["sense-check"].get("report", "")
+    if len(report) < 100:
+        return False, f"Sense-check report too short ({len(report)} chars, need 100+)."
+    if not open_review_ids_from_state(state) and not manual_clusters_with_issues(plan):
+        return True, ""
+    failures = run_enrich_quality_checks(
+        plan,
+        repo_root,
+        phase_label="sense-check",
+    )
+    if failures:
+        return False, failures[0].message
+    path_failures = validate_report_has_file_paths(report)
+    blocking_pf = [failure for failure in path_failures if failure.blocking]
+    if blocking_pf:
+        return False, blocking_pf[0].message
+    sc_clusters = manual_clusters_with_issues(plan)
+    cluster_failures = validate_report_references_clusters(report, sc_clusters)
+    blocking_cf = [failure for failure in cluster_failures if failure.blocking]
+    if blocking_cf:
+        return False, blocking_cf[0].message
+    return True, ""
 
 
 def validate_stage(
@@ -134,157 +246,54 @@ def validate_stage(
     """Check subagent completed stage correctly. Returns (ok, error_msg)."""
     meta = plan.get("epic_triage_meta", {})
     stages = meta.get("triage_stages", {})
+    validators = {
+        "observe": lambda: _validate_observe_stage(
+            stages=stages,
+            triage_input=triage_input,
+        ),
+        "reflect": lambda: _validate_reflect_stage(stages),
+        "organize": lambda: _validate_organize_stage(plan, state, stages),
+        "enrich": lambda: _validate_enrich_stage(plan, repo_root, stages),
+        "sense-check": lambda: _validate_sense_check_stage(plan, state, repo_root, stages),
+    }
+    validator = validators.get(stage)
+    if validator is None:
+        return False, f"Unknown stage: {stage}"
+    return validator()
 
-    if stage == "observe":
-        if "observe" not in stages:
-            return False, "Observe stage not recorded."
-        report = stages["observe"].get("report", "")
-        if len(report) < 100:
-            return False, f"Observe report too short ({len(report)} chars, need 100+)."
-        # Check citation ratio — must reference specific issues
-        cited = stages["observe"].get("cited_ids", [])
-        issue_count = stages["observe"].get("issue_count", 0)
-        if issue_count > 0:
-            min_citations = min(5, max(1, issue_count // 10))
-            if len(cited) < min_citations:
-                return False, (
-                    f"Observe report cites only {len(cited)} issue(s) "
-                    f"(need {min_citations}+). Reference specific issue "
-                    f"hashes to prove you read them."
-                )
-            # Structured evidence validation
-            valid_ids: set[str] = set()
-            if triage_input:
-                valid_ids = set(triage_input.open_issues.keys())
-            evidence = parse_observe_evidence(report, valid_ids)
-            ev_failures = validate_observe_evidence(evidence, issue_count)
-            blocking = [f for f in ev_failures if f.blocking]
-            if blocking:
-                return False, blocking[0].message
-        return True, ""
 
-    if stage == "reflect":
-        if "reflect" not in stages:
-            return False, "Reflect stage not recorded."
-        report = stages["reflect"].get("report", "")
-        if len(report) < 100:
-            return False, f"Reflect report too short ({len(report)} chars, need 100+)."
-        missing = stages["reflect"].get("missing_issue_ids", [])
-        if missing:
-            return False, f"Reflect report leaves {len(missing)} issue(s) unaccounted for."
-        duplicates = stages["reflect"].get("duplicate_issue_ids", [])
-        if duplicates:
-            return False, f"Reflect report duplicates {len(duplicates)} issue(s)."
-        issue_count = int(stages["reflect"].get("issue_count", 0) or 0)
-        cited = stages["reflect"].get("cited_ids", [])
-        if issue_count > 0 and len(cited) < issue_count:
-            return False, (
-                f"Reflect report cites only {len(cited)}/{issue_count} issue(s). "
-                "A reflect blueprint must account for every open review issue."
-            )
-        # Validate skip-reason evidence
-        skip_failures = validate_reflect_skip_evidence(report)
-        blocking_skips = [f for f in skip_failures if f.blocking]
-        if blocking_skips:
-            return False, blocking_skips[0].message
-        return True, ""
+def _validate_required_stages(stages: dict) -> tuple[bool, str]:
+    """Validate that all required triage stages are present and confirmed."""
+    for required in ("observe", "reflect", "organize", "enrich", "sense-check"):
+        if required not in stages:
+            return False, f"Stage {required} not recorded."
+        if not stages[required].get("confirmed_at"):
+            return False, f"Stage {required} not confirmed."
+    return True, ""
 
-    if stage == "organize":
-        if "organize" not in stages:
-            return False, "Organize stage not recorded."
-        manual = manual_clusters_with_issues(plan)
-        if not manual:
-            return False, "No manual clusters with issues exist."
-        gaps = unenriched_clusters(plan)
-        if gaps:
-            names = ", ".join(n for n, _ in gaps)
-            return False, f"Unenriched clusters: {names}"
-        unclustered = unclustered_review_issues(plan, state)
-        if unclustered:
-            return False, f"{len(unclustered)} review issue(s) not in any cluster."
-        # Cluster-name mention check
-        report = stages["organize"].get("report", "")
-        cluster_ref_failures = validate_report_references_clusters(report, manual)
-        if cluster_ref_failures:
-            blocking_refs = [f for f in cluster_ref_failures if f.blocking]
-            if blocking_refs:
-                return False, blocking_refs[0].message
-        # Cluster operation count check
-        reflect_ts = stages.get("reflect", {}).get("timestamp", "")
-        if reflect_ts:
-            activity = count_log_activity_since(plan, reflect_ts)
-            cluster_ops = sum(
-                activity.get(k, 0)
-                for k in ("cluster_create", "cluster_add", "cluster_update", "cluster_remove")
-            )
-            min_ops = max(3, len(manual))
-            if cluster_ops < min_ops:
-                return False, (
-                    f"Only {cluster_ops} cluster op(s) logged since reflect "
-                    f"(need {min_ops}+). Run cluster create/add/update commands."
-                )
-        # Advisory warnings (non-blocking but informational)
-        warnings: list[str] = []
-        overlaps = _cluster_file_overlaps(plan)
-        if overlaps:
-            warnings.append(f"{len(overlaps)} cluster pair(s) share files without dependencies")
-        scattered = _clusters_with_directory_scatter(plan)
-        if scattered:
-            names = ", ".join(n for n, _, _ in scattered)
-            warnings.append(f"Theme-grouped clusters (5+ dirs): {names}")
-        high_ratio = _clusters_with_high_step_ratio(plan)
-        if high_ratio:
-            names = ", ".join(n for n, _, _, _ in high_ratio)
-            warnings.append(f"1:1 step-to-issue ratio: {names}")
-        # Orphaned clusters (steps but no issues)
-        clusters = plan.get("clusters", {})
-        orphaned = [
-            n for n, c in clusters.items()
-            if not c.get("auto") and not c.get("issue_ids") and c.get("action_steps")
-        ]
-        if orphaned:
-            warnings.append(f"Orphaned clusters (steps, no issues): {', '.join(orphaned)}")
-        if warnings:
-            # Return success with advisory message
-            return True, "Advisory: " + "; ".join(warnings)
-        return True, ""
 
-    if stage == "enrich":
-        if "enrich" not in stages:
-            return False, "Enrich stage not recorded."
-        failures = run_enrich_quality_checks(plan, repo_root, phase_label="enrich")
-        if failures:
-            return False, failures[0].message
-        return True, ""
+def _validate_cluster_dependency_cycles(clusters: dict) -> tuple[bool, str]:
+    """Reject self-referential cluster dependencies."""
+    for name, cluster in clusters.items():
+        deps = cluster.get("depends_on_clusters", [])
+        if name in deps:
+            return False, f"Cluster {name} depends on itself."
+    return True, ""
 
-    if stage == "sense-check":
-        if "sense-check" not in stages:
-            return False, "Sense-check stage not recorded."
-        report = stages["sense-check"].get("report", "")
-        if len(report) < 100:
-            return False, f"Sense-check report too short ({len(report)} chars, need 100+)."
-        failures = run_enrich_quality_checks(
-            plan,
-            repo_root,
-            phase_label="sense-check",
-        )
-        if failures:
-            return False, failures[0].message
-        # Sense-check evidence: file paths + cluster names
-        path_failures = validate_report_has_file_paths(report)
-        if path_failures:
-            blocking_pf = [f for f in path_failures if f.blocking]
-            if blocking_pf:
-                return False, blocking_pf[0].message
-        sc_clusters = manual_clusters_with_issues(plan)
-        cluster_failures = validate_report_references_clusters(report, sc_clusters)
-        if cluster_failures:
-            blocking_cf = [f for f in cluster_failures if f.blocking]
-            if blocking_cf:
-                return False, blocking_cf[0].message
-        return True, ""
 
-    return False, f"Unknown stage: {stage}"
+def _find_all_trivial_clusters(clusters: dict) -> list[str]:
+    """Return manual clusters whose action steps are all marked trivial."""
+    trivial_clusters: list[str] = []
+    for name, cluster in clusters.items():
+        if cluster.get("auto") or not cluster_issue_ids(cluster):
+            continue
+        steps = cluster.get("action_steps") or []
+        if steps and all(
+            isinstance(step, dict) and step.get("effort") == "trivial"
+            for step in steps
+        ):
+            trivial_clusters.append(name)
+    return trivial_clusters
 
 
 def validate_completion(
@@ -296,13 +305,14 @@ def validate_completion(
     meta = plan.get("epic_triage_meta", {})
     stages = meta.get("triage_stages", {})
 
-    for required in ("observe", "reflect", "organize", "enrich", "sense-check"):
-        if required not in stages:
-            return False, f"Stage {required} not recorded."
-        if not stages[required].get("confirmed_at"):
-            return False, f"Stage {required} not confirmed."
+    ok, message = _validate_required_stages(stages)
+    if not ok:
+        return ok, message
 
+    open_review_ids = open_review_ids_from_state(state)
     manual = manual_clusters_with_issues(plan)
+    if not open_review_ids and not manual:
+        return True, ""
     if not manual:
         return False, "No manual clusters with issues."
 
@@ -314,25 +324,12 @@ def validate_completion(
     if unclustered:
         return False, f"{len(unclustered)} review issue(s) not in any cluster."
 
-    # Quality advisories (non-blocking but surfaced to caller)
     clusters = plan.get("clusters", {})
-    # Check dependency ordering
-    for name, c in clusters.items():
-        deps = c.get("depends_on_clusters", [])
-        if name in deps:
-            return False, f"Cluster {name} depends on itself."
+    ok, message = _validate_cluster_dependency_cycles(clusters)
+    if not ok:
+        return ok, message
 
-    # Check for all-trivial clusters
-    all_trivial_clusters = []
-    for name, c in clusters.items():
-        if c.get("auto") or not c.get("issue_ids"):
-            continue
-        steps = c.get("action_steps") or []
-        if steps and all(
-            isinstance(s, dict) and s.get("effort") == "trivial" for s in steps
-        ):
-            all_trivial_clusters.append(name)
-
+    all_trivial_clusters = _find_all_trivial_clusters(clusters)
     if all_trivial_clusters:
         names = ", ".join(sorted(all_trivial_clusters))
         return True, f"Advisory: all action steps are marked trivial in cluster(s): {names}"
@@ -368,6 +365,11 @@ def build_auto_attestation(
 
     if stage == "organize":
         cluster_names = manual_clusters_with_issues(plan)
+        if not cluster_names:
+            return (
+                "I verified there are zero open review issues in this organize batch, "
+                "so no manual clusters or issue assignments were needed before continuing."
+            )
         names_str = ", ".join(cluster_names[:3])
         return (
             f"I have organized all review issues into clusters including "
@@ -377,6 +379,11 @@ def build_auto_attestation(
 
     if stage == "enrich":
         cluster_names = manual_clusters_with_issues(plan)
+        if not cluster_names:
+            return (
+                "I verified there are zero open review issues in this enrich batch, "
+                "so there were no action steps to elaborate before advancing."
+            )
         names_str = ", ".join(cluster_names[:3])
         return (
             f"Steps in clusters including {names_str} are executor-ready with "
@@ -386,6 +393,11 @@ def build_auto_attestation(
 
     if stage == "sense-check":
         cluster_names = manual_clusters_with_issues(plan)
+        if not cluster_names:
+            return (
+                "I verified there are zero open review issues in this sense-check batch, "
+                "so no cluster content or file-path evidence needed additional review."
+            )
         names_str = ", ".join(cluster_names[:3])
         return (
             f"Content and structure verified for clusters including {names_str}. "

@@ -32,8 +32,8 @@ import desloppify.languages._framework.treesitter.specs.specs as treesitter_spec
 import desloppify.languages.dart.commands as dart_commands_mod
 import desloppify.languages.go.commands as go_commands_mod
 import desloppify.languages.python.commands as python_commands_mod
-import desloppify.languages.typescript.detectors.cli as ts_commands_mod
-import desloppify.languages.typescript.detectors.cli as ts_detector_cli_mod
+import desloppify.languages.typescript.commands as ts_commands_mod
+import desloppify.languages.typescript.commands as ts_detector_cli_mod
 from desloppify.languages._framework.base.types import DetectorPhase
 
 
@@ -132,7 +132,7 @@ def test_treesitter_grouped_namespaces_are_canonical() -> None:
 
     source = inspect.getsource(treesitter_specs_legacy_mod)
     assert "Compatibility bridge to grouped tree-sitter namespace module." in source
-    assert "import_module" in source
+    assert "load_compat_exports" in source
 
     package_root = Path(__file__).resolve().parents[3] / "languages/_framework/treesitter"
     assert not (package_root / "_cache.py").exists()

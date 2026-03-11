@@ -8,16 +8,13 @@ from desloppify.base.discovery.file_paths import rel
 from desloppify.base.output.terminal import log
 from desloppify.engine.detectors.dupes import detect_duplicates
 from desloppify.engine.detectors.jscpd_adapter import detect_with_jscpd
-from desloppify.engine.detectors.review_coverage import (
-    detect_holistic_review_staleness,
-    detect_review_coverage,
-)
 from desloppify.engine.detectors.security.detector import detect_security_issues
 from desloppify.engine.detectors.test_coverage.detector import detect_test_coverage
+from desloppify.engine._state.filtering import make_issue
 from desloppify.engine.policy.zones import EXCLUDED_ZONES, filter_entries
 from desloppify.languages._framework.base.types import LangRuntimeContract
 from desloppify.languages._framework.issue_factories import make_dupe_issues
-from desloppify.state import Issue, make_issue
+from desloppify.state_io import Issue
 
 from .shared_phases_helpers import (
     _entries_to_issues,
@@ -184,41 +181,58 @@ def phase_subjective_review(
     path: Path,
     lang: LangRuntimeContract,
 ) -> tuple[list[Issue], dict[str, int]]:
-    """Shared phase: detect files missing subjective design review."""
-    zone_map = lang.zone_map
-    max_age = lang.review_max_age_days
-    files = lang.file_finder(path) if lang.file_finder else []
-    review_cache = lang.review_cache
-    if isinstance(review_cache, dict) and "files" in review_cache:
-        per_file_cache = review_cache.get("files", {})
-    else:
-        top_level_keys = frozenset({"holistic"})
-        raw = review_cache if isinstance(review_cache, dict) else {}
-        per_file_cache = {k: v for k, v in raw.items() if k not in top_level_keys}
-        review_cache = {"files": per_file_cache}
-        if "holistic" in raw:
-            review_cache["holistic"] = raw["holistic"]
+    """Shared phase: detect subjective dimensions needing review.
 
-    entries, potential = detect_review_coverage(
-        files,
-        zone_map,
-        per_file_cache,
-        lang.name,
-        low_value_pattern=lang.review_low_value_pattern,
-        max_age_days=max_age,
-        holistic_cache=review_cache.get("holistic") if isinstance(review_cache, dict) else None,
-        holistic_total_files=len(files),
+    Creates one issue per unassessed/stale subjective dimension instead of
+    per-file coverage markers.  The per-file review cache is still used by
+    ``review --prepare`` to know which files to queue, but does not generate
+    individual issues.
+    """
+    from desloppify.base.subjective_dimensions import (
+        default_dimension_keys_for_lang,
+        dimension_display_name,
     )
 
-    holistic_entries = detect_holistic_review_staleness(
-        review_cache,
-        total_files=len(files),
-        max_age_days=max_age,
-    )
-    entries.extend(holistic_entries)
+    assessments = lang.subjective_assessments if isinstance(lang.subjective_assessments, dict) else {}
+    default_dims = default_dimension_keys_for_lang(lang.name)
+    potential = len(default_dims)
 
-    results = _entries_to_issues("subjective_review", entries)
-    _log_phase_summary("subjective review", results, potential, "reviewable files")
+    results: list[Issue] = []
+    for dim_key in default_dims:
+        assessment = assessments.get(dim_key)
+        if isinstance(assessment, dict):
+            is_placeholder = (
+                assessment.get("placeholder") is True
+                or assessment.get("source") == "scan_reset_subjective"
+                or assessment.get("reset_by") == "scan_reset_subjective"
+            )
+            if not is_placeholder:
+                continue  # assessed and not stale — skip
+            reason = "stale"
+            summary = (
+                f"{dimension_display_name(dim_key, lang_name=lang.name)} — "
+                "assessment reset by scan, re-review recommended"
+            )
+        else:
+            reason = "unassessed"
+            summary = (
+                f"{dimension_display_name(dim_key, lang_name=lang.name)} — "
+                "no assessment on record, run `desloppify review --prepare`"
+            )
+
+        results.append(
+            make_issue(
+                "subjective_review",
+                ".",
+                dim_key,
+                tier=4,
+                confidence="low",
+                summary=summary,
+                detail={"reason": reason, "dimension": dim_key},
+            )
+        )
+
+    _log_phase_summary("subjective review", results, potential, "dimensions")
 
     return results, {"subjective_review": potential}
 

@@ -5,6 +5,8 @@ Originally contributed by tinker495 (KyuSeok Jung) in PR #128.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from desloppify.languages._framework.commands_base import (
     make_cmd_complexity,
     make_cmd_large,
@@ -50,7 +52,7 @@ cmd_orphaned = make_cmd_orphaned(
 cmd_dupes = make_cmd_dupes(extract_functions_fn=extract_functions, module_name=__name__)
 
 
-def get_detect_commands():
+def get_detect_commands() -> dict[str, Callable[..., None]]:
     return compose_detect_registry(
         base_registry=build_standard_detect_registry(
             cmd_deps=cmd_deps,

@@ -436,6 +436,19 @@ class TestTsEdgeFunctionAuth:
         kinds = {e["detail"]["kind"] for e in entries}
         assert "edge_function_missing_auth" not in kinds
 
+    def test_edge_function_lookup_without_rejection_still_flagged(self):
+        content = textwrap.dedent("""\
+            import { serve } from "https://deno.land/std/http/server.ts";
+            serve(async (req) => {
+              const user = await auth.getUser(req);
+              return new Response(user ? "ok" : "missing");
+            });
+        """)
+        with patch.object(Path, "read_text", return_value=content):
+            entries, _ = _detect_ts_security(["/fake/functions/orders.ts"], None)
+        kinds = {e["detail"]["kind"] for e in entries}
+        assert "edge_function_missing_auth" in kinds
+
 
 class TestTsEvalInjection:
     def test_eval_injection(self):

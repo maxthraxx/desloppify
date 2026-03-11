@@ -217,53 +217,12 @@ class TestApplyPlanReconciliation:
 
 
 # ---------------------------------------------------------------------------
-# Tests: _sync_unscored_dimensions (via helper)
+# Tests: _sync_subjective_dimensions_display (merged helper)
 # ---------------------------------------------------------------------------
 
-class TestSyncUnscoredDimensions:
+class TestSyncSubjectiveDimensionsDisplay:
 
-    def test_injects_unscored_ids(self):
-        plan = empty_plan()
-        plan["queue_order"] = ["issue-1"]
-
-        def mock_sync(p, s):
-            result = QueueSyncResult()
-            result.injected = ["subjective::naming"]
-            p["queue_order"].insert(0, "subjective::naming")
-            return result
-
-        changed = reconcile_mod._sync_unscored_dimensions(plan, {}, mock_sync)
-        assert changed is True
-        assert plan["queue_order"][0] == "subjective::naming"
-
-    def test_no_change_when_nothing_unscored(self):
-        plan = empty_plan()
-        plan["queue_order"] = ["issue-1"]
-        changed = reconcile_mod._sync_unscored_dimensions(
-            plan, {}, lambda p, s: QueueSyncResult(),
-        )
-        assert changed is False
-
-    def test_prints_message_on_injection(self, capsys):
-        plan = empty_plan()
-
-        def mock_sync(p, s):
-            result = QueueSyncResult()
-            result.injected = ["subjective::naming", "subjective::docs"]
-            return result
-
-        reconcile_mod._sync_unscored_dimensions(plan, {}, mock_sync)
-        captured = capsys.readouterr()
-        assert "2 unscored" in captured.out
-
-
-# ---------------------------------------------------------------------------
-# Tests: _sync_stale_dimensions (via helper)
-# ---------------------------------------------------------------------------
-
-class TestSyncStaleDimensions:
-
-    def test_injects_stale_ids(self):
+    def test_injects_ids(self):
         plan = empty_plan()
         plan["queue_order"] = ["issue-1"]
 
@@ -273,9 +232,21 @@ class TestSyncStaleDimensions:
             p["queue_order"].append("subjective::naming")
             return result
 
-        changed = reconcile_mod._sync_stale_dimensions(plan, {}, mock_sync)
+        changed = reconcile_mod._sync_subjective_dimensions_display(plan, {}, mock_sync)
         assert changed is True
         assert "subjective::naming" in plan["queue_order"]
+
+    def test_reports_resurfaced(self, capsys):
+        plan = empty_plan()
+
+        def mock_sync(p, s):
+            result = QueueSyncResult()
+            result.resurfaced = ["subjective::naming"]
+            return result
+
+        reconcile_mod._sync_subjective_dimensions_display(plan, {}, mock_sync)
+        captured = capsys.readouterr()
+        assert "resurfaced" in captured.out.lower()
 
     def test_reports_pruned(self, capsys):
         plan = empty_plan()
@@ -285,7 +256,7 @@ class TestSyncStaleDimensions:
             result.pruned = ["subjective::naming"]
             return result
 
-        changed = reconcile_mod._sync_stale_dimensions(plan, {}, mock_sync)
+        changed = reconcile_mod._sync_subjective_dimensions_display(plan, {}, mock_sync)
         assert changed is True
         captured = capsys.readouterr()
         assert "refreshed" in captured.out.lower() or "removed" in captured.out.lower()
@@ -298,13 +269,13 @@ class TestSyncStaleDimensions:
             result.injected = ["subjective::naming"]
             return result
 
-        reconcile_mod._sync_stale_dimensions(plan, {}, mock_sync)
+        reconcile_mod._sync_subjective_dimensions_display(plan, {}, mock_sync)
         captured = capsys.readouterr()
         assert "1 subjective" in captured.out
 
-    def test_no_change_when_nothing_stale(self):
+    def test_no_change_when_nothing(self):
         plan = empty_plan()
-        changed = reconcile_mod._sync_stale_dimensions(
+        changed = reconcile_mod._sync_subjective_dimensions_display(
             plan, {}, lambda p, s: QueueSyncResult(),
         )
         assert changed is False
@@ -362,7 +333,7 @@ class TestSyncPlanStartScoresAndLog:
         # Mock the queue breakdown to report empty
         monkeypatch.setattr(
             "desloppify.app.commands.helpers.queue_progress.plan_aware_queue_breakdown",
-            lambda s, p: SimpleNamespace(objective_actionable=0, queue_total=0),
+            lambda s, p: SimpleNamespace(objective_actionable=0, queue_total=0, lifecycle_phase="execution"),
         )
         changed = reconcile_mod._sync_plan_start_scores_and_log(plan, state)
         assert changed is True

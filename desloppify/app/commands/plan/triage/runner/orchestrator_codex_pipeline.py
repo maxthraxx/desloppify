@@ -19,6 +19,8 @@ from desloppify.base.discovery.paths import get_project_root
 from desloppify.base.exception_sets import CommandError
 from desloppify.base.output.terminal import colorize
 
+from ..helpers import has_triage_in_queue, inject_triage_stages
+from ..lifecycle import TriageLifecycleDeps, ensure_triage_started
 from ..services import TriageServices, default_triage_services
 from ..validation.core import (
     _analyze_reflect_issue_accounting,
@@ -42,12 +44,10 @@ from .orchestrator_codex_pipeline_execution import (
     DEFAULT_STAGE_HANDLERS,
     StageExecutionDependencies,
     StageHandler,
-    build_reflect_repair_prompt as build_reflect_repair_prompt_impl,
     execute_stage as execute_stage_impl,
     read_stage_output as read_stage_output_impl,
-    repair_reflect_report_if_needed as repair_reflect_report_if_needed_impl,
 )
-from .orchestrator_common import STAGES, ensure_triage_started, run_stamp
+from .orchestrator_common import STAGES, run_stamp
 from .stage_prompts import build_stage_prompt
 
 
@@ -100,38 +100,13 @@ def _write_desloppify_cli_helper(run_dir: Path) -> Path:
         f"exec {shlex.quote(sys.executable)} -m desloppify.cli \"$@\"\n"
     )
     safe_write_text(script_path, script)
-    os.chmod(script_path, 0o755)
+    os.chmod(script_path, 0o700)
     return script_path
 
 
 def _read_stage_output(output_file: Path) -> str:
     """Return stripped stage output text, or an empty string when unreadable."""
     return read_stage_output_impl(output_file)
-
-
-def _build_reflect_repair_prompt(
-    *,
-    si,
-    prior_reports: dict[str, str],
-    repo_root: Path,
-    cli_command: str,
-    original_report: str,
-    missing_ids: list[str],
-    duplicate_ids: list[str],
-    stages_data: dict | None = None,
-) -> str:
-    """Build a targeted retry prompt for a reflect report that failed accounting."""
-    return build_reflect_repair_prompt_impl(
-        triage_input=si,
-        prior_reports=prior_reports,
-        repo_root=repo_root,
-        cli_command=cli_command,
-        original_report=original_report,
-        missing_ids=missing_ids,
-        duplicate_ids=duplicate_ids,
-        build_stage_prompt_fn=build_stage_prompt,
-        stages_data=stages_data,
-    )
 
 
 def _stage_execution_dependencies() -> StageExecutionDependencies:
@@ -143,81 +118,6 @@ def _stage_execution_dependencies() -> StageExecutionDependencies:
         analyze_reflect_issue_accounting=_analyze_reflect_issue_accounting,
         validate_reflect_issue_accounting=_validate_reflect_issue_accounting,
     )
-
-
-def _repair_reflect_report_if_needed(
-    *,
-    report: str,
-    si,
-    prior_reports: dict[str, str],
-    repo_root: Path,
-    prompts_dir: Path,
-    output_dir: Path,
-    logs_dir: Path,
-    cli_command: str,
-    timeout_seconds: int,
-    append_run_log,
-    stages_data: dict | None = None,
-) -> tuple[str | None, str | None]:
-    """Retry reflect once with a targeted repair prompt when accounting is invalid."""
-    return repair_reflect_report_if_needed_impl(
-        report=report,
-        triage_input=si,
-        prior_reports=prior_reports,
-        repo_root=repo_root,
-        prompts_dir=prompts_dir,
-        output_dir=output_dir,
-        logs_dir=logs_dir,
-        cli_command=cli_command,
-        timeout_seconds=timeout_seconds,
-        append_run_log=append_run_log,
-        dependencies=_stage_execution_dependencies(),
-        stages_data=stages_data,
-    )
-
-
-def _execute_stage(
-    *,
-    stage: str,
-    args: argparse.Namespace,
-    services: TriageServices,
-    plan: dict,
-    si: dict,
-    prior_reports: dict[str, str],
-    repo_root: Path,
-    prompts_dir: Path,
-    output_dir: Path,
-    logs_dir: Path,
-    cli_command: str,
-    stage_start: float,
-    timeout_seconds: int,
-    dry_run: bool,
-    append_run_log,
-) -> tuple[str, dict]:
-    """Execute one stage and return (status, stage_result)."""
-    context = StageRunContext(
-        stage=stage,
-        stage_start=stage_start,
-        args=args,
-        services=services,
-        plan=plan,
-        triage_input=si,
-        prior_reports=prior_reports,
-        repo_root=repo_root,
-        prompts_dir=prompts_dir,
-        output_dir=output_dir,
-        logs_dir=logs_dir,
-        cli_command=cli_command,
-        timeout_seconds=timeout_seconds,
-        dry_run=dry_run,
-        append_run_log=append_run_log,
-    )
-    return execute_stage_impl(
-        context,
-        handlers=_STAGE_HANDLERS,
-        dependencies=_stage_execution_dependencies(),
-    )
-
 
 def _validate_and_confirm_stage(
     *,
@@ -240,29 +140,6 @@ def _validate_and_confirm_stage(
         repo_root=repo_root,
         stage_start=stage_start,
         append_run_log=append_run_log,
-    )
-
-
-def _build_completion_strategy(stages_data: dict[str, dict]) -> str:
-    """Derive a completion strategy from stage reports."""
-    return build_completion_strategy_impl(stages_data)
-
-
-def _complete_pipeline(
-    *,
-    args: argparse.Namespace,
-    services: TriageServices,
-    plan: dict,
-    strategy: str,
-    triage_input: dict,
-) -> bool:
-    """Run the triage completion coordinator and report success."""
-    return complete_pipeline_impl(
-        args=args,
-        services=services,
-        plan=plan,
-        strategy=strategy,
-        triage_input=triage_input,
     )
 
 
@@ -313,22 +190,26 @@ def _run_stage_sequence(
 
         si = pipeline_context.services.collect_triage_input(plan, pipeline_context.state)
         last_triage_input = si
-        exec_status, exec_result = _execute_stage(
-            stage=stage,
-            args=pipeline_context.args,
-            services=pipeline_context.services,
-            plan=plan,
-            si=si,
-            prior_reports=prior_reports,
-            repo_root=pipeline_context.repo_root,
-            prompts_dir=pipeline_context.prompts_dir,
-            output_dir=pipeline_context.output_dir,
-            logs_dir=pipeline_context.logs_dir,
-            cli_command=pipeline_context.cli_command,
-            stage_start=stage_start,
-            timeout_seconds=pipeline_context.timeout_seconds,
-            dry_run=pipeline_context.dry_run,
-            append_run_log=pipeline_context.append_run_log,
+        exec_status, exec_result = execute_stage_impl(
+            StageRunContext(
+                stage=stage,
+                stage_start=stage_start,
+                args=pipeline_context.args,
+                services=pipeline_context.services,
+                plan=plan,
+                triage_input=si,
+                prior_reports=prior_reports,
+                repo_root=pipeline_context.repo_root,
+                prompts_dir=pipeline_context.prompts_dir,
+                output_dir=pipeline_context.output_dir,
+                logs_dir=pipeline_context.logs_dir,
+                cli_command=pipeline_context.cli_command,
+                timeout_seconds=pipeline_context.timeout_seconds,
+                dry_run=pipeline_context.dry_run,
+                append_run_log=pipeline_context.append_run_log,
+            ),
+            handlers=_STAGE_HANDLERS,
+            dependencies=_stage_execution_dependencies(),
         )
         if exec_status == "dry_run":
             stage_results[stage] = exec_result
@@ -389,7 +270,7 @@ def _finalize_pipeline_run(
     plan = pipeline_context.services.load_plan()
     meta = plan.get("epic_triage_meta", {})
     stages_data = meta.get("triage_stages", {})
-    strategy = _build_completion_strategy(stages_data)
+    strategy = build_completion_strategy_impl(stages_data)
 
     should_auto_complete = (
         _is_full_stage_run(pipeline_context.stages_to_run)
@@ -419,7 +300,7 @@ def _finalize_pipeline_run(
         plan,
         pipeline_context.state,
     )
-    completed = _complete_pipeline(
+    completed = complete_pipeline_impl(
         args=pipeline_context.args,
         services=pipeline_context.services,
         plan=plan,
@@ -469,16 +350,27 @@ def run_codex_pipeline(
     runtime = resolved_services.command_runtime(args)
     state = runtime.state
     plan = resolved_services.load_plan()
-    ensure_triage_started(
+    start_outcome = ensure_triage_started(
         plan,
-        resolved_services,
-        runner="codex",
+        services=resolved_services,
         state=state,
         attestation=getattr(args, "attestation", None),
+        log_action="triage_auto_start",
+        log_actor="system",
+        log_detail={
+            "source": "runner_auto_start",
+            "runner": "codex",
+            "injected_stage_ids": list(STAGES),
+        },
+        start_message="  Planning mode auto-started.",
+        deps=TriageLifecycleDeps(
+            has_triage_in_queue=has_triage_in_queue,
+            inject_triage_stages=inject_triage_stages,
+        ),
     )
-    plan = resolved_services.load_plan()
-    if plan.get("epic_triage_meta", {}).get("triage_start_blocked"):
+    if getattr(start_outcome, "status", None) == "blocked":
         return
+    plan = resolved_services.load_plan()
 
     stamp = run_stamp()
     desloppify_dir = repo_root / ".desloppify"

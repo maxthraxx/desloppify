@@ -8,7 +8,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import desloppify.languages.typescript._fixers as ts_fixers_mod
-import desloppify.languages.typescript.detectors.cli as ts_detector_cli_api_mod
+import desloppify.languages.typescript.commands as ts_detector_cli_api_mod
 import desloppify.languages.typescript.detectors.security.detector as ts_security_mod
 import desloppify.languages.typescript.detectors.smells_assets as ts_assets_mod
 import desloppify.languages.typescript.detectors.unused_fallback as ts_unused_mod
@@ -18,8 +18,7 @@ from desloppify.languages.typescript.detectors.contracts import DetectorResult
 
 def test_typescript_config_uses_direct_imports_for_wiring() -> None:
     src = inspect.getsource(ts_lang_mod)
-    assert "import desloppify.languages.typescript.detectors.cli as ts_detector_cli_mod" in src
-    assert "languages.typescript import commands as ts_commands_mod" not in src
+    assert "import desloppify.languages.typescript.commands as ts_commands_mod" in src
     assert "languages.typescript.phases import (" not in src
     assert "languages.typescript._detectors import (" not in src
 
@@ -32,9 +31,8 @@ def test_typescript_top_level_surface_removes_legacy_tools_and_compat_layers() -
     assert not (package_root / "languages/typescript/tools/logs.py").exists()
     assert not (package_root / "languages/typescript/tools/patterns.py").exists()
     assert not (package_root / "languages/typescript/tools/react.py").exists()
-    # commands.py and phases.py are not required — detect commands are on
-    # LangConfig and phases are wired in __init__.py.
-    assert not (package_root / "languages/typescript/commands.py").exists()
+    # commands.py is now the canonical detect-command surface.
+    assert (package_root / "languages/typescript/commands.py").exists()
     assert not (package_root / "languages/typescript/phases.py").exists()
 
 

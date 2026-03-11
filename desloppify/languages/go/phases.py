@@ -11,7 +11,7 @@ from desloppify.base.output.terminal import log
 from desloppify.engine.detectors.base import ComplexitySignal
 from desloppify.languages._framework.base.shared_phases import run_structural_phase
 from desloppify.languages._framework.base.types import LangRuntimeContract
-from desloppify.state import Issue
+from desloppify.state_io import Issue
 
 GO_COMPLEXITY_SIGNALS = [
     ComplexitySignal(

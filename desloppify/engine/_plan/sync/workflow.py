@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+from typing import Any
+
 from desloppify.engine._plan.policy import stale as stale_policy_mod
 from desloppify.engine._plan.constants import (
     SUBJECTIVE_PREFIX,
@@ -18,6 +21,173 @@ from desloppify.engine._plan.policy.subjective import SubjectiveVisibility
 from desloppify.engine._state.schema import StateModel
 
 from .context import has_objective_backlog
+
+_PENDING_IMPORT_SCORES_KEY = "pending_import_scores"
+_TRUSTED_ASSESSMENT_MODES = {"trusted_internal", "attested_external"}
+
+
+def _refresh_state(plan: PlanModel) -> dict[str, Any]:
+    refresh_state = plan.get("refresh_state")
+    if not isinstance(refresh_state, dict):
+        refresh_state = {}
+        plan["refresh_state"] = refresh_state
+    return refresh_state
+
+
+def _normalize_match_path(raw_path: object) -> str | None:
+    if not isinstance(raw_path, str) or not raw_path.strip():
+        return None
+    return str(Path(raw_path).expanduser().resolve(strict=False))
+
+
+def _latest_assessment_audit(
+    state: StateModel,
+    *,
+    modes: set[str],
+) -> dict[str, Any] | None:
+    audit = state.get("assessment_import_audit", [])
+    if not isinstance(audit, list):
+        return None
+    for entry in reversed(audit):
+        if not isinstance(entry, dict):
+            continue
+        mode = entry.get("mode")
+        if isinstance(mode, str) and mode in modes:
+            return entry
+    return None
+
+
+def _build_pending_import_scores_meta(
+    *,
+    import_file: str | None,
+    import_payload: dict[str, Any] | None,
+    issues_only_audit: dict[str, Any] | None,
+) -> dict[str, Any]:
+    provenance = {}
+    if isinstance(import_payload, dict):
+        raw_provenance = import_payload.get("provenance")
+        if isinstance(raw_provenance, dict):
+            provenance = raw_provenance
+    recorded_file = (
+        str(import_file).strip()
+        if isinstance(import_file, str) and import_file.strip()
+        else str(issues_only_audit.get("import_file", "")).strip()
+        if isinstance(issues_only_audit, dict)
+        else ""
+    )
+    timestamp = ""
+    if isinstance(issues_only_audit, dict):
+        timestamp = str(issues_only_audit.get("timestamp", "")).strip()
+    return {
+        "timestamp": timestamp,
+        "import_file": recorded_file,
+        "normalized_import_file": _normalize_match_path(recorded_file),
+        "packet_sha256": str(provenance.get("packet_sha256", "")).strip(),
+    }
+
+
+def pending_import_scores_meta(
+    plan: PlanModel,
+    state: StateModel,
+) -> dict[str, Any] | None:
+    """Return normalized pending score-import metadata, if any."""
+    ensure_plan_defaults(plan)
+    refresh_state = _refresh_state(plan)
+    meta = refresh_state.get(_PENDING_IMPORT_SCORES_KEY)
+    if isinstance(meta, dict) and meta:
+        return meta
+    issues_only_audit = _latest_assessment_audit(state, modes={"issues_only"})
+    if issues_only_audit is None:
+        return None
+    return _build_pending_import_scores_meta(
+        import_file=str(issues_only_audit.get("import_file", "")),
+        import_payload=None,
+        issues_only_audit=issues_only_audit,
+    )
+
+
+def import_scores_meta_matches(
+    meta: dict[str, Any] | None,
+    *,
+    import_file: str,
+    import_payload: dict[str, Any],
+) -> tuple[bool, str]:
+    """Return (matches, reason) for whether the import matches the pending batch.
+
+    Checks packet_sha256 first (strongest signal), falls back to normalized
+    file path.  Returns a single human-readable reason on mismatch.
+    """
+    if not isinstance(meta, dict) or not meta:
+        return True, ""
+
+    provenance = import_payload.get("provenance")
+    provenance_dict = provenance if isinstance(provenance, dict) else {}
+
+    expected_hash = str(meta.get("packet_sha256", "")).strip()
+    current_hash = str(provenance_dict.get("packet_sha256", "")).strip()
+    if expected_hash and current_hash:
+        if current_hash == expected_hash:
+            return True, ""
+        return False, f"expected packet_sha256 {expected_hash}, got {current_hash}"
+
+    expected_file = str(meta.get("normalized_import_file", "")).strip()
+    current_file = _normalize_match_path(import_file) or ""
+    if expected_file and current_file and current_file != expected_file:
+        return False, f"expected import file {meta.get('import_file')}, got {import_file}"
+
+    return True, ""
+
+
+def _clear_pending_import_scores(plan: PlanModel) -> None:
+    order = plan["queue_order"]
+    if WORKFLOW_IMPORT_SCORES_ID in order:
+        order[:] = [item for item in order if item != WORKFLOW_IMPORT_SCORES_ID]
+    refresh_state = _refresh_state(plan)
+    refresh_state.pop(_PENDING_IMPORT_SCORES_KEY, None)
+
+
+def _pending_compare_timestamp(
+    pending_meta: dict[str, Any] | None,
+    latest_issues_only: dict[str, Any],
+) -> str:
+    if isinstance(pending_meta, dict):
+        pending_ts = str(pending_meta.get("timestamp", "")).strip()
+        if pending_ts:
+            return pending_ts
+    return str(latest_issues_only.get("timestamp", "")).strip()
+
+
+def _pending_import_scores_stale(
+    *,
+    order: list[str],
+    pending_meta: dict[str, Any] | None,
+    latest_issues_only: dict[str, Any] | None,
+    latest_trusted: dict[str, Any] | None,
+) -> bool:
+    if WORKFLOW_IMPORT_SCORES_ID not in order:
+        return False
+    if latest_issues_only is None:
+        return True
+    if latest_trusted is None:
+        return False
+
+    latest_trusted_ts = str(latest_trusted.get("timestamp", "")).strip()
+    compare_ts = _pending_compare_timestamp(pending_meta, latest_issues_only)
+    return bool(compare_ts and latest_trusted_ts and latest_trusted_ts >= compare_ts)
+
+
+def _record_pending_import_scores(
+    refresh_state: dict[str, Any],
+    *,
+    import_file: str | None,
+    import_payload: dict[str, Any] | None,
+    latest_issues_only: dict[str, Any] | None,
+) -> None:
+    refresh_state[_PENDING_IMPORT_SCORES_KEY] = _build_pending_import_scores_meta(
+        import_file=import_file,
+        import_payload=import_payload,
+        issues_only_audit=latest_issues_only,
+    )
 
 
 def _no_unscored(
@@ -108,6 +278,8 @@ def sync_import_scores_needed(
     state: StateModel,
     *,
     assessment_mode: str | None = None,
+    import_file: str | None = None,
+    import_payload: dict[str, Any] | None = None,
 ) -> QueueSyncResult:
     """Inject ``workflow::import-scores`` after issues-only import.
 
@@ -119,12 +291,40 @@ def sync_import_scores_needed(
     """
     ensure_plan_defaults(plan)
     order: list[str] = plan["queue_order"]
+    refresh_state = _refresh_state(plan)
+    pending_meta = refresh_state.get(_PENDING_IMPORT_SCORES_KEY)
+    latest_issues_only = _latest_assessment_audit(state, modes={"issues_only"})
+    latest_trusted = _latest_assessment_audit(state, modes=_TRUSTED_ASSESSMENT_MODES)
+
+    if _pending_import_scores_stale(
+        order=order,
+        pending_meta=pending_meta,
+        latest_issues_only=latest_issues_only,
+        latest_trusted=latest_trusted,
+    ):
+        _clear_pending_import_scores(plan)
+        return QueueSyncResult(pruned=[WORKFLOW_IMPORT_SCORES_ID])
 
     if WORKFLOW_IMPORT_SCORES_ID in order:
+        if assessment_mode == "issues_only":
+            _record_pending_import_scores(
+                refresh_state,
+                import_file=import_file,
+                import_payload=import_payload,
+                latest_issues_only=latest_issues_only,
+            )
+            return QueueSyncResult(resurfaced=[WORKFLOW_IMPORT_SCORES_ID])
         return _EMPTY()
     if assessment_mode != "issues_only":
         return _EMPTY()
-    return _inject(plan, WORKFLOW_IMPORT_SCORES_ID)
+    result = _inject(plan, WORKFLOW_IMPORT_SCORES_ID)
+    _record_pending_import_scores(
+        refresh_state,
+        import_file=import_file,
+        import_payload=import_payload,
+        latest_issues_only=latest_issues_only,
+    )
+    return result
 
 
 class ScoreSnapshot:
@@ -214,6 +414,8 @@ def _rebaseline_plan_start_scores(
 
 __all__ = [
     "ScoreSnapshot",
+    "import_scores_meta_matches",
+    "pending_import_scores_meta",
     "sync_communicate_score_needed",
     "sync_create_plan_needed",
     "sync_import_scores_needed",

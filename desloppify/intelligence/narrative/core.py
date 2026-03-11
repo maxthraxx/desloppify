@@ -51,7 +51,7 @@ from desloppify.intelligence.narrative.strategy_engine import compute_strategy
 from desloppify.intelligence.narrative.types import (
     NarrativeResult,
 )
-from desloppify.state_io import StateModel
+from desloppify.state_io import StateModel, scan_source
 
 
 @dataclass(frozen=True)
@@ -120,6 +120,7 @@ def compute_narrative(
         stats,
         history,
         open_by_detector=by_detector,
+        scan_source=scan_source(state) or None,
     )
     reminders, updated_reminder_history = compute_reminders(
         state, lang, phase, debt, actions, dimensions, badge, command, config=config

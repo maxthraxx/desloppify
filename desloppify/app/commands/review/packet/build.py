@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
+import json
 from pathlib import Path
 from typing import Any
 
@@ -119,6 +121,24 @@ def build_run_batches_next_command(context: ReviewPacketContext) -> str:
     return " ".join(parts)
 
 
+def prepared_packet_contract(
+    context: ReviewPacketContext,
+    *,
+    config: dict[str, Any] | None,
+) -> dict[str, object]:
+    """Build normalized invocation contract for prepared packet reuse."""
+    redacted = redacted_review_config(config or {})
+    payload = json.dumps(redacted, sort_keys=True, separators=(",", ":"))
+    return {
+        "path": str(context.path.resolve()),
+        "dimensions": sorted(context.dimensions or []),
+        "retrospective": context.retrospective,
+        "retrospective_max_issues": context.retrospective_max_issues,
+        "retrospective_max_batch_items": context.retrospective_max_batch_items,
+        "config_hash": hashlib.sha256(payload.encode("utf-8")).hexdigest(),
+    }
+
+
 def build_external_submit_next_command(context: ReviewPacketContext) -> str:
     """Return the canonical next command for external-session submit."""
     parts: list[str] = [
@@ -212,6 +232,7 @@ __all__ = [
     "ReviewPacketContext",
     "build_external_submit_next_command",
     "build_holistic_packet",
+    "prepared_packet_contract",
     "build_review_packet_payload",
     "build_run_batches_next_command",
     "require_non_empty_packet",

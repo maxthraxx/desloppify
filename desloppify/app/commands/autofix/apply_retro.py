@@ -35,7 +35,10 @@ def _resolve_fixer_results(
 def _warn_uncommitted_changes() -> None:
     try:
         result = subprocess.run(
-            ["git", "status", "--porcelain"], capture_output=True, text=True, timeout=5
+            ["git", "status", "--porcelain"],
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         if result.stdout.strip():
             print(colorize("\n  ⚠ You have uncommitted changes. Consider running:", "yellow"))

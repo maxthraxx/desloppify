@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from desloppify.languages._framework.treesitter import TreeSitterLangSpec
-
 from ..imports.resolvers_functional import resolve_zig_import
 from ..imports.resolvers_scripts import (
     resolve_bash_source,
@@ -13,6 +11,7 @@ from ..imports.resolvers_scripts import (
     resolve_r_import,
     resolve_ruby_import,
 )
+from ..types import TreeSitterLangSpec
 
 RUBY_SPEC = TreeSitterLangSpec(
     grammar="ruby",

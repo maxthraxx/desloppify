@@ -46,9 +46,8 @@ from desloppify.base.discovery.source import (
     get_exclusions,
 )
 from desloppify.base.discovery.paths import get_project_root
-from desloppify.engine import planning as plan_mod
-from desloppify.engine._work_queue.issues import expire_stale_holistic
-from desloppify.engine.planning.scan import PlanScanOptions
+from desloppify.engine._work_queue.issues import mark_stale_holistic
+from desloppify.engine.planning.scan import PlanScanOptions, generate_issues as generate_plan_issues
 from desloppify.intelligence.review.dimensions.metadata import (
     resettable_default_dimensions,
 )
@@ -186,6 +185,7 @@ def _configure_lang_runtime(
         overrides=LangRunOverrides(
             review_cache=state.get("review_cache", {}),
             review_max_age_days=config.get("review_max_age_days", 30),
+            subjective_assessments=_state_subjective_assessments(state),
             runtime_settings=lang_settings,
             runtime_options=lang_options,
             large_threshold_override=config.get("large_files_threshold", 0),
@@ -342,7 +342,7 @@ def run_scan_generation(
     enable_file_cache()
     enable_parse_cache()
     try:
-        issues, potentials = plan_mod.generate_issues(
+        issues, potentials = generate_plan_issues(
             runtime.path,
             lang=runtime.lang,
             options=PlanScanOptions(
@@ -414,7 +414,7 @@ def merge_scan_results(
         ),
     )
 
-    expire_stale_holistic(
+    mark_stale_holistic(
         runtime.state, runtime.config.get("holistic_max_age_days", 30)
     )
     state_mod.save_state(

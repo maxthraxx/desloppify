@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 
 from desloppify.base.signal_patterns import (
     AUTH_GUARD_TOKEN_RE,
+    AUTH_LOOKUP_TOKEN_RE,
     SERVICE_ROLE_TOKEN_RE,
     is_server_only_path,
 )
@@ -20,7 +21,24 @@ _ROUTE_AUTH_RE = re.compile(
     re.MULTILINE,
 )
 _AUTH_GUARD_RE = AUTH_GUARD_TOKEN_RE
-_AUTH_USAGE_RE = re.compile(r"\buseAuth\b|\brequest\.user\b|\bsession\.user\b|\bgetUser\b")
+_AUTH_LOOKUP_RE = AUTH_LOOKUP_TOKEN_RE
+_AUTH_USAGE_RE = re.compile(
+    r"\buseAuth\b|\bgetServerSession\b|\brequest\.user\b|\bsession\.user\b|\bgetUser\b"
+    r"|\bauth\.getUser\b|\bsupabase\.auth(?:\.getUser)?\b"
+)
+_AUTH_DENIAL_RE = re.compile(
+    r"\b(?:401|403|unauthori[sz]ed|forbidden)\b"
+    r"|NextResponse\.redirect\b|\bredirect\s*\("
+    r"|new\s+Response\s*\([^)]*status\s*:\s*(?:401|403)"
+    r"|abort\s*\(\s*(?:401|403)"
+    r"|HTTPException\s*\([^)]*status_code\s*=\s*(?:401|403)",
+    re.IGNORECASE,
+)
+_NEGATED_AUTH_BRANCH_RE = re.compile(
+    r"\bif\s*\(\s*!\s*[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)?\s*\)"
+    r"|\bif\s+not\s+[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)?",
+    re.IGNORECASE,
+)
 _PUBLIC_ROUTE_RE = re.compile(
     r"\b(?:allow_anonymous|allowanonymous|permit_all|public[_\s-]?route|public_endpoint)\b|@\s*public\b",
     re.IGNORECASE,
@@ -56,8 +74,11 @@ _RLS_TABLE_RE = re.compile(
     re.IGNORECASE,
 )
 _RLS_ENABLE_RE = re.compile(
-    rf"ALTER\s+TABLE\s+{_SCHEMA_QUALIFIED_IDENT}\s+ENABLE\s+ROW\s+LEVEL\s+SECURITY"
-    rf"|CREATE\s+POLICY\s+{_SQL_IDENT}\s+ON\s+{_SCHEMA_QUALIFIED_IDENT}",
+    rf"ALTER\s+TABLE\s+{_SCHEMA_QUALIFIED_IDENT}\s+ENABLE\s+ROW\s+LEVEL\s+SECURITY",
+    re.IGNORECASE,
+)
+_RLS_POLICY_RE = re.compile(
+    rf"CREATE\s+POLICY\s+{_SQL_IDENT}\s+ON\s+{_SCHEMA_QUALIFIED_IDENT}",
     re.IGNORECASE,
 )
 _SUPABASE_CLIENT_RE = re.compile(r"\bcreateClient\b")
@@ -96,6 +117,7 @@ class AuthorizationSignals:
     route_auth_coverage: dict[str, RouteAuthCoverage] = field(default_factory=dict)
     rls_with: list[str] = field(default_factory=list)
     rls_without: list[str] = field(default_factory=list)
+    rls_policy_only: list[str] = field(default_factory=list)
     rls_files: dict[str, list[str]] = field(default_factory=dict)
     service_role_usage: list[str] = field(default_factory=list)
     auth_patterns: dict[str, int] = field(default_factory=dict)
@@ -109,11 +131,13 @@ class AuthorizationSignals:
                 path: coverage.as_dict()
                 for path, coverage in sorted(self.route_auth_coverage.items())
             }
-        if self.rls_with or self.rls_without:
+        if self.rls_with or self.rls_without or self.rls_policy_only:
             rls_payload: dict[str, object] = {
                 "with_rls": self.rls_with,
                 "without_rls": self.rls_without,
             }
+            if self.rls_policy_only:
+                rls_payload["policy_only"] = self.rls_policy_only
             if self.rls_files:
                 rls_payload["files"] = self.rls_files
             payload["rls_coverage"] = rls_payload
@@ -140,6 +164,7 @@ def gather_auth_context(
     route_auth: dict[str, RouteAuthCoverage] = {}
     rls_tables: set[str] = set()
     rls_enabled: set[str] = set()
+    rls_policy_tables: set[str] = set()
     rls_table_files: dict[str, list[str]] = {}
     service_role_files: set[str] = set()
     auth_patterns: dict[str, int] = {}
@@ -158,7 +183,7 @@ def gather_auth_context(
             auth_count = 0
             public_count = 0
             for segment in route_segments:
-                if _AUTH_GUARD_RE.search(segment):
+                if _segment_has_auth_enforcement(segment):
                     auth_count += 1
                 elif _PUBLIC_ROUTE_RE.search(segment):
                     public_count += 1
@@ -175,9 +200,13 @@ def gather_auth_context(
             rls_tables.add(table)
             rls_table_files.setdefault(table, []).append(rpath)
         for match in _RLS_ENABLE_RE.finditer(content):
-            table = match.group(1) or match.group(2)
+            table = match.group(1)
             if table:
                 rls_enabled.add(_normalize_sql_ident(table))
+        for match in _RLS_POLICY_RE.finditer(content):
+            table = match.group(1)
+            if table:
+                rls_policy_tables.add(_normalize_sql_ident(table))
 
         # Service role usage
         if (
@@ -208,6 +237,7 @@ def gather_auth_context(
         route_auth_coverage=route_auth,
         rls_with=sorted(rls_tables & rls_enabled),
         rls_without=sorted(tables_without_rls),
+        rls_policy_only=sorted((rls_policy_tables & rls_tables) - rls_enabled),
         rls_files=rls_files,
         service_role_usage=sorted(service_role_files),
         auth_patterns=auth_patterns,
@@ -227,6 +257,15 @@ def _route_segments(content: str) -> list[str]:
         end = matches[idx + 1].start() if idx + 1 < len(matches) else len(content)
         segments.append(content[start:end])
     return segments
+
+
+def _segment_has_auth_enforcement(segment: str) -> bool:
+    """Return True when a route segment contains an actual auth guard, not just lookup."""
+    if _AUTH_GUARD_RE.search(segment):
+        return True
+    if not _AUTH_LOOKUP_RE.search(segment):
+        return False
+    return bool(_NEGATED_AUTH_BRANCH_RE.search(segment) and _AUTH_DENIAL_RE.search(segment))
 
 
 def _is_auth_source_file(filepath: str) -> bool:

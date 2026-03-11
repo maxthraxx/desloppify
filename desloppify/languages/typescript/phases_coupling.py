@@ -12,6 +12,7 @@ from desloppify.engine.detectors import graph as graph_detector_mod
 from desloppify.engine.detectors import naming as naming_detector_mod
 from desloppify.engine.detectors import orphaned as orphaned_detector_mod
 from desloppify.engine.detectors import single_use as single_use_detector_mod
+from desloppify.engine._state.filtering import make_issue
 from desloppify.engine.policy.zones import adjust_potential, filter_entries
 from desloppify.languages._framework.base.types import LangRuntimeContract
 from desloppify.languages._framework.issue_factories import (
@@ -24,7 +25,7 @@ import desloppify.languages.typescript.detectors.deps as deps_detector_mod
 import desloppify.languages.typescript.detectors.facade as facade_detector_mod
 import desloppify.languages.typescript.detectors.patterns_analysis as patterns_detector_mod
 from desloppify.languages.typescript.phases_config import TS_SKIP_DIRS, TS_SKIP_NAMES
-from desloppify.state import Issue, make_issue
+from desloppify.state_io import Issue
 
 
 def detect_single_use(

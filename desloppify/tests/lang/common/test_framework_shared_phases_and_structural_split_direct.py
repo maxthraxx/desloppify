@@ -187,7 +187,8 @@ def test_phase_test_coverage_and_private_imports_paths(monkeypatch) -> None:
 
 
 def test_phase_subjective_review_normalizes_cache_shape(monkeypatch) -> None:
-    review_calls: dict[str, object] = {}
+    """phase_subjective_review now creates one issue per unassessed/stale dimension."""
+    from desloppify.base.subjective_dimensions import default_dimension_keys_for_lang
 
     lang = SimpleNamespace(
         zone_map=None,
@@ -196,68 +197,28 @@ def test_phase_subjective_review_normalizes_cache_shape(monkeypatch) -> None:
         review_cache={"holistic": {"updated_at": "today"}, "src/a.py": {"score": 90}},
         name="python",
         review_low_value_pattern=None,
+        subjective_assessments={},
     )
 
-    def _fake_detect_review_coverage(
-        files,
-        _zone_map,
-        per_file_cache,
-        _lang_name,
-        *,
-        low_value_pattern,
-        max_age_days,
-        holistic_cache,
-        holistic_total_files,
-    ):
-        review_calls["files"] = files
-        review_calls["per_file_cache"] = per_file_cache
-        review_calls["holistic_cache"] = holistic_cache
-        review_calls["low_value_pattern"] = low_value_pattern
-        review_calls["max_age_days"] = max_age_days
-        review_calls["holistic_total_files"] = holistic_total_files
-        return (
-            [
-                {
-                    "file": "src/a.py",
-                    "tier": 3,
-                    "confidence": "medium",
-                    "summary": "needs review",
-                    "name": "a",
-                }
-            ],
-            2,
-        )
-
-    monkeypatch.setattr(review_mod, "detect_review_coverage", _fake_detect_review_coverage)
     monkeypatch.setattr(
-        review_mod,
-        "detect_holistic_review_staleness",
-        lambda _cache, **_kwargs: [
-            {
-                "file": "scan/holistic",
-                "tier": 3,
-                "confidence": "low",
-                "summary": "stale holistic",
-                "name": "holistic",
-            }
-        ],
+        "desloppify.base.subjective_dimensions.default_dimension_keys_for_lang",
+        lambda _lang_name: ("naming_quality", "logic_clarity"),
     )
     monkeypatch.setattr(
-        review_mod,
-        "_entries_to_issues",
-        lambda detector, entries, **_kwargs: [{"detector": detector, "file": e["file"]} for e in entries],
+        "desloppify.base.subjective_dimensions.dimension_display_name",
+        lambda dim_key, lang_name=None: dim_key.replace("_", " ").title(),
     )
     monkeypatch.setattr(review_mod, "_log_phase_summary", lambda *_args, **_kwargs: None)
 
     issues, potentials = review_mod.phase_subjective_review(Path("."), lang)
 
+    # Both dimensions unassessed → 2 issues
     assert len(issues) == 2
     assert potentials == {"subjective_review": 2}
-    assert review_calls["per_file_cache"] == {"src/a.py": {"score": 90}}
-    assert review_calls["holistic_cache"] == {"updated_at": "today"}
-    assert review_calls["max_age_days"] == 45
-    assert review_calls["holistic_total_files"] == 2
-    assert isinstance(lang.review_cache, dict)
+    assert all(issue["detector"] == "subjective_review" for issue in issues)
+    assert all(issue["file"] == "." for issue in issues)
+    dim_keys = {issue["detail"]["dimension"] for issue in issues}
+    assert dim_keys == {"naming_quality", "logic_clarity"}
 
 
 def test_phase_signature_reports_variance(monkeypatch) -> None:

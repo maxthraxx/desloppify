@@ -5,8 +5,10 @@ from __future__ import annotations
 from pathlib import Path
 
 from desloppify.engine._plan.policy.project import (
+    PolicyLoadResult,
     add_rule,
     load_policy,
+    load_policy_result,
     remove_rule,
     render_policy_block,
     save_policy,
@@ -16,6 +18,31 @@ from desloppify.engine._plan.policy.project import (
 def test_load_policy_missing_file(tmp_path: Path) -> None:
     policy = load_policy(tmp_path / "nonexistent.json")
     assert policy == {"rules": []}
+
+    result = load_policy_result(tmp_path / "nonexistent.json")
+    assert result == PolicyLoadResult(ok=True, policy={"rules": []})
+
+
+def test_load_policy_result_reports_corrupt_json(tmp_path: Path) -> None:
+    path = tmp_path / "policy.json"
+    path.write_text("{bad json", encoding="utf-8")
+
+    result = load_policy_result(path)
+
+    assert result.ok is False
+    assert result.policy == {"rules": []}
+    assert result.error_kind == "policy_parse_error"
+
+
+def test_load_policy_result_reports_invalid_shape(tmp_path: Path) -> None:
+    path = tmp_path / "policy.json"
+    path.write_text('{"rules": "bad"}', encoding="utf-8")
+
+    result = load_policy_result(path)
+
+    assert result.ok is False
+    assert result.policy == {"rules": []}
+    assert result.error_kind == "policy_invalid_rules"
 
 
 def test_add_save_load_round_trip(tmp_path: Path) -> None:

@@ -34,12 +34,12 @@ from desloppify.engine._work_queue.synthetic import (
     build_create_plan_item,
     build_deferred_disposition_item,
     build_import_scores_item,
+    build_run_scan_item,
     build_score_checkpoint_item,
     build_subjective_items,
     build_triage_stage_items,
 )
 from desloppify.engine._work_queue.types import WorkQueueItem
-from desloppify.engine.plan_queue import postflight_scan_pending
 from desloppify.engine._state.schema import StateModel
 
 
@@ -93,10 +93,32 @@ class WorkQueueResult(TypedDict):
     new_ids: set[str]
 
 
+class QueueVisibility:
+    """Named queue visibility modes for internal queue assembly."""
+
+    ALL = "all"
+    EXECUTION = "execution"
+    BACKLOG = "backlog"
+
+
 def build_work_queue(
     state: StateModel,
     *,
     options: QueueBuildOptions | None = None,
+) -> WorkQueueResult:
+    """Build the raw ranked work queue without execution/backlog filtering."""
+    return _build_work_queue_with_visibility(
+        state,
+        options=options,
+        visibility=QueueVisibility.ALL,
+    )
+
+
+def _build_work_queue_with_visibility(
+    state: StateModel,
+    *,
+    options: QueueBuildOptions | None = None,
+    visibility: str = QueueVisibility.ALL,
 ) -> WorkQueueResult:
     """Build a ranked work queue from state issues.
 
@@ -118,6 +140,7 @@ def build_work_queue(
     )
     items += _gather_subjective_items(state, opts, threshold)
     items += _gather_workflow_items(state, plan, status)
+    items = _filter_plan_visibility(items, plan, visibility=visibility)
 
     # 2. Score
     enrich_with_impact(items, state.get("dimension_scores", {}))
@@ -126,15 +149,13 @@ def build_work_queue(
     new_ids, skipped = _plan_presort(items, state, plan)
 
     # 4. Lifecycle filter — endgame-only items filtered when objective work remains
-    items = apply_lifecycle_filter(items)
+    items = apply_lifecycle_filter(items, plan=plan)
 
     # 5. Sort & plan post-processing
     items.sort(key=item_sort_key)
     _plan_postsort(items, skipped, plan, opts)
 
     # 6. Finalize
-    if not items:
-        items += _empty_queue_fallback(plan)
     total = len(items)
     if opts.count is not None and opts.count > 0:
         items = items[:opts.count]
@@ -211,7 +232,12 @@ def _gather_workflow_items(
     if not plan or status not in {"open", "all"}:
         return []
 
-    items: list[WorkQueueItem] = list(build_triage_stage_items(plan, state))
+    items: list[WorkQueueItem] = []
+    for builder in (build_deferred_disposition_item, build_run_scan_item):
+        item = builder(plan)
+        if item is not None:
+            items.append(item)
+    items.extend(build_triage_stage_items(plan, state))
     for builder in (
         build_score_checkpoint_item,
         build_import_scores_item,
@@ -224,6 +250,59 @@ def _gather_workflow_items(
     if plan_item is not None:
         items.append(plan_item)
     return items
+
+
+def _planned_item_ids(plan: dict) -> set[str]:
+    """Collect IDs explicitly tracked by the living plan."""
+    tracked_ids: set[str] = set(plan.get("queue_order", []))
+    tracked_ids.update(plan.get("skipped", {}).keys())
+    tracked_ids.update(plan.get("overrides", {}).keys())
+    for cluster in plan.get("clusters", {}).values():
+        tracked_ids.update(cluster.get("issue_ids", []))
+        for step in cluster.get("action_steps", []):
+            if isinstance(step, dict):
+                tracked_ids.update(step.get("issue_refs", []))
+    subjective_defer_meta = plan.get("subjective_defer_meta", {})
+    if isinstance(subjective_defer_meta, dict):
+        tracked_ids.update(subjective_defer_meta.get("force_visible_ids", []))
+    return tracked_ids
+
+
+def _filter_plan_visibility(
+    items: list[WorkQueueItem],
+    plan: dict | None,
+    *,
+    visibility: str,
+) -> list[WorkQueueItem]:
+    """Apply plan-based visibility filtering for execution/backlog surfaces."""
+    if visibility == QueueVisibility.ALL:
+        return items
+    if not plan:
+        return items
+    tracked_ids = _planned_item_ids(plan)
+    if not tracked_ids:
+        if visibility == QueueVisibility.EXECUTION:
+            return [item for item in items if _is_implicit_execution_workflow(item)]
+        return items
+    if visibility == QueueVisibility.EXECUTION:
+        return [
+            item for item in items
+            if item["id"] in tracked_ids or _is_implicit_execution_workflow(item)
+        ]
+    if visibility == QueueVisibility.BACKLOG:
+        return [
+            item for item in items
+            if item["id"] not in tracked_ids and not _is_implicit_execution_workflow(item)
+        ]
+    return items
+
+
+def _is_implicit_execution_workflow(item: WorkQueueItem) -> bool:
+    """Return True for workflow items that opt into execution visibility."""
+    return (
+        item.get("kind") == "workflow_action"
+        and item.get("execution_visibility") == "always"
+    )
 
 
 
@@ -266,38 +345,13 @@ def _plan_postsort(
         items.extend(skipped)
     stamp_positions(items, plan)
 
-
-def _empty_queue_fallback(plan: dict | None) -> list[WorkQueueItem]:
-    """Return end-of-queue workflow actions when no active queue items remain."""
-    if not plan:
-        return []
-
-    items: list[WorkQueueItem] = []
-    deferred_item = build_deferred_disposition_item(plan)
-    if deferred_item is not None:
-        items.append(deferred_item)
-        return items
-
-    if not postflight_scan_pending(plan):
-        return items
-
-    items.append({
-        "id": "workflow::run-scan",
-        "kind": "workflow_action",
-        "summary": "Queue cleared - run scan to refresh and surface follow-up review work.",
-        "primary_command": "desloppify scan",
-        "file": "",
-        "detector": "workflow",
-        "confidence": "high",
-    })
-    return items
-
-
 __all__ = [
     "ATTEST_EXAMPLE",
     "QueueBuildOptions",
     "QueueContext",
+    "QueueVisibility",
     "WorkQueueResult",
+    "_build_work_queue_with_visibility",
     "build_work_queue",
     "collapse_clusters",
     "group_queue_items",

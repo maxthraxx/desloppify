@@ -12,7 +12,7 @@ from desloppify.languages._framework.base.shared_phases import (
 )
 from desloppify.languages._framework.base.types import LangRuntimeContract
 from desloppify.languages.dart.detectors.deps import build_dep_graph
-from desloppify.state import Issue
+from desloppify.state_io import Issue
 
 DART_COMPLEXITY_SIGNALS = [
     ComplexitySignal(

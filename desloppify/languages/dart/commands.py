@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from desloppify.languages._framework.commands_base import (
     make_cmd_complexity,
     make_cmd_large,
 )
 from desloppify.languages._framework.commands_base_registry import (
-    build_standard_detect_registry,
-    compose_detect_registry,
+    build_composed_detect_registry,
     make_cmd_cycles,
     make_cmd_deps,
     make_cmd_dupes,
@@ -54,14 +55,12 @@ cmd_orphaned = make_cmd_orphaned(
 cmd_dupes = make_cmd_dupes(extract_functions_fn=extract_functions, module_name=__name__)
 
 
-def get_detect_commands():
-    return compose_detect_registry(
-        base_registry=build_standard_detect_registry(
-            cmd_deps=cmd_deps,
-            cmd_cycles=cmd_cycles,
-            cmd_orphaned=cmd_orphaned,
-            cmd_dupes=cmd_dupes,
-            cmd_large=cmd_large,
-            cmd_complexity=cmd_complexity,
-        ),
+def get_detect_commands() -> dict[str, Callable[..., None]]:
+    return build_composed_detect_registry(
+        cmd_deps=cmd_deps,
+        cmd_cycles=cmd_cycles,
+        cmd_orphaned=cmd_orphaned,
+        cmd_dupes=cmd_dupes,
+        cmd_large=cmd_large,
+        cmd_complexity=cmd_complexity,
     )

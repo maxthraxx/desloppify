@@ -38,7 +38,8 @@ class TestLoadCmdContext:
         )
         calls = []
         monkeypatch.setattr(
-            "desloppify.state.load_state", lambda _sp: calls.append(_sp) or {}
+            "desloppify.app.output._viz_cmd_context.load_state",
+            lambda _sp: calls.append(_sp) or {},
         )
 
         args = SimpleNamespace(
@@ -63,7 +64,8 @@ class TestLoadCmdContext:
         )
         calls = []
         monkeypatch.setattr(
-            "desloppify.state.load_state", lambda sp: calls.append(sp) or {"ok": True}
+            "desloppify.app.output._viz_cmd_context.load_state",
+            lambda sp: calls.append(sp) or {"ok": True},
         )
 
         args = SimpleNamespace(

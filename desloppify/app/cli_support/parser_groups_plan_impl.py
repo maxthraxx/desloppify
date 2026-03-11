@@ -17,6 +17,7 @@ from .parser_groups_plan_impl_sections_queue_reorder import (
 from .parser_groups_plan_impl_sections_triage_commit_scan import (
     _add_commit_log_subparser,
     _add_policy_subparser,
+    _add_repair_state_subparser,
     _add_scan_gate_subparser,
     _add_triage_subparser,
 )
@@ -34,7 +35,7 @@ Run with no subcommand to generate a full prioritized markdown plan.""",
 typical workflow:
   desloppify scan                       # detect issues
   desloppify plan                       # full prioritized markdown
-  desloppify plan queue                 # compact table of all items
+  desloppify plan queue                 # compact table of execution items
   desloppify plan cluster create ...    # group related issues
   desloppify plan focus <cluster>       # narrow scope
   desloppify next                       # work on the next item
@@ -47,7 +48,7 @@ patterns (used by reorder, skip, resolve, describe, note, etc.):
 
 subcommands:
   show       Show plan metadata summary
-  queue      Compact table of upcoming queue items
+  queue      Compact table of execution queue items
   reset      Reset plan to empty
   reorder    Reposition issues or clusters in the queue
   resolve    Mark issues as fixed (score movement + next-step)
@@ -59,7 +60,8 @@ subcommands:
   focus      Set or clear active cluster focus
   cluster    Manage issue clusters
   triage     Staged triage workflow (after review)
-  scan-gate  Check or skip scan requirement for workflow items""",
+  scan-gate  Check or skip scan requirement for workflow items
+  repair-state Rebuild state.json from surviving plan metadata""",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     p_plan.add_argument("--state", type=str, default=None, help="Path to state file")
@@ -87,6 +89,7 @@ subcommands:
     _add_scan_gate_subparser(plan_sub)
     _add_commit_log_subparser(plan_sub)
     _add_policy_subparser(plan_sub)
+    _add_repair_state_subparser(plan_sub)
 
 
 __all__ = ["add_plan_parser"]

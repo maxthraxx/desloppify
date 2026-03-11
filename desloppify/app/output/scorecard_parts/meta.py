@@ -17,7 +17,15 @@ def resolve_project_name(project_root: Path) -> str:
     """Resolve owner/repo display name from GitHub CLI, git remote, or folder."""
     try:
         name = subprocess.check_output(
-            ["gh", "repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"],
+            [
+                "gh",
+                "repo",
+                "view",
+                "--json",
+                "nameWithOwner",
+                "-q",
+                ".nameWithOwner",
+            ],
             cwd=str(project_root),
             stderr=subprocess.DEVNULL,
             text=True,

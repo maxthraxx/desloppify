@@ -28,7 +28,7 @@ This is the thing we care about most. If an agent can game the score to 100 with
 - Attestation requirements on resolution — agents have to describe what they actually did
 - Wontfix still counts against strict score — you can't dismiss your way to a perfect number
 - Subjective assessments are cross-checked — if scores land suspiciously close to targets, they get flagged or reset
-- Subjective findings are weighted heavily (60% of total) because that's where real quality lives
+- Subjective findings are weighted heavily (75% of total) because that's where real quality lives
 
 ## Language-agnostic
 

@@ -278,7 +278,7 @@ class TestGatherAuthContext:
         assert ra["without_auth"] == 1
 
     def test_ts_route_detection(self):
-        """TypeScript Next.js-style route handlers should be detected."""
+        """Session lookup alone should not count as an enforced route auth guard."""
         content = textwrap.dedent("""\
             export async function GET(req) {
                 return Response.json({ok: true});
@@ -293,8 +293,25 @@ class TestGatherAuthContext:
         assert "route_auth_coverage" in result
         ra = result["route_auth_coverage"]["route.ts"]
         assert ra["handlers"] == 2
-        assert ra["with_auth"] == 1  # getServerSession counts as auth
-        assert ra["without_auth"] == 1
+        assert ra["with_auth"] == 0
+        assert ra["without_auth"] == 2
+
+    def test_ts_route_lookup_plus_rejection_counts_as_auth(self):
+        """Lookup plus an unauthenticated rejection branch should count as auth enforcement."""
+        content = textwrap.dedent("""\
+            export async function GET(req) {
+                const session = await getServerSession();
+                if (!session) {
+                    return new Response("unauthorized", { status: 401 });
+                }
+                return Response.json({ok: true});
+            }
+        """)
+        result = _gather_auth_context({"/src/route.ts": content})
+        ra = result["route_auth_coverage"]["route.ts"]
+        assert ra["handlers"] == 1
+        assert ra["with_auth"] == 1
+        assert ra["without_auth"] == 0
 
     def test_express_routes_detected(self):
         """Express-style app.get/post should be detected as route handlers."""
@@ -321,7 +338,8 @@ class TestGatherAuthContext:
         assert "rls_coverage" in result
         rls = result["rls_coverage"]
         assert "users" in rls["with_rls"]
-        assert "posts" in rls["with_rls"]
+        assert "posts" in rls["policy_only"]
+        assert "posts" in rls["without_rls"]
         assert "comments" in rls["without_rls"]
 
     def test_rls_case_insensitive(self):
@@ -783,5 +801,3 @@ class TestClassifyErrorStrategy:
         """)
         result = _classify_error_strategy(content)
         assert result == "mixed"
-
-

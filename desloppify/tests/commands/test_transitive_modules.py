@@ -102,12 +102,12 @@ class TestPrintWontfixBatchWarning:
 
 
 class TestPrintScoreMovement:
-    @patch("desloppify.app.commands.resolve.render_support.state_mod")
+    @patch("desloppify.app.commands.resolve.render_support.score_snapshot")
     @patch("desloppify.app.commands.resolve.render_support.colorize", side_effect=lambda t, _c: t)
     @patch("desloppify.app.commands.resolve.render.colorize", side_effect=lambda t, _c: t)
-    def test_scores_unavailable(self, _mock_colorize, _mock_colorize2, mock_state, capsys):
+    def test_scores_unavailable(self, _mock_colorize, _mock_colorize2, mock_score_snapshot, capsys):
         from desloppify.state import ScoreSnapshot
-        mock_state.score_snapshot.return_value = ScoreSnapshot(
+        mock_score_snapshot.return_value = ScoreSnapshot(
             overall=None, objective=None, strict=None, verified=None
         )
         _print_score_movement(
@@ -121,12 +121,12 @@ class TestPrintScoreMovement:
         out = capsys.readouterr().out
         assert "Scores unavailable" in out
 
-    @patch("desloppify.app.commands.resolve.render_support.state_mod")
+    @patch("desloppify.app.commands.resolve.render_support.score_snapshot")
     @patch("desloppify.app.commands.resolve.render_support.colorize", side_effect=lambda t, _c: t)
     @patch("desloppify.app.commands.resolve.render.colorize", side_effect=lambda t, _c: t)
-    def test_scores_with_deltas(self, _mock_colorize, _mock_colorize2, mock_state, capsys):
+    def test_scores_with_deltas(self, _mock_colorize, _mock_colorize2, mock_score_snapshot, capsys):
         from desloppify.state import ScoreSnapshot
-        mock_state.score_snapshot.return_value = ScoreSnapshot(
+        mock_score_snapshot.return_value = ScoreSnapshot(
             overall=55.0, objective=65.0, strict=45.0, verified=35.0
         )
         _print_score_movement(
@@ -141,12 +141,12 @@ class TestPrintScoreMovement:
         assert "55.0/100" in out
         assert "(+5.0)" in out
 
-    @patch("desloppify.app.commands.resolve.render_support.state_mod")
+    @patch("desloppify.app.commands.resolve.render_support.score_snapshot")
     @patch("desloppify.app.commands.resolve.render_support.colorize", side_effect=lambda t, _c: t)
     @patch("desloppify.app.commands.resolve.render.colorize", side_effect=lambda t, _c: t)
-    def test_review_issues_unchanged_hint(self, _mock_colorize, _mock_colorize2, mock_state, capsys):
+    def test_review_issues_unchanged_hint(self, _mock_colorize, _mock_colorize2, mock_score_snapshot, capsys):
         from desloppify.state import ScoreSnapshot
-        mock_state.score_snapshot.return_value = ScoreSnapshot(
+        mock_score_snapshot.return_value = ScoreSnapshot(
             overall=50.0, objective=60.0, strict=40.0, verified=30.0
         )
         _print_score_movement(
@@ -162,12 +162,12 @@ class TestPrintScoreMovement:
         assert "Scores unchanged" in out
         assert "review issues" in out
 
-    @patch("desloppify.app.commands.resolve.render_support.state_mod")
+    @patch("desloppify.app.commands.resolve.render_support.score_snapshot")
     @patch("desloppify.app.commands.resolve.render_support.colorize", side_effect=lambda t, _c: t)
     @patch("desloppify.app.commands.resolve.render.colorize", side_effect=lambda t, _c: t)
-    def test_fixed_status_verified_hint(self, _mock_colorize, _mock_colorize2, mock_state, capsys):
+    def test_fixed_status_verified_hint(self, _mock_colorize, _mock_colorize2, mock_score_snapshot, capsys):
         from desloppify.state import ScoreSnapshot
-        mock_state.score_snapshot.return_value = ScoreSnapshot(
+        mock_score_snapshot.return_value = ScoreSnapshot(
             overall=55.0, objective=65.0, strict=45.0, verified=35.0
         )
         _print_score_movement(

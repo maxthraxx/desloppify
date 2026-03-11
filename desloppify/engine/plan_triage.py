@@ -6,6 +6,8 @@ from desloppify.engine._plan.constants import (
     TRIAGE_IDS,
     TRIAGE_PREFIX,
     TRIAGE_STAGE_IDS,
+    TRIAGE_STAGE_ORDER,
+    TRIAGE_STAGE_SPECS,
 )
 from desloppify.engine._plan.triage.core import (
     TriageInput,
@@ -56,6 +58,13 @@ def triage_phase_banner(plan: PlanModel, state: dict | None = None) -> str:
     )
 
     if not has_triage:
+        undispositioned = meta.get("undispositioned_issue_count", 0)
+        if undispositioned:
+            return (
+                "TRIAGE RECOVERY NEEDED — "
+                f"{undispositioned} review issue(s) still need cluster/skip dispositions. "
+                f"{run_hint}"
+            )
         if meta.get("triage_recommended"):
             return (
                 "TRIAGE RECOMMENDED — review issues changed since last triage. "
@@ -64,6 +73,13 @@ def triage_phase_banner(plan: PlanModel, state: dict | None = None) -> str:
         return ""
 
     if state and has_objective_backlog(state, None):
+        undispositioned = meta.get("undispositioned_issue_count", 0)
+        if undispositioned:
+            return (
+                "TRIAGE PENDING — "
+                f"{undispositioned} review issue(s) still need cluster/skip dispositions after current work. "
+                f"{run_hint}"
+            )
         return (
             "TRIAGE PENDING — queued and will activate after objective work "
             "is complete."
@@ -105,6 +121,8 @@ __all__ = [
     "TRIAGE_STAGE_DEPENDENCIES",
     "TRIAGE_STAGE_IDS",
     "TRIAGE_STAGE_LABELS",
+    "TRIAGE_STAGE_ORDER",
+    "TRIAGE_STAGE_SPECS",
     "TriageStartDecision",
     "TriageInput",
     "build_triage_prompt",

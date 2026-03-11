@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from desloppify.base.output.terminal import log
+from desloppify.engine._state.filtering import make_issue
 from desloppify.engine.policy.zones import adjust_potential
 from desloppify.languages._framework.base.smell_contracts import (
     normalize_smell_entries,
@@ -15,7 +16,7 @@ import desloppify.languages.typescript.detectors.react_context as react_context_
 import desloppify.languages.typescript.detectors.react_hook_bloat as react_hook_bloat_mod
 import desloppify.languages.typescript.detectors.react_state_sync as react_state_sync_mod
 import desloppify.languages.typescript.detectors.smells as smells_detector_mod
-from desloppify.state import Issue, make_issue
+from desloppify.state_io import Issue
 
 
 def phase_smells(path: Path, lang: LangRuntimeContract) -> tuple[list[Issue], dict[str, int]]:

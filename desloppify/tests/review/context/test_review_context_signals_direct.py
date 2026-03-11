@@ -52,6 +52,37 @@ def test_gather_auth_context_collects_route_rls_and_service_role():
     assert result["auth_usage_patterns"]["api.py"] >= 1
 
 
+def test_gather_auth_context_requires_enforcement_for_lookup_only_routes() -> None:
+    file_contents = {
+        "route.ts": (
+            "export async function GET(req) {\n"
+            "  const session = await getServerSession();\n"
+            "  return Response.json({ ok: !!session });\n"
+            "}\n"
+        )
+    }
+    result = signal_auth_mod.gather_auth_context(file_contents, rel_fn=lambda p: p)
+    coverage = result["route_auth_coverage"]["route.ts"]
+    assert coverage["with_auth"] == 0
+    assert coverage["without_auth"] == 1
+    assert result["auth_usage_patterns"]["route.ts"] >= 1
+
+
+def test_gather_auth_context_tracks_policy_only_tables_separately():
+    file_contents = {
+        "schema.sql": (
+            "CREATE TABLE accounts(id int);\n"
+            "CREATE TABLE posts(id int);\n"
+            "ALTER TABLE accounts ENABLE ROW LEVEL SECURITY;\n"
+            "CREATE POLICY post_reader ON posts;\n"
+        ),
+    }
+    result = signal_auth_mod.gather_auth_context(file_contents, rel_fn=lambda p: p)
+    assert result["rls_coverage"]["with_rls"] == ["accounts"]
+    assert result["rls_coverage"]["policy_only"] == ["posts"]
+    assert "posts" in result["rls_coverage"]["without_rls"]
+
+
 def test_gather_auth_context_excludes_server_only_service_role_paths():
     file_contents = {
         "functions/worker.ts": "const k = service_role; createClient(url, k)",

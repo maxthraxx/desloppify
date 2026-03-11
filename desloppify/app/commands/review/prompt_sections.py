@@ -16,6 +16,7 @@ class PromptBatchContext:
     rationale: str
     seed_files: tuple[str, ...]
     issues_cap: int
+    dimension_prompts: dict[str, dict[str, object]]
 
     @property
     def dimension_set(self) -> set[str]:
@@ -44,7 +45,19 @@ def build_batch_context(batch: dict[str, object], batch_index: int) -> PromptBat
         rationale=str(batch.get("why", "")).strip(),
         seed_files=coerce_string_list(batch.get("files_to_read", [])),
         issues_cap=max_batch_issues_for_dimension_count(len(dimensions)),
+        dimension_prompts=batch_dimension_prompts(batch),
     )
+
+
+def batch_dimension_prompts(batch: dict[str, object]) -> dict[str, dict[str, object]]:
+    raw_prompts = batch.get("dimension_prompts")
+    if not isinstance(raw_prompts, dict):
+        return {}
+    return {
+        str(dim): prompt
+        for dim, prompt in raw_prompts.items()
+        if isinstance(dim, str) and isinstance(prompt, dict)
+    }
 
 
 SCAN_EVIDENCE_FOCUS_BY_DIMENSION = {
@@ -152,6 +165,9 @@ def _concern_signal_lines(entry: dict[str, object]) -> list[str]:
     if question:
         lines.append(f"    question: {question}")
     lines.extend(f"    evidence: {snippet}" for snippet in evidence[:2])
+    fingerprint = str(entry.get("fingerprint", "")).strip()
+    if fingerprint:
+        lines.append(f"    fingerprint: {fingerprint}")
     return lines
 
 
@@ -162,27 +178,101 @@ def _iter_valid_concern_signals(
     return [entry for entry in signals if isinstance(entry, dict)]
 
 
+def _build_concern_summary(valid_signals: list[dict[str, object]]) -> list[str]:
+    """Build a grouped summary of concern signals by type."""
+    by_type: dict[str, list[str]] = {}
+    for entry in valid_signals:
+        concern_type = str(entry.get("type", "")).strip() or "design_concern"
+        file = str(entry.get("file", "")).strip() or "(unknown)"
+        by_type.setdefault(concern_type, []).append(file)
+
+    if not by_type:
+        return []
+
+    lines = [f"Overview ({len(valid_signals)} signals):"]
+    for concern_type, files in sorted(by_type.items(), key=lambda x: -len(x[1])):
+        if len(files) <= 3:
+            file_list = ", ".join(files)
+            lines.append(f"  {concern_type}: {len(files)} — {file_list}")
+        else:
+            sample = ", ".join(files[:2])
+            lines.append(f"  {concern_type}: {len(files)} — {sample}, ...")
+    lines.append("")
+    return lines
+
+
 def render_mechanical_concern_signals(batch: dict[str, object]) -> str:
     """Render mechanically-generated concern hypotheses for this batch."""
     signals = batch.get("concern_signals")
     if not isinstance(signals, list) or not signals:
         return ""
 
-    lines: list[str] = []
-    lines.append("Mechanical concern signals — navigation aid, not scoring evidence:")
-    lines.append(
-        "Confirm or refute each with your own code reading. Report only confirmed defects."
-    )
-
     valid_signals = _iter_valid_concern_signals(signals)
-    capped_signals = valid_signals[:8]
+    if not valid_signals:
+        return ""
+
+    lines: list[str] = []
+    lines.append("Mechanical concern signals — investigate and adjudicate:")
+    lines.extend(_build_concern_summary(valid_signals))
+    lines.append("For each concern, read the source code and report your verdict in issues[]:")
+    lines.append(
+        '  - Confirm → full issue object with concern_verdict: "confirmed"'
+    )
+    lines.append(
+        '  - Dismiss → minimal object: {concern_verdict: "dismissed", concern_fingerprint: "<hash>"}'
+    )
+    lines.append(
+        "    (only these 2 fields required — add optional reasoning/concern_type/concern_file)"
+    )
+    lines.append(
+        "  - Unsure → skip it (will be re-evaluated next review)"
+    )
+    lines.append("")
+
+    capped_signals = valid_signals[:30]
     for entry in capped_signals:
         lines.extend(_concern_signal_lines(entry))
 
     extra = max(0, len(valid_signals) - len(capped_signals))
     if extra:
-        lines.append(f"  - (+{extra} more concern signals)")
+        lines.append(f"  (+{extra} more — use `desloppify show <detector> --no-budget` to explore)")
     return "\n".join(lines) + "\n\n"
+
+
+def render_findings_exploration_section(batch: dict[str, object]) -> str:
+    """Render CLI exploration commands for detector findings relevant to this batch."""
+    all_counts: dict[str, int] = {}
+    for key in ("judgment_finding_counts", "mechanical_finding_counts"):
+        raw = batch.get(key)
+        if isinstance(raw, dict):
+            for det, count in raw.items():
+                try:
+                    n = int(count)  # type: ignore[arg-type]
+                except (TypeError, ValueError):
+                    continue
+                if n > 0:
+                    all_counts[det] = n
+    if not all_counts:
+        return ""
+
+    lines = [
+        "RELEVANT FINDINGS — explore with CLI:",
+        "These detectors found patterns related to this dimension. Explore the findings,",
+        "then read the actual source code.",
+        "",
+    ]
+    for detector, n in sorted(all_counts.items()):
+        lines.append(f"  desloppify show {detector} --no-budget      # {n} findings")
+    lines.append("")
+    lines.append(
+        "Report actionable issues in issues[]. Use concern_verdict and concern_fingerprint"
+    )
+    lines.append("for findings you want to confirm or dismiss.")
+    return "\n".join(lines) + "\n\n"
+
+
+# Keep the old name as an alias so existing callers don't break.
+render_judgment_findings_section = render_findings_exploration_section
 
 
 def render_workflow_integrity_focus(dim_set: set[str]) -> str:
@@ -257,10 +347,9 @@ def explode_to_single_dimension(
     """Split multi-dimension batches into one batch per dimension.
 
     Preserves seed files and rationale — each exploded batch keeps the same
-    file grouping but is scoped to a single dimension.  When *dimension_prompts*
-    is provided, each exploded batch gets a ``_dimension_prompt`` key with the
-    prompt for its single dimension so that downstream renderers can use it
-    without extra parameter threading.
+    file grouping but is scoped to a single dimension. When *dimension_prompts*
+    is provided, each exploded batch gets a public ``dimension_prompts`` map
+    scoped to its single dimension.
     """
     prompts = dimension_prompts or {}
     result: list[dict[str, object]] = []
@@ -273,7 +362,7 @@ def explode_to_single_dimension(
             exploded: dict[str, object] = {**batch, "dimensions": [dim]}
             dim_prompt = prompts.get(dim)
             if isinstance(dim_prompt, dict):
-                exploded["_dimension_prompt"] = dim_prompt
+                exploded["dimension_prompts"] = {str(dim): dim_prompt}
             result.append(exploded)
     return result
 
@@ -375,6 +464,7 @@ def join_non_empty_sections(*sections: str) -> str:
 
 __all__ = [
     "PromptBatchContext",
+    "batch_dimension_prompts",
     "coerce_string_list",
     "build_batch_context",
     "explode_to_single_dimension",
@@ -382,6 +472,8 @@ __all__ = [
     "SCAN_EVIDENCE_FOCUS_BY_DIMENSION",
     "render_scan_evidence_focus",
     "render_historical_focus",
+    "render_findings_exploration_section",
+    "render_judgment_findings_section",
     "render_mechanical_concern_signals",
     "render_workflow_integrity_focus",
     "render_package_org_focus",

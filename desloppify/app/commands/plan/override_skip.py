@@ -13,7 +13,7 @@ from desloppify.app.commands.helpers.attestation import (
     validate_attestation,
 )
 from desloppify.app.commands.helpers.runtime import command_runtime
-from desloppify.app.commands.helpers.state import require_completed_scan
+from desloppify.app.commands.helpers.state import require_issue_inventory
 from desloppify.app.commands.plan.shared.patterns import resolve_ids_from_patterns
 from desloppify.app.commands.plan.override_io import (
     _plan_file_for_state,
@@ -99,11 +99,88 @@ def _apply_state_skip_resolution(
     return state_data
 
 
+def _validate_temporary_skip_confirmation(
+    *,
+    confirm: bool,
+    kind: str,
+    reason: str | None,
+    attestation: str | None,
+) -> bool:
+    if not confirm or kind != "temporary":
+        return True
+    if not reason:
+        print(
+            colorize(
+                "  --confirm requires --reason to describe why this is being deferred.",
+                "red",
+            )
+        )
+        return False
+    required_phrases = ("i have actually reflected", "not deferring")
+    normalized_attest = " ".join((attestation or "").strip().lower().split())
+    missing = [phrase for phrase in required_phrases if phrase not in normalized_attest]
+    if not missing:
+        return True
+    print(
+        colorize(
+            "  Deferring items requires you to confirm you've thought this through.",
+            "yellow",
+        )
+    )
+    print(colorize("  Add this to your command:", "dim"))
+    print()
+    print(
+        colorize(
+            '    --attest "I have actually reflected and '
+            'I am not deferring this for lazy reasons."',
+            "dim",
+        )
+    )
+    print()
+    return False
+
+
+def _warn_or_block_bulk_skip(issue_ids: list[str], *, confirm: bool) -> None:
+    if len(issue_ids) <= _BULK_SKIP_THRESHOLD:
+        return
+    print(
+        colorize(
+            f"  Bulk skip: {len(issue_ids)} items will be removed from the active queue.",
+            "yellow",
+        ),
+        file=sys.stderr,
+    )
+    if confirm:
+        return
+    raise CommandError(
+        f"Skipping {len(issue_ids)} items requires --confirm. "
+        "Review the items first, or skip individually."
+    )
+
+
+def _save_skip_plan_state(
+    *,
+    plan: dict,
+    plan_file: Path | None,
+    state_data: dict | None,
+    state_file: Path | None,
+) -> None:
+    if state_data is None:
+        save_plan(plan, plan_file)
+        return
+    save_plan_state_transactional(
+        plan=plan,
+        plan_path=plan_file,
+        state_data=state_data,
+        state_path_value=state_file,
+    )
+
+
 def cmd_plan_skip(args: argparse.Namespace) -> None:
     """Skip issues — unified command for temporary/permanent/false-positive."""
     runtime = command_runtime(args)
     state = runtime.state
-    if not require_completed_scan(state):
+    if not require_issue_inventory(state):
         return
 
     patterns: list[str] = getattr(args, "patterns", [])
@@ -116,45 +193,13 @@ def cmd_plan_skip(args: argparse.Namespace) -> None:
 
     kind = skip_kind_from_flags(permanent=permanent, false_positive=false_positive)
 
-    # Temporary skips with --confirm are deferrals — require the caller to
-    # attest they've actually thought about it, not just pushing work away.
-    # Permanent/false-positive skips have their own attestation via
-    # _validate_skip_requirements, so this only gates temporary deferrals.
-    if getattr(args, "confirm", False) and kind == "temporary":
-        if not reason:
-            print(
-                colorize(
-                    "  --confirm requires --reason to describe why this is being deferred.",
-                    "red",
-                )
-            )
-            return
-        _SKIP_DEFER_PHRASES = ("i have actually reflected", "not deferring")
-        normalized_attest = " ".join((attestation or "").strip().lower().split())
-        missing = [p for p in _SKIP_DEFER_PHRASES if p not in normalized_attest]
-        if missing:
-            print(
-                colorize(
-                    "  Deferring items requires you to confirm you've thought this through.",
-                    "yellow",
-                )
-            )
-            print(
-                colorize(
-                    "  Add this to your command:",
-                    "dim",
-                )
-            )
-            print()
-            print(
-                colorize(
-                    '    --attest "I have actually reflected and '
-                    'I am not deferring this for lazy reasons."',
-                    "dim",
-                )
-            )
-            print()
-            return
+    if not _validate_temporary_skip_confirmation(
+        confirm=bool(getattr(args, "confirm", False)),
+        kind=kind,
+        reason=reason,
+        attestation=attestation,
+    ):
+        return
     if not _validate_skip_requirements(kind=kind, attestation=attestation, note=note):
         raise CommandError(
             "Invalid plan skip attestation or note.",
@@ -169,19 +214,7 @@ def cmd_plan_skip(args: argparse.Namespace) -> None:
         print(colorize("  No matching issues found.", "yellow"))
         return
 
-    if len(issue_ids) > _BULK_SKIP_THRESHOLD:
-        print(
-            colorize(
-                f"  Bulk skip: {len(issue_ids)} items will be removed from the active queue.",
-                "yellow",
-            ),
-            file=sys.stderr,
-        )
-        if not getattr(args, "confirm", False):
-            raise CommandError(
-                f"Skipping {len(issue_ids)} items requires --confirm. "
-                "Review the items first, or skip individually."
-            )
+    _warn_or_block_bulk_skip(issue_ids, confirm=bool(getattr(args, "confirm", False)))
 
     state_data = _apply_state_skip_resolution(
         kind=kind,
@@ -212,15 +245,12 @@ def cmd_plan_skip(args: argparse.Namespace) -> None:
         detail={"kind": kind, "reason": reason},
     )
     clear_postflight_scan_completion(plan, issue_ids=issue_ids)
-    if state_data is not None:
-        save_plan_state_transactional(
-            plan=plan,
-            plan_path=plan_file,
-            state_data=state_data,
-            state_path_value=state_file,
-        )
-    else:
-        save_plan(plan, plan_file)
+    _save_skip_plan_state(
+        plan=plan,
+        plan_file=plan_file,
+        state_data=state_data,
+        state_file=state_file,
+    )
 
     print(colorize(f"  {SKIP_KIND_LABELS[kind]} {count} item(s).", "green"))
     if review_after:
@@ -246,7 +276,7 @@ def cmd_plan_unskip(args: argparse.Namespace) -> None:
     """Unskip issues — bring back to queue."""
     runtime = command_runtime(args)
     state = runtime.state
-    if not require_completed_scan(state):
+    if not require_issue_inventory(state):
         return
 
     patterns: list[str] = getattr(args, "patterns", [])

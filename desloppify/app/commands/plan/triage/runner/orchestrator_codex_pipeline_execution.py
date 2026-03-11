@@ -22,6 +22,7 @@ from .orchestrator_codex_observe import run_observe
 from .orchestrator_codex_pipeline_context import StageRunContext
 from .orchestrator_codex_sense import run_sense_check
 from .stage_prompts import build_stage_prompt
+from ..validation.core import _missing_stage_prerequisite
 from .stage_prompts_instruction_shared import PromptMode
 
 
@@ -169,6 +170,7 @@ def preflight_stage(
     stage: str,
     plan: Mapping[str, Any],
     triage_input: Any,
+    dry_run: bool,
     append_run_log: Callable[[str], None],
     validate_reflect_issue_accounting: Callable[
         ...,
@@ -176,14 +178,14 @@ def preflight_stage(
     ],
 ) -> tuple[bool, str | None]:
     """Fail fast when a requested stage has invalid upstream prerequisites."""
+    # Dry-run previews do not persist upstream stage reports, so preflight checks that
+    # require recorded reflect/enrich state would otherwise fail by construction.
+    if dry_run and stage in {"organize", "sense-check"}:
+        return True, None
+
     if stage == "sense-check":
-        enrich_confirmed_at = (
-            plan.get("epic_triage_meta", {})
-            .get("triage_stages", {})
-            .get("enrich", {})
-            .get("confirmed_at")
-        )
-        if enrich_confirmed_at:
+        stages = plan.get("epic_triage_meta", {}).get("triage_stages", {})
+        if _missing_stage_prerequisite(stages, flow="sense-check") is None:
             return True, None
         reason = "enrich_not_confirmed"
         append_run_log(f"stage-preflight-failed stage={stage} reason={reason}")
@@ -552,6 +554,7 @@ def execute_stage(
         stage=stage,
         plan=context.plan,
         triage_input=context.triage_input,
+        dry_run=context.dry_run,
         append_run_log=context.append_run_log,
         validate_reflect_issue_accounting=dependencies.validate_reflect_issue_accounting,
     )

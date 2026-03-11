@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import desloppify.app.commands.helpers.guardrails as guardrails_mod
+import desloppify.app.commands.backlog.cmd as backlog_mod
 import desloppify.app.commands.plan.triage.display.progress as plan_progress_render_mod
 import desloppify.app.commands.plan.triage.stages.commands as triage_flow_mod
 import desloppify.app.commands.plan.triage.command as triage_handlers_mod
@@ -26,9 +27,12 @@ import desloppify.intelligence.review.issue_merge as issue_merge_mod
 def test_direct_coverage_split_queue_batch_modules_smoke():
     assert callable(triage_flow_mod.cmd_stage_organize)
     assert callable(triage_flow_mod.cmd_stage_reflect)
-    assert callable(triage_flow_mod._cmd_stage_observe)
+    assert callable(triage_flow_mod.cmd_stage_observe)
     assert callable(triage_handlers_mod.cmd_plan_triage)
+    assert callable(backlog_mod.cmd_backlog)
     assert callable(queue_policy_mod.build_open_plan_queue)
+    assert callable(queue_policy_mod.build_backlog_queue)
+    assert callable(queue_policy_mod.build_execution_queue)
     assert callable(guardrails_mod.print_triage_guardrail_info)
     assert callable(plan_progress_render_mod._print_progress)
     assert callable(batch_merge_mod.merge_batch_results)

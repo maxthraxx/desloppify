@@ -5,12 +5,6 @@ Canonical implementation now lives in desloppify.languages._framework.treesitter
 
 from __future__ import annotations
 
-from importlib import import_module
+from ._compat_bridge import load_compat_exports
 
-_IMPL = import_module("desloppify.languages._framework.treesitter.imports.resolvers_backend")
-_EXPORTS = [name for name in dir(_IMPL) if not name.startswith("__")]
-globals().update({name: getattr(_IMPL, name) for name in _EXPORTS})
-_PUBLIC = getattr(_IMPL, "__all__", None)
-if _PUBLIC is None:
-    _PUBLIC = [name for name in _EXPORTS if not name.startswith("_")]
-__all__ = list(_PUBLIC)
+_IMPL, __all__ = load_compat_exports(globals(), "desloppify.languages._framework.treesitter.imports.resolvers_backend")

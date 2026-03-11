@@ -73,7 +73,7 @@ class TestPatternHints:
         }
 
         monkeypatch.setattr(cluster_mod, "command_runtime", lambda args: _fake_runtime(state))
-        monkeypatch.setattr(cluster_mod, "require_completed_scan", lambda s: True)
+        monkeypatch.setattr(cluster_mod, "require_issue_inventory", lambda s: True)
         monkeypatch.setattr(cluster_mod, "load_plan", lambda *a, **kw: plan)
 
         args = _fake_args(cluster_name="my-cluster", patterns=["nonexistent_pattern"])
@@ -94,7 +94,7 @@ class TestPatternHints:
         }
 
         monkeypatch.setattr(cluster_mod, "command_runtime", lambda args: _fake_runtime(state))
-        monkeypatch.setattr(cluster_mod, "require_completed_scan", lambda s: True)
+        monkeypatch.setattr(cluster_mod, "require_issue_inventory", lambda s: True)
         monkeypatch.setattr(cluster_mod, "load_plan", lambda *a, **kw: plan)
 
         args = _fake_args(cluster_name="my-cluster", patterns=["nonexistent_pattern"])
@@ -126,7 +126,7 @@ class TestOverlapWarning:
         }
 
         monkeypatch.setattr(cluster_mod, "command_runtime", lambda args: _fake_runtime(state))
-        monkeypatch.setattr(cluster_mod, "require_completed_scan", lambda s: True)
+        monkeypatch.setattr(cluster_mod, "require_issue_inventory", lambda s: True)
         monkeypatch.setattr(cluster_mod, "load_plan", lambda *a, **kw: plan)
         monkeypatch.setattr(cluster_mod, "save_plan", lambda p, *a, **kw: None)
 
@@ -153,7 +153,7 @@ class TestOverlapWarning:
         }
 
         monkeypatch.setattr(cluster_mod, "command_runtime", lambda args: _fake_runtime(state))
-        monkeypatch.setattr(cluster_mod, "require_completed_scan", lambda s: True)
+        monkeypatch.setattr(cluster_mod, "require_issue_inventory", lambda s: True)
         monkeypatch.setattr(cluster_mod, "load_plan", lambda *a, **kw: plan)
         monkeypatch.setattr(cluster_mod, "save_plan", lambda p, *a, **kw: None)
 
@@ -183,7 +183,7 @@ class TestStepCountFeedback:
 
         args = _fake_args(
             cluster_name="my-cluster",
-            steps=["Rename variables", "Update imports"],
+            steps=[{"title": "Rename variables"}, {"title": "Update imports"}],
         )
         cluster_mod._cmd_cluster_update(args)
         out = capsys.readouterr().out
@@ -238,7 +238,7 @@ class TestOverlapScoping:
         }
 
         monkeypatch.setattr(cluster_mod, "command_runtime", lambda args: _fake_runtime(state))
-        monkeypatch.setattr(cluster_mod, "require_completed_scan", lambda s: True)
+        monkeypatch.setattr(cluster_mod, "require_issue_inventory", lambda s: True)
         monkeypatch.setattr(cluster_mod, "load_plan", lambda *a, **kw: plan)
         monkeypatch.setattr(cluster_mod, "save_plan", lambda p, *a, **kw: None)
 
@@ -271,7 +271,7 @@ class TestStepDisplayNumbering:
 
         args = _fake_args(
             cluster_name="my-cluster",
-            steps=["1. Audit imports", "2. Remove unused"],
+            steps=[{"title": "1. Audit imports"}, {"title": "2. Remove unused"}],
         )
         cluster_mod._cmd_cluster_update(args)
         out = capsys.readouterr().out

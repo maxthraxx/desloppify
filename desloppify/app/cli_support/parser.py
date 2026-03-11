@@ -7,6 +7,7 @@ from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as get_version
 
 from desloppify.app.cli_support.parser_groups import (
+    _add_backlog_parser,
     _add_config_parser,
     _add_detect_parser,
     _add_dev_parser,
@@ -31,7 +32,8 @@ USAGE_EXAMPLES = """
 workflow:
   scan       Run detectors, update state, show diff
   status     Score dashboard with dimension health
-  next       Show next highest-priority item to work on
+  next       Show the next execution item from the living plan
+  backlog    Show broader backlog items not currently in execution
   plan       Living plan: prioritize, cluster, resolve, skip, annotate
 
 investigate:
@@ -58,8 +60,9 @@ examples:
   desloppify scan
   desloppify scan --skip-slow --profile ci
   desloppify plan                        # full prioritized markdown
-  desloppify plan queue                  # compact table of all items
-  desloppify next --count 10             # top 10 queue items
+  desloppify plan queue                  # compact table of execution items
+  desloppify next --count 10             # top 10 execution items
+  desloppify backlog --count 10          # top 10 backlog items
   desloppify show src/components/Modal.tsx
   desloppify plan resolve "unused::src/foo.tsx::React" \\
     --note "removed import" --attest "I have actually ..."
@@ -120,6 +123,7 @@ def create_parser(*, langs: list[str], detector_names: list[str]) -> argparse.Ar
     _add_scan_parser(sub)
     _add_status_parser(sub)
     _add_next_parser(sub)
+    _add_backlog_parser(sub)
     add_plan_parser(sub)
     # investigate
     _add_show_parser(sub)

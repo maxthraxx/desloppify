@@ -44,6 +44,7 @@ _NON_OBJECTIVE_DETECTORS = frozenset(
     {
         "concerns",
         "review",
+        "subjective_review",
         "uncalled_functions",
         "unused_enums",
         "signature",
@@ -53,7 +54,7 @@ _NON_OBJECTIVE_DETECTORS = frozenset(
 
 # Keep policy details that are independent of tier/dimension wiring.
 _FILE_BASED_POLICY_DETECTORS = frozenset(
-    {"smells", "dict_keys", "test_coverage", "subjective_review", "security", "concerns", "review"}
+    {"smells", "dict_keys", "test_coverage", "security", "concerns", "review"}
 )
 _LOC_WEIGHT_POLICY_DETECTORS = frozenset({"test_coverage"})
 _EXCLUDED_ZONE_OVERRIDES: dict[str, frozenset[str]] = {
@@ -143,7 +144,7 @@ HOLISTIC_POTENTIAL = 10
 
 # Budget: subjective dimensions get this fraction of the overall score.
 # Mechanical dimensions get the remainder.
-SUBJECTIVE_WEIGHT_FRACTION = 0.60
+SUBJECTIVE_WEIGHT_FRACTION = 0.75
 MECHANICAL_WEIGHT_FRACTION = 1.0 - SUBJECTIVE_WEIGHT_FRACTION
 
 # Per-dimension weighting within the mechanical pool.

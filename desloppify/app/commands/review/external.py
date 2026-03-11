@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import secrets
 import shlex
-import subprocess
+import subprocess  # nosec B404
 import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -34,6 +34,7 @@ from .prompt_sections import (
     join_non_empty_sections,
     render_dimension_prompts_block,
     render_historical_focus,
+    render_judgment_findings_section,
     render_mechanical_concern_signals,
     render_scan_evidence_note,
     render_scope_enums,
@@ -225,10 +226,14 @@ def _build_claude_launch_prompt(
             f"--- Batch {i + 1}: {ctx.name} ---\n"
             f"Rationale: {ctx.rationale}\n"
         )
-        section += render_dimension_prompts_block(ctx.dimensions, dim_prompts)
+        section += render_dimension_prompts_block(
+            ctx.dimensions,
+            ctx.dimension_prompts or dim_prompts,
+        )
         section += render_seed_files_block(ctx)
         section += render_historical_focus(batch)
         section += render_mechanical_concern_signals(batch)
+        section += render_judgment_findings_section(batch)
         batch_sections.append(section)
 
     if not combined_cap:
@@ -257,7 +262,10 @@ def _build_claude_launch_prompt(
         '    "confidence": "high|medium|low",\n'
         '    "impact_scope": "local|module|subsystem|codebase",\n'
         '    "fix_scope": "single_edit|multi_file_refactor|architectural_change",\n'
-        '    "root_cause_cluster": "optional_cluster_name"\n'
+        '    "root_cause_cluster": "optional_cluster_name",\n'
+        '    "concern_verdict": "confirmed|dismissed  // for concern signals only",\n'
+        '    "concern_fingerprint": "abc123  // required when dismissed; copy from signal fingerprint",\n'
+        '    "reasoning": "why dismissed  // optional, for dismissed only"\n'
         "  }]\n"
         "}\n\n"
     )
@@ -269,8 +277,17 @@ def _build_claude_launch_prompt(
         "3. Do not include provenance metadata (CLI injects canonical provenance).\n"
     )
 
-    from desloppify.engine.plan_state import load_policy, render_policy_block
-    policy_text = render_policy_block(load_policy())
+    from desloppify.engine.plan_state import load_policy_result, render_policy_block
+
+    policy_result = load_policy_result()
+    policy_text = render_policy_block(policy_result.policy)
+    if not policy_result.ok:
+        print(
+            colorize(
+                f"  Warning: ignoring malformed project policy ({policy_result.message or 'unknown error'}).",
+                "yellow",
+            )
+        )
 
     return join_non_empty_sections(
         header,

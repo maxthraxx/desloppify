@@ -18,8 +18,13 @@ SERVICE_ROLE_TOKEN_RE = re.compile(
 
 AUTH_GUARD_TOKEN_RE = re.compile(
     r"@(?:login_required|require_auth|auth_required|requires_auth|authenticated)\b"
-    r"|\brequireAuth\b|\bwithAuth\b|\bgetServerSession\b|\bauthenticateRequest\b"
-    r"|\bauth\.getUser\b|\bsupabase\.auth(?:\.getUser)?\b|\bverifyToken\b",
+    r"|\brequireAuth\b|\bwithAuth\b|\bauthenticateRequest\b|\bverifyToken\b",
+    re.IGNORECASE,
+)
+
+AUTH_LOOKUP_TOKEN_RE = re.compile(
+    r"\bgetServerSession\b|\bauth\.getUser\b|\bsupabase\.auth(?:\.getUser)?\b"
+    r"|\brequest\.user\b|\bsession\.user\b|\bgetUser\b",
     re.IGNORECASE,
 )
 

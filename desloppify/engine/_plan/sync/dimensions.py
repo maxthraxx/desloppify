@@ -1,14 +1,17 @@
 """Sync subjective dimensions into the plan queue.
 
-Two independent sync functions:
+Single-pass sync for all three subjective categories:
 
-- **sync_unscored_dimensions** — append never-scored (placeholder) dimensions
-  to the *back* of the queue unconditionally.
-- **sync_stale_dimensions** — append stale (previously-scored) dimensions to
-  the *back* of the queue when no objective items remain, and evict them
-  again when objective backlog returns.
+- **unscored** — placeholder dimensions never yet reviewed.  Injected at cycle
+  boundaries only; pruned mid-cycle.
+- **stale** — dimensions whose assessment needs a review refresh.
+- **under_target** — scored below target but not stale.
 
-Invariant: new items are always appended — sync never reorders existing queue.
+Stale and under-target IDs share injection rules: injected when no objective
+backlog exists, evicted when it does, force-promoted after repeated deferrals.
+
+Invariant: new items are always appended — sync never reorders existing queue
+(except escalation promotion, which moves deferred IDs ahead of objective work).
 """
 
 from __future__ import annotations
@@ -21,6 +24,21 @@ from desloppify.engine._plan.policy.subjective import SubjectiveVisibility
 from desloppify.engine._state.schema import StateModel
 
 from .context import has_objective_backlog, is_mid_cycle
+from .defer_policy import (
+    DeferEscalationOptions,
+    DeferUpdateOptions,
+    should_escalate_defer_state,
+    update_defer_state,
+)
+
+
+# ---------------------------------------------------------------------------
+# Defer-meta keys (shared with work_queue readers via plan dict)
+# ---------------------------------------------------------------------------
+
+_DEFER_META_KEY = "subjective_defer_meta"
+_DEFER_IDS_FIELD = "deferred_review_ids"
+_FORCE_IDS_KEY = "force_visible_ids"
 
 
 # ---------------------------------------------------------------------------
@@ -123,39 +141,137 @@ def _inject_subjective_ids(
 
 
 # ---------------------------------------------------------------------------
-# Unscored dimension sync (back of queue, unconditional)
+# Deferral tracking and escalation
 # ---------------------------------------------------------------------------
 
-def sync_unscored_dimensions(
+def _clear_defer_meta(plan: PlanModel) -> None:
+    plan.pop(_DEFER_META_KEY, None)
+
+
+def _promote_subjective_ids(order: list[str], ids: list[str]) -> int:
+    """Move subjective IDs ahead of objective backlog while preserving order.
+
+    Inserts after any workflow/triage items at the front of the queue.
+    """
+    target_ids: list[str] = []
+    seen: set[str] = set()
+    for fid in ids:
+        sid = str(fid).strip()
+        if not sid or sid in seen:
+            continue
+        target_ids.append(sid)
+        seen.add(sid)
+    if not target_ids:
+        return 0
+
+    insert_at = 0
+    while insert_at < len(order):
+        current = str(order[insert_at])
+        if not (
+            current.startswith("workflow::") or current.startswith("triage::")
+        ):
+            break
+        insert_at += 1
+
+    changes = 0
+    for sid in target_ids:
+        existing_idx = order.index(sid) if sid in order else None
+        target_idx = min(insert_at, len(order))
+        if existing_idx is not None:
+            if existing_idx == target_idx:
+                insert_at += 1
+                continue
+            order.pop(existing_idx)
+            if existing_idx < target_idx:
+                target_idx -= 1
+        order.insert(target_idx, sid)
+        insert_at = target_idx + 1
+        changes += 1
+    return changes
+
+
+def _update_deferral(
     plan: PlanModel,
     state: StateModel,
-) -> QueueSyncResult:
-    """Keep the plan queue in sync with unscored (placeholder) subjective dimensions.
+    *,
+    injectable_ids: set[str],
+    stale_ids: set[str],
+    under_target_ids: set[str],
+    skipped_ids: set[str],
+) -> bool:
+    """Update defer-meta and return True if escalation threshold is reached."""
+    stale_deferred = sorted(stale_ids - skipped_ids)
+    under_target_deferred = sorted(under_target_ids - skipped_ids)
 
-    1. **Prune** — always remove ``subjective::*`` IDs from ``queue_order``
-       that are no longer unscored AND not stale (avoids pruning stale IDs —
-       that is ``sync_stale_dimensions``' responsibility).  Pruning runs even
-       mid-cycle to clean up items that were incorrectly injected by older
-       code that lacked the mid-cycle guard.
-    2. **Inject** — append currently-unscored IDs to the *back* of
-       ``queue_order``.  Never reorders existing items.  Skipped mid-cycle —
-       unscored dimensions surface at cycle boundaries only.
+    defer_state = update_defer_state(
+        plan.get(_DEFER_META_KEY),
+        state=state,
+        deferred_ids=injectable_ids,
+        options=DeferUpdateOptions(deferred_ids_field=_DEFER_IDS_FIELD),
+    )
+    defer_state["deferred_stale_ids"] = stale_deferred
+    defer_state["deferred_under_target_ids"] = under_target_deferred
+
+    escalated = should_escalate_defer_state(
+        defer_state,
+        state=state,
+        options=DeferEscalationOptions(deferred_ids_field=_DEFER_IDS_FIELD),
+    )
+
+    if escalated:
+        defer_state[_FORCE_IDS_KEY] = sorted(injectable_ids)
+    else:
+        defer_state.pop(_FORCE_IDS_KEY, None)
+
+    plan[_DEFER_META_KEY] = defer_state
+    return escalated
+
+
+# ---------------------------------------------------------------------------
+# Unified subjective dimension sync
+# ---------------------------------------------------------------------------
+
+def sync_subjective_dimensions(
+    plan: PlanModel,
+    state: StateModel,
+    *,
+    policy: SubjectiveVisibility | None = None,
+    cycle_just_completed: bool = False,
+) -> QueueSyncResult:
+    """Single-pass sync for all subjective dimensions in the plan queue.
+
+    Handles three categories with unified prune/inject logic:
+
+    - **unscored**: placeholder dimensions not yet reviewed.  Injected at cycle
+      boundaries; pruned mid-cycle.
+    - **stale**: dimensions needing review refresh.
+    - **under_target**: scored below target but not stale.
+
+    Stale/under-target injection is gated by objective backlog:
+
+    1. **No backlog** (or cycle just completed) — inject to back of queue.
+    2. **Backlog, not escalated** — evict from queue.  Update deferral counter.
+    3. **Backlog, escalated** — force-promote to front (after workflow/triage).
+
+    Unscored injection is unconditional at cycle boundaries, independent of
+    backlog state.
     """
     ensure_plan_defaults(plan)
     result = QueueSyncResult()
+    order: list[str] = plan["queue_order"]
     mid_cycle = is_mid_cycle(plan)
 
+    # --- Compute all ID sets once -----------------------------------------
     unscored_ids = current_unscored_ids(state)
     stale_ids = stale_policy_mod.current_stale_ids(
         state, subjective_prefix=SUBJECTIVE_PREFIX,
     )
-    order: list[str] = plan["queue_order"]
+    under_target_ids = current_under_target_ids(state)
     skipped_ids = _skipped_subjective_ids(plan)
+    injectable_ids = (stale_ids | under_target_ids) - skipped_ids
 
+    # --- Resurface: clear skips for never-reviewed dimensions -------------
     if not mid_cycle:
-        # Unscored dimensions have never been reviewed — a permanent skip on a
-        # placeholder is premature (the scoring pipeline needs actual scores).
-        # Clear any skip entries so they resurface for initial review.
         skipped_dict = plan.get("skipped", {})
         if isinstance(skipped_dict, dict):
             for sid in sorted(unscored_ids & skipped_ids):
@@ -163,20 +279,33 @@ def sync_unscored_dimensions(
                 result.resurfaced.append(sid)
             skipped_ids -= unscored_ids
 
-    # Keep queue/skipped invariants healthy even if an old plan contains overlap.
+    # --- Repair: remove skipped IDs from queue_order ----------------------
     _prune_skipped_subjective_ids(order, skipped_ids=skipped_ids, pruned=result.pruned)
 
-    # --- Cleanup: prune subjective IDs that are no longer unscored --------
-    # Only prune IDs that are neither unscored nor stale (stale sync owns those).
-    # Mid-cycle: prune ALL subjective IDs (keep_ids empty) since they
-    # shouldn't be in the queue mid-cycle at all.
-    if mid_cycle:
-        _prune_subjective_ids(order, keep_ids=set(), pruned=result.pruned)
+    # --- Backlog and deferral ---------------------------------------------
+    objective_backlog = has_objective_backlog(state, policy)
+    should_defer = objective_backlog and not cycle_just_completed
+    escalated = False
+    if should_defer and injectable_ids:
+        escalated = _update_deferral(
+            plan, state,
+            injectable_ids=injectable_ids,
+            stale_ids=stale_ids,
+            under_target_ids=under_target_ids,
+            skipped_ids=skipped_ids,
+        )
     else:
-        _prune_subjective_ids(order, keep_ids=unscored_ids | stale_ids, pruned=result.pruned)
+        _clear_defer_meta(plan)
 
-    # --- Inject: append unscored IDs to back of queue ---------------------
-    # Mid-cycle: don't inject — they'll surface at cycle end.
+    # --- Single prune pass ------------------------------------------------
+    evicting = should_defer and not escalated
+    if evicting:
+        keep_ids = set() if mid_cycle else unscored_ids
+    else:
+        keep_ids = injectable_ids if mid_cycle else (unscored_ids | injectable_ids)
+    _prune_subjective_ids(order, keep_ids=keep_ids, pruned=result.pruned)
+
+    # --- Inject unscored (cycle boundaries only) --------------------------
     if not mid_cycle:
         _inject_subjective_ids(
             order,
@@ -184,66 +313,10 @@ def sync_unscored_dimensions(
             injected=result.injected,
         )
 
-    return result
-
-
-# ---------------------------------------------------------------------------
-# Stale dimension sync (back of queue, conditional)
-# ---------------------------------------------------------------------------
-
-def sync_stale_dimensions(
-    plan: PlanModel,
-    state: StateModel,
-    *,
-    policy: SubjectiveVisibility | None = None,
-    cycle_just_completed: bool = False,
-) -> QueueSyncResult:
-    """Keep the plan queue in sync with stale and under-target subjective dimensions.
-
-    1. Remove any ``subjective::*`` IDs from ``queue_order`` that are no
-       longer stale/under-target and not unscored (avoids pruning IDs owned
-       by ``sync_unscored_dimensions``).
-       When objective backlog exists (and this is not a just-completed cycle),
-       stale/under-target IDs are also evicted so they do not block objective work.
-    2. Append stale and under-target dimension IDs to the *back* when either:
-       a. No objective items remain (mid-cycle), OR
-       b. A cycle just completed.
-       Never reorders existing items.
-    """
-    ensure_plan_defaults(plan)
-    result = QueueSyncResult()
-    stale_ids = stale_policy_mod.current_stale_ids(
-        state, subjective_prefix=SUBJECTIVE_PREFIX,
-    )
-    under_target_ids = current_under_target_ids(state)
-    skipped_ids = _skipped_subjective_ids(plan)
-    injectable_ids = (stale_ids | under_target_ids) - skipped_ids
-    unscored_ids = current_unscored_ids(state)
-    order: list[str] = plan["queue_order"]
-
-    # Keep queue/skipped invariants healthy even if an old plan contains overlap.
-    _prune_skipped_subjective_ids(order, skipped_ids=skipped_ids, pruned=result.pruned)
-
-    objective_backlog = has_objective_backlog(state, policy)
-
-    # --- Cleanup: prune resolved subjective IDs --------------------------
-    # Mid-cycle: don't keep unscored IDs — sync_unscored_dimensions owns
-    # those and prunes them mid-cycle.  Only keep stale/under-target when
-    # objective backlog is clear or just-completed.
-    # Non-mid-cycle: keep unscored IDs always (they belong in the queue).
-    mid_cycle = is_mid_cycle(plan)
-    if mid_cycle:
-        keep_ids = injectable_ids if not objective_backlog else set()
-    else:
-        keep_ids = unscored_ids | injectable_ids
-        if objective_backlog and not cycle_just_completed:
-            keep_ids = unscored_ids
-    _prune_subjective_ids(order, keep_ids=keep_ids, pruned=result.pruned)
-
-    # --- Inject stale + under-target dimensions --------------------------
-    should_inject = not objective_backlog or cycle_just_completed
-
-    if should_inject and injectable_ids:
+    # --- Inject or promote stale/under_target -----------------------------
+    if escalated:
+        _promote_subjective_ids(order, sorted(injectable_ids))
+    elif not evicting and injectable_ids:
         _inject_subjective_ids(order, inject_ids=injectable_ids, injected=result.injected)
 
     return result
@@ -252,6 +325,5 @@ def sync_stale_dimensions(
 __all__ = [
     "current_under_target_ids",
     "current_unscored_ids",
-    "sync_stale_dimensions",
-    "sync_unscored_dimensions",
+    "sync_subjective_dimensions",
 ]

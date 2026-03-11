@@ -10,8 +10,8 @@ import desloppify.app.commands.plan.triage.runner.stage_prompts_instruction_bloc
 import desloppify.app.commands.plan.triage.runner.stage_prompts_observe as prompts_observe_mod
 import desloppify.app.commands.plan.triage.runner.stage_prompts_sense as prompts_sense_mod
 import desloppify.app.commands.plan.triage.runner.stage_prompts_validation as prompts_validation_mod
-import desloppify.app.commands.plan.triage.stage_flow_enrich as stage_flow_enrich_mod
-import desloppify.app.commands.plan.triage.stage_flow_sense_check as stage_flow_sense_mod
+import desloppify.app.commands.plan.triage.stages.enrich as stage_flow_enrich_mod
+import desloppify.app.commands.plan.triage.stages.sense_check as stage_flow_sense_mod
 
 
 def _assert_sections(text: str, sections: tuple[str, ...]) -> None:
@@ -24,6 +24,9 @@ class _Services:
         self.plan = plan
         self.save_calls = 0
         self.logs: list[dict] = []
+
+    def command_runtime(self, _args) -> SimpleNamespace:
+        return SimpleNamespace(state={"issues": {}})
 
     def load_plan(self) -> dict:
         return self.plan

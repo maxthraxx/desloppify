@@ -19,6 +19,52 @@ from ..services import TriageServices, default_triage_services
 MIN_ATTESTATION_LEN = 80
 
 
+def _find_referenced_names(text: str, names: list[str] | None) -> list[str]:
+    if not names:
+        return []
+    return [
+        name for name in names
+        if name.lower().replace("_", " ") in text or name.lower() in text
+    ]
+
+
+def _validate_observe_attestation(text: str, dimensions: list[str] | None) -> str | None:
+    found = _find_referenced_names(text, dimensions)
+    if found or not dimensions:
+        return None
+    dim_list = ", ".join(dimensions[:6])
+    return f"Attestation must reference at least one dimension from the summary. Mention one of: {dim_list}"
+
+
+def _validate_reflect_attestation(
+    text: str,
+    *,
+    dimensions: list[str] | None,
+    cluster_names: list[str] | None,
+) -> str | None:
+    refs = _find_referenced_names(text, dimensions) + _find_referenced_names(text, cluster_names)
+    if refs or not (dimensions or cluster_names):
+        return None
+    return (
+        "Attestation must reference at least one dimension or cluster name.\n"
+        f"  Valid dimensions: {', '.join((dimensions or [])[:6])}\n"
+        f"  Valid clusters: {', '.join((cluster_names or [])[:6]) if cluster_names else '(none yet)'}"
+    )
+
+
+def _validate_cluster_attestation(
+    text: str,
+    *,
+    cluster_names: list[str] | None,
+    action: str,
+) -> str | None:
+    found = _find_referenced_names(text, cluster_names)
+    if found or not cluster_names:
+        return None
+    names = ", ".join(cluster_names[:6])
+    return f"Attestation must reference at least one cluster you {action}. Mention one of: {names}"
+
+
 def validate_attestation(
     attestation: str,
     stage: str,
@@ -28,49 +74,31 @@ def validate_attestation(
 ) -> str | None:
     """Return error message if attestation doesn't reference required data."""
     text = attestation.lower()
-
-    if stage == "observe":
-        if dimensions:
-            found = [d for d in dimensions if d.lower().replace("_", " ") in text or d.lower() in text]
-            if not found:
-                dim_list = ", ".join(dimensions[:6])
-                return f"Attestation must reference at least one dimension from the summary. Mention one of: {dim_list}"
-
-    elif stage == "reflect":
-        refs: list[str] = []
-        if dimensions:
-            refs.extend(d for d in dimensions if d.lower().replace("_", " ") in text or d.lower() in text)
-        if cluster_names:
-            refs.extend(n for n in cluster_names if n.lower() in text)
-        if not refs and (dimensions or cluster_names):
-            return (
-                "Attestation must reference at least one dimension or cluster name.\n"
-                f"  Valid dimensions: {', '.join((dimensions or [])[:6])}\n"
-                f"  Valid clusters: {', '.join((cluster_names or [])[:6]) if cluster_names else '(none yet)'}"
-            )
-
-    elif stage == "organize":
-        if cluster_names:
-            found = [n for n in cluster_names if n.lower() in text]
-            if not found:
-                names = ", ".join(cluster_names[:6])
-                return f"Attestation must reference at least one cluster from the plan. Mention one of: {names}"
-
-    elif stage == "enrich":
-        if cluster_names:
-            found = [n for n in cluster_names if n.lower() in text]
-            if not found:
-                names = ", ".join(cluster_names[:6])
-                return f"Attestation must reference at least one cluster you enriched. Mention one of: {names}"
-
-    elif stage == "sense-check":
-        if cluster_names:
-            found = [n for n in cluster_names if n.lower() in text]
-            if not found:
-                names = ", ".join(cluster_names[:6])
-                return f"Attestation must reference at least one cluster you sense-checked. Mention one of: {names}"
-
-    return None
+    validators = {
+        "observe": lambda: _validate_observe_attestation(text, dimensions),
+        "reflect": lambda: _validate_reflect_attestation(
+            text,
+            dimensions=dimensions,
+            cluster_names=cluster_names,
+        ),
+        "organize": lambda: _validate_cluster_attestation(
+            text,
+            cluster_names=cluster_names,
+            action="organized",
+        ),
+        "enrich": lambda: _validate_cluster_attestation(
+            text,
+            cluster_names=cluster_names,
+            action="enriched",
+        ),
+        "sense-check": lambda: _validate_cluster_attestation(
+            text,
+            cluster_names=cluster_names,
+            action="sense-checked",
+        ),
+    }
+    validator = validators.get(stage)
+    return validator() if validator is not None else None
 
 
 def confirm_observe(

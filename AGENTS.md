@@ -124,10 +124,10 @@ desloppify scan --path . --reset-subjective       # reset subjective baseline to
 
 ### How scoring works
 
-Overall score = **40% mechanical** + **60% subjective**.
+Overall score = **25% mechanical** + **75% subjective**.
 
-- **Mechanical (40%)**: auto-detected issues — duplication, dead code, smells, unused imports, security. Fixed by changing code and rescanning.
-- **Subjective (60%)**: design quality review — naming, error handling, abstractions, clarity. Starts at **0%** until reviewed. The scan will prompt you when a review is needed.
+- **Mechanical (25%)**: auto-detected issues — duplication, dead code, smells, unused imports, security. Fixed by changing code and rescanning.
+- **Subjective (75%)**: design quality review — naming, error handling, abstractions, clarity. Starts at **0%** until reviewed. The scan will prompt you when a review is needed.
 - **Strict score** is the north star: wontfix items count as open. The gap between overall and strict is your wontfix debt.
 - **Score types**: overall (lenient), strict (wontfix counts), objective (mechanical only), verified (confirmed fixes only).
 

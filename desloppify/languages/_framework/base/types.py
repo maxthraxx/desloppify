@@ -81,6 +81,7 @@ class LangRuntimeContract(Protocol):
     complexity_map: dict[str, float]
     review_cache: dict[str, Any]
     review_max_age_days: int
+    subjective_assessments: dict[str, Any]
     detector_coverage: dict[str, DetectorCoverageRecord]
     coverage_warnings: list[DetectorCoverageRecord]
 

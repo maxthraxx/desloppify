@@ -437,30 +437,61 @@ def test_dimension_metadata_uses_prompt_meta_overrides(monkeypatch):
 
 
 def test_dimension_metadata_can_override_weight_per_language():
-    """Per-language weight overrides are no longer supported via dynamic providers.
-
-    Since the catalog PR #226, the base-layer metadata uses a static catalog.
-    Language-specific filtering now happens in intelligence-layer metadata
-    APIs.  Unknown dimensions get fallback weight 1.0 regardless of language.
-    """
+    """Language-aware metadata helpers honor per-language prompt metadata."""
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(
+        dimensions_metadata_mod,
+        "load_dimensions_for_lang",
+        lambda lang_name: (
+            ["shared_dimension", "lang_dimension"] if lang_name == "python" else ["shared_dimension"],
+            {
+                "shared_dimension": {
+                    "prompt": "shared",
+                    "meta": {"weight": 2.5, "display_name": "Shared Display"},
+                },
+                "lang_dimension": {
+                    "prompt": "lang",
+                    "meta": {
+                        "weight": 4.0,
+                        "display_name": "Lang Display",
+                        "enabled_by_default": True,
+                        "reset_on_scan": False,
+                    },
+                },
+            },
+            "system",
+        ),
+    )
     dimensions_metadata_mod.load_subjective_dimension_metadata.cache_clear()
     dimensions_metadata_mod.load_subjective_dimension_metadata_for_lang.cache_clear()
     try:
-        # Unknown dimension gets fallback weight
         assert dimensions_metadata_mod.dimension_weight("shared_dimension") == 1.0
         assert (
             dimensions_metadata_mod.dimension_weight(
                 "shared_dimension", lang_name="python"
             )
-            == 1.0
+            == 2.5
         )
-        # Unknown dimension gets title-cased display name
         assert (
             dimensions_metadata_mod.dimension_display_name(
                 "shared_dimension", lang_name="python"
             )
-            == "Shared Dimension"
+            == "Shared Display"
+        )
+        assert dimensions_metadata_mod.dimension_display_name(
+            "lang_dimension", lang_name="python"
+        ) == "Lang Display"
+        assert dimensions_metadata_mod.dimension_weight(
+            "lang_dimension", lang_name="python"
+        ) == 4.0
+        assert dimensions_metadata_mod.default_dimension_keys_for_lang("python") == (
+            "lang_dimension",
+            "shared_dimension",
+        )
+        assert "lang_dimension" not in dimensions_metadata_mod.resettable_default_dimensions(
+            lang_name="python"
         )
     finally:
         dimensions_metadata_mod.load_subjective_dimension_metadata.cache_clear()
         dimensions_metadata_mod.load_subjective_dimension_metadata_for_lang.cache_clear()
+        monkeypatch.undo()

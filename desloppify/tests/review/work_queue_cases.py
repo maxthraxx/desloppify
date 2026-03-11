@@ -46,9 +46,9 @@ def test_review_issue_uses_natural_tier():
         tier=2,
         detail={"dimension": "naming_quality"},
     )
-    mechanical = _issue("smells::src/a.py::x", detector="smells", tier=3)
+    # Review is non-objective — when no objective items exist, it surfaces.
     state = _state(
-        [review, mechanical],
+        [review],
         dimension_scores={
             "Naming quality": {"score": 94.0, "strict": 94.0, "failing": 1}
         },
@@ -57,10 +57,11 @@ def test_review_issue_uses_natural_tier():
     queue = build_work_queue(state, count=None, include_subjective=False)
     by_id = {item["id"]: item for item in queue["items"] if item["kind"] == "issue"}
     assert "review::src/a.py::naming" in by_id
-    assert "smells::src/a.py::x" in by_id
+    # Verify tier preserved
+    assert by_id["review::src/a.py::naming"]["tier"] == 2
 
 
-def test_review_items_ranked_alongside_mechanical():
+def test_review_items_postflight_when_objective_exists():
     urgent = _issue(
         "security::src/a.py::x", detector="security", tier=1, confidence="high"
     )
@@ -80,9 +81,9 @@ def test_review_items_ranked_alongside_mechanical():
 
     queue = build_work_queue(state, count=None, include_subjective=False)
     ids = {item["id"] for item in queue["items"]}
-    # Both items appear in the queue
+    # Review is non-objective — filtered when objective items exist
     assert "security::src/a.py::x" in ids
-    assert "review::src/a.py::naming" in ids
+    assert "review::src/a.py::naming" not in ids
 
 
 def test_review_items_sort_by_issue_weight_within_tier():
@@ -299,16 +300,28 @@ def test_unassessed_subjective_item_points_to_holistic_refresh():
 
 def test_subjective_review_issue_points_to_review_triage():
     coverage = _issue(
-        "subjective_review::src/a.py::changed",
+        "subjective_review::.::naming_quality",
         detector="subjective_review",
+        file=".",
         tier=4,
-        detail={"reason": "changed"},
+        detail={"reason": "unassessed", "dimension": "naming_quality"},
     )
     state = _state([coverage])
 
     queue = build_work_queue(state, count=None, include_subjective=False)
     item = queue["items"][0]
-    assert item["primary_command"] == "desloppify show subjective"
+    assert item["primary_command"] == "desloppify review --prepare --dimensions naming_quality"
+
+
+def test_subjective_review_issue_is_marked_subjective():
+    issue = _issue(
+        "subjective_review::.::naming_quality",
+        detector="subjective_review",
+        detail={"dimension": "naming_quality"},
+    )
+    queue = build_work_queue(_state([issue]), count=None, include_subjective=False)
+    by_id = {item["id"]: item for item in queue["items"]}
+    assert by_id[issue["id"]]["is_subjective"] is True
 
 
 def test_holistic_subjective_review_issue_points_to_holistic_refresh():
@@ -355,23 +368,17 @@ def test_invalid_status_raises_value_error():
 
 def test_legacy_string_detail_does_not_crash_queue_build():
     """Queue building should tolerate issues whose detail is a plain string."""
-    review = _issue(
-        "review::src/a.py::legacy",
-        detector="review",
-        detail={"dimension": "naming_quality"},
-    )
     weird = _issue("responsibility_cohesion::src/a.py::legacy", detector="smells")
     weird["detail"] = "Clusters: alpha, beta"
 
     state = _state(
-        [review, weird],
+        [weird],
         dimension_scores={
             "Naming quality": {"score": 92.0, "strict": 92.0, "failing": 1}
         },
     )
     queue = build_work_queue(state, count=None, include_subjective=False)
     ids = [item["id"] for item in queue["items"]]
-    assert "review::src/a.py::legacy" in ids
     assert "responsibility_cohesion::src/a.py::legacy" in ids
 
 
@@ -827,5 +834,4 @@ def test_registry_standalone_threshold_count():
     assert sorted(threshold_detectors) == sorted([
         "props", "patterns", "naming", "react", "smells", "dupes", "dict_keys",
     ])
-
 

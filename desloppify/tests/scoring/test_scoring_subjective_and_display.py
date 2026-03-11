@@ -303,16 +303,14 @@ class TestSubjectiveScoring:
         )
         assert impact == 0.0
 
-    def test_test_health_dimension_has_subjective_review(self):
-        """Verify 'Test health' dimension contains subjective_review detector."""
-        test_dim = None
+    def test_subjective_review_not_in_any_scoring_dimension(self):
+        """Verify subjective_review is excluded from scoring dimensions (non-objective)."""
+        from desloppify.engine._scoring.policy.core import _NON_OBJECTIVE_DETECTORS
+        assert "subjective_review" in _NON_OBJECTIVE_DETECTORS
         for dim in DIMENSIONS:
-            if dim.name == "Test health":
-                test_dim = dim
-                break
-        assert test_dim is not None, "Test health dimension not found"
-        assert "subjective_review" in test_dim.detectors
-        assert test_dim.tier == 4
+            assert "subjective_review" not in dim.detectors, (
+                f"subjective_review should not be in {dim.name}"
+            )
 
 
 class TestConstants:

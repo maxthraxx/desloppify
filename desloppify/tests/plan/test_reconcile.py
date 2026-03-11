@@ -95,6 +95,22 @@ def test_supersede_removes_from_cluster_issue_ids():
     assert "b" in plan["clusters"]["my-cluster"]["issue_ids"]
 
 
+def test_reconcile_clears_focus_when_focused_cluster_becomes_empty():
+    """Reconcile should exit focus mode when the focused cluster loses its last issue."""
+    plan = _plan_with_queue("a")
+    ensure_plan_defaults(plan)
+    create_cluster(plan, "my-cluster")
+    add_to_cluster(plan, "my-cluster", ["a"])
+    plan["active_cluster"] = "my-cluster"
+
+    state = _state_with_issues()  # "a" disappeared
+    result = reconcile_plan_after_scan(plan, state)
+
+    assert "a" in result.superseded
+    assert plan["clusters"]["my-cluster"]["issue_ids"] == []
+    assert plan["active_cluster"] is None
+
+
 # ---------------------------------------------------------------------------
 # Reconcile logs execution
 # ---------------------------------------------------------------------------

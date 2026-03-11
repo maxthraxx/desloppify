@@ -12,12 +12,51 @@ from .prepare_batches_core import (
 )
 
 
+def _count_findings_for_dimensions(
+    state: dict,
+    dimensions: list[str],
+) -> tuple[dict[str, int], dict[str, int]]:
+    """Count open findings for detectors relevant to the given dimensions.
+
+    Returns (judgment_counts, mechanical_counts) keyed by detector name.
+    """
+    from desloppify.base.registry import JUDGMENT_DETECTORS, dimension_to_detectors
+
+    dim_detectors = dimension_to_detectors()
+    relevant: set[str] = set()
+    for dim in dimensions:
+        relevant.update(dim_detectors.get(dim, ()))
+    if not relevant:
+        return {}, {}
+
+    issues = state.get("issues")
+    if not isinstance(issues, dict):
+        return {}, {}
+
+    judgment: dict[str, int] = {}
+    mechanical: dict[str, int] = {}
+    for issue in issues.values():
+        if not isinstance(issue, dict):
+            continue
+        status = str(issue.get("status", "")).strip()
+        if status not in ("open", "reopened"):
+            continue
+        detector = str(issue.get("detector", "")).strip()
+        if detector not in relevant:
+            continue
+        target = judgment if detector in JUDGMENT_DETECTORS else mechanical
+        target[detector] = target.get(detector, 0) + 1
+
+    return judgment, mechanical
+
+
 def build_investigation_batches(
     holistic_ctx,
     lang: object,
     *,
     repo_root: Path | None = None,
     max_files_per_batch: int | None = None,
+    state: dict | None = None,
 ) -> list[dict]:
     """Build one batch per dimension from holistic context."""
     ctx = _ensure_holistic_context(holistic_ctx)
@@ -39,14 +78,21 @@ def build_investigation_batches(
         if not files:
             continue
 
-        batches.append(
-            {
-                "name": dimension,
-                "dimensions": [dimension],
-                "files_to_read": files,
-                "why": f"seed files for {dimension} review",
-            }
-        )
+        batch: dict[str, object] = {
+            "name": dimension,
+            "dimensions": [dimension],
+            "files_to_read": files,
+            "why": f"seed files for {dimension} review",
+        }
+
+        if state is not None:
+            j_counts, m_counts = _count_findings_for_dimensions(state, [dimension])
+            if j_counts:
+                batch["judgment_finding_counts"] = j_counts
+            if m_counts:
+                batch["mechanical_finding_counts"] = m_counts
+
+        batches.append(batch)
 
     return batches
 
@@ -132,15 +178,24 @@ def batch_concerns(
         summary = str(getattr(concern, "summary", "")).strip()
         question = str(getattr(concern, "question", "")).strip()
         concern_type = str(getattr(concern, "type", "")).strip()
-        concern_signals.append(
-            {
-                "type": concern_type or "design_concern",
-                "file": candidate,
-                "summary": summary or "Mechanical concern requires subjective judgment",
-                "question": question or "Is this pattern intentional or debt?",
-                "evidence": evidence,
-            }
+        fingerprint = str(getattr(concern, "fingerprint", "")).strip()
+        source_issues = tuple(
+            str(sid)
+            for sid in getattr(concern, "source_issues", ())
+            if isinstance(sid, str) and sid
         )
+        signal: dict[str, object] = {
+            "type": concern_type or "design_concern",
+            "file": candidate,
+            "summary": summary or "Mechanical concern requires subjective judgment",
+            "question": question or "Is this pattern intentional or debt?",
+            "evidence": evidence,
+        }
+        if fingerprint:
+            signal["fingerprint"] = fingerprint
+        if source_issues:
+            signal["finding_ids"] = list(source_issues)
+        concern_signals.append(signal)
 
     total_candidate_files = len(files)
     if (
@@ -154,15 +209,36 @@ def batch_concerns(
             f"truncated to {max_files} files from {total_candidate_files} candidates"
         )
 
-    return {
+    # Build per-detector judgment finding counts by extracting the detector name
+    # from each source issue ID (format: "detector::file::detail").
+    detector_counts: dict[str, int] = {}
+    seen_source_ids: set[str] = set()
+    for concern in concerns:
+        for sid in getattr(concern, "source_issues", ()):
+            sid_str = str(sid)
+            if sid_str in seen_source_ids:
+                continue
+            seen_source_ids.add(sid_str)
+            detector = sid_str.split("::", 1)[0] if "::" in sid_str else ""
+            if detector:
+                detector_counts[detector] = detector_counts.get(detector, 0) + 1
+
+    result: dict[str, object] = {
         "name": "design_coherence",
         "dimensions": ["design_coherence"],
         "files_to_read": files,
         "why": "; ".join(why_parts),
         "total_candidate_files": total_candidate_files,
-        "concern_signals": concern_signals[:12],
+        "concern_signals": concern_signals,
         "concern_signal_count": len(concern_signals),
     }
+    if detector_counts:
+        result["judgment_finding_counts"] = detector_counts
+    return result
 
 
-__all__ = ["batch_concerns", "build_investigation_batches", "filter_batches_to_dimensions"]
+__all__ = [
+    "batch_concerns",
+    "build_investigation_batches",
+    "filter_batches_to_dimensions",
+]

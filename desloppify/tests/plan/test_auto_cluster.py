@@ -73,20 +73,20 @@ def test_grouping_key_review():
     assert key == "review::abstraction_fitness"
 
 
-def test_grouping_key_needs_judgment_with_kind():
+def test_grouping_key_judgment_required_returns_none():
     from desloppify.base.registry import DETECTORS
+    # needs_judgment=True detectors return None (flow through review, not auto-task)
     f = _issue("a", "dict_keys", detail={"kind": "phantom_read"})
     meta = DETECTORS.get("dict_keys")
-    key = grouping_key(f, meta)
-    assert key == "typed::dict_keys::phantom_read"
+    assert grouping_key(f, meta) is None
 
+    f2 = _issue("a", "structural", file="src/big_file.py")
+    meta2 = DETECTORS.get("structural")
+    assert grouping_key(f2, meta2) is None
 
-def test_grouping_key_structural():
-    from desloppify.base.registry import DETECTORS
-    f = _issue("a", "structural", file="src/big_file.py")
-    meta = DETECTORS.get("structural")
-    key = grouping_key(f, meta)
-    assert key == "file::structural::big_file.py"
+    f3 = _issue("a", "smells")
+    meta3 = DETECTORS.get("smells")
+    assert grouping_key(f3, meta3) is None
 
 
 def test_grouping_key_unknown_detector():
@@ -229,6 +229,21 @@ def test_auto_cluster_user_modified_merges():
     ids = set(plan["clusters"]["auto/unused"]["issue_ids"])
     assert "u1" in ids
     assert "u3" in ids  # new issue added
+
+
+def test_remove_from_cluster_clears_focus_when_cluster_becomes_non_actionable():
+    plan = empty_plan()
+    ensure_plan_defaults(plan)
+    create_cluster(plan, "manual/cleanup")
+    add_to_cluster(plan, "manual/cleanup", ["u1"])
+    plan["queue_order"] = ["u1"]
+    plan["active_cluster"] = "manual/cleanup"
+
+    removed = remove_from_cluster(plan, "manual/cleanup", ["u1"])
+
+    assert removed == 1
+    assert plan["clusters"]["manual/cleanup"]["issue_ids"] == []
+    assert plan["active_cluster"] is None
 
 
 def test_auto_cluster_deletes_stale():
@@ -968,20 +983,26 @@ def test_stale_cluster_uses_actual_stale_ids():
     assert "subjective::error_consistency" not in stale_members
 
 
-def test_under_target_evicted_when_objective_backlog_returns():
-    """Under-target IDs must not stay in queue when objective issues exist."""
+def test_under_target_not_evicted_by_auto_cluster():
+    """auto_cluster_sync no longer evicts under-target IDs — sync_stale owns eviction."""
+    from desloppify.engine._plan.sync.dimensions import sync_subjective_dimensions
+
     plan = empty_plan()
     ut = _under_target_state("design_coherence", "error_consistency", score=70.0)
 
-    # Step 1: no objective items → under-target IDs injected
+    # Step 1: sync_stale injects when no objective backlog
     state_no_obj = {**ut, "issues": {}}
-    auto_cluster_issues(plan, state_no_obj)
+    sync_subjective_dimensions(plan, state_no_obj)
 
     order = plan["queue_order"]
     assert "subjective::design_coherence" in order
     assert "subjective::error_consistency" in order
 
-    # Step 2: objective issues reappear
+    # auto_cluster creates clusters from what sync_stale injected
+    auto_cluster_issues(plan, state_no_obj)
+    assert "auto/under-target-review" in plan["clusters"]
+
+    # Step 2: objective issues reappear — auto_cluster should NOT evict
     state_with_obj = {
         **ut,
         "issues": {
@@ -992,23 +1013,13 @@ def test_under_target_evicted_when_objective_backlog_returns():
     auto_cluster_issues(plan, state_with_obj)
 
     order = plan["queue_order"]
-    # Under-target IDs should have been evicted
-    assert "subjective::design_coherence" not in order
-    assert "subjective::error_consistency" not in order
-    # Objective issues should be present (via queue_order from auto-cluster)
-    # The queue head should not be a subjective under-target item
-    subjective_ut = [
-        fid for fid in order
-        if fid.startswith("subjective::") and fid in {
-            "subjective::design_coherence",
-            "subjective::error_consistency",
-        }
-    ]
-    assert subjective_ut == []
+    # Under-target IDs remain — sync_stale is the authority on eviction
+    assert "subjective::design_coherence" in order
+    assert "subjective::error_consistency" in order
 
 
-def test_stale_ids_evicted_when_objective_backlog_returns():
-    """Stale subjective IDs must not stay in queue when objective issues exist."""
+def test_stale_ids_not_evicted_by_auto_cluster():
+    """auto_cluster_sync no longer evicts stale IDs — sync_stale owns eviction."""
     plan = empty_plan()
     stale_state = _stale_state("design_coherence", "error_consistency", score=50.0)
     plan["queue_order"] = [
@@ -1023,7 +1034,7 @@ def test_stale_ids_evicted_when_objective_backlog_returns():
     assert "subjective::design_coherence" in order
     assert "subjective::error_consistency" in order
 
-    # Step 2: objective issues reappear -> stale IDs should be evicted
+    # Step 2: objective issues reappear -> auto_cluster should NOT evict
     state_with_obj = {
         **stale_state,
         "issues": {
@@ -1034,26 +1045,30 @@ def test_stale_ids_evicted_when_objective_backlog_returns():
     auto_cluster_issues(plan, state_with_obj)
 
     order = plan["queue_order"]
-    assert "subjective::design_coherence" not in order
-    assert "subjective::error_consistency" not in order
+    # IDs remain — auto_cluster no longer evicts
+    assert "subjective::design_coherence" in order
+    assert "subjective::error_consistency" in order
 
 
-def test_under_target_lifecycle_inject_then_evict():
-    """Full lifecycle: inject under-target when no objective, evict when objective returns."""
+def test_under_target_lifecycle_with_sync_stale():
+    """Full lifecycle: sync_stale injects, evicts, re-injects. auto_cluster clusters."""
+    from desloppify.engine._plan.sync.dimensions import sync_subjective_dimensions
+
     plan = empty_plan()
     ut = _under_target_state("design_coherence", "error_consistency", score=70.0)
 
-    # Phase 1: no objective items — under-target injected
+    # Phase 1: sync_stale injects, auto_cluster creates cluster
     state_empty = {**ut, "issues": {}}
-    auto_cluster_issues(plan, state_empty)
+    sync_subjective_dimensions(plan, state_empty)
 
     order = plan["queue_order"]
     assert "subjective::design_coherence" in order
     assert "subjective::error_consistency" in order
-    # Under-target cluster should exist
+
+    auto_cluster_issues(plan, state_empty)
     assert "auto/under-target-review" in plan["clusters"]
 
-    # Phase 2: objective issues appear — under-target evicted from queue
+    # Phase 2: objective issues appear — sync_stale evicts
     state_obj = {
         **ut,
         "issues": {
@@ -1061,17 +1076,81 @@ def test_under_target_lifecycle_inject_then_evict():
             "u2": _issue("u2", "unused"),
         },
     }
-    changes = auto_cluster_issues(plan, state_obj)
-    assert changes >= 1
+    sync_subjective_dimensions(plan, state_obj)
 
     order = plan["queue_order"]
     assert "subjective::design_coherence" not in order
     assert "subjective::error_consistency" not in order
 
-    # Phase 3: objective resolved again — under-target re-injected
+    # Phase 3: objective resolved — sync_stale re-injects
     state_empty2 = {**ut, "issues": {}}
-    auto_cluster_issues(plan, state_empty2)
+    sync_subjective_dimensions(plan, state_empty2)
 
     order = plan["queue_order"]
     assert "subjective::design_coherence" in order
     assert "subjective::error_consistency" in order
+
+
+# ---------------------------------------------------------------------------
+# Judgment-required detectors don't auto-cluster
+# ---------------------------------------------------------------------------
+
+def test_judgment_required_issues_do_not_auto_cluster():
+    """Issues from needs_judgment=True detectors (e.g. smells) must not auto-cluster."""
+    plan = empty_plan()
+    state = _state_with(
+        _issue("s1", "smells"),
+        _issue("s2", "smells"),
+        _issue("s3", "smells"),
+    )
+
+    auto_cluster_issues(plan, state)
+    # No auto-cluster should be created for smells
+    for name in plan["clusters"]:
+        assert "smells" not in name, f"unexpected cluster {name} for judgment-required detector"
+
+
+def test_non_judgment_issues_still_auto_cluster():
+    """Issues from needs_judgment=False detectors (e.g. unused) still auto-cluster."""
+    plan = empty_plan()
+    state = _state_with(
+        _issue("u1", "unused"),
+        _issue("u2", "unused"),
+    )
+
+    auto_cluster_issues(plan, state)
+    assert "auto/unused" in plan["clusters"]
+    assert set(plan["clusters"]["auto/unused"]["issue_ids"]) == {"u1", "u2"}
+
+
+def test_concerns_issues_still_auto_cluster():
+    """Reviewer-confirmed concerns (needs_judgment=False) still auto-cluster."""
+    plan = empty_plan()
+    state = _state_with(
+        _issue("c1", "concerns", detail={"dimension": "design_coherence"}),
+        _issue("c2", "concerns", detail={"dimension": "design_coherence"}),
+    )
+
+    auto_cluster_issues(plan, state)
+    # concerns should still cluster
+    cluster_names = list(plan["clusters"].keys())
+    concerns_clusters = [n for n in cluster_names if "concerns" in n or "design_coherence" in n]
+    assert len(concerns_clusters) >= 1
+
+
+def test_judgment_required_issues_still_in_state():
+    """Judgment-required issues remain in state (affecting scoring) even though they don't cluster."""
+    plan = empty_plan()
+    state = _state_with(
+        _issue("s1", "smells"),
+        _issue("s2", "smells"),
+        _issue("u1", "unused"),
+        _issue("u2", "unused"),
+    )
+
+    auto_cluster_issues(plan, state)
+    # smells issues still exist in state
+    assert "s1" in state["issues"]
+    assert "s2" in state["issues"]
+    # unused auto-clusters normally
+    assert "auto/unused" in plan["clusters"]

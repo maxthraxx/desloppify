@@ -99,7 +99,7 @@ def test_show_score_delta_prints_legend_on_first_scan(monkeypatch, capsys):
     out = capsys.readouterr().out
     assert "Score guide:" in out
     assert "your north star" in out
-    assert "40% mechanical + 60% subjective" in out
+    assert "25% mechanical + 75% subjective" in out
 
 
 def test_show_score_delta_hides_legend_on_subsequent_scans(monkeypatch, capsys):

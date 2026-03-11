@@ -16,6 +16,7 @@ def _build_handlers() -> dict[str, CommandHandler]:
     from desloppify.app.commands.dev import cmd_dev
     from desloppify.app.commands.exclude import cmd_exclude
     from desloppify.app.commands.autofix.cmd import cmd_autofix
+    from desloppify.app.commands.backlog.cmd import cmd_backlog
     from desloppify.app.commands.langs.cmd import cmd_langs
     from desloppify.app.commands.move.cmd import cmd_move
     from desloppify.app.commands.next.cmd import cmd_next
@@ -34,6 +35,7 @@ def _build_handlers() -> dict[str, CommandHandler]:
         "status": cmd_status,
         "show": cmd_show,
         "next": cmd_next,
+        "backlog": cmd_backlog,
         "suppress": cmd_suppress,
         "exclude": cmd_exclude,
         "autofix": cmd_autofix,

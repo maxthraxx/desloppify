@@ -47,6 +47,14 @@ class LangRunStateAccessors:
         self.state.review_cache = value
 
     @property
+    def subjective_assessments(self) -> dict[str, Any]:
+        return self.state.subjective_assessments
+
+    @subjective_assessments.setter
+    def subjective_assessments(self, value: dict[str, Any]) -> None:
+        self.state.subjective_assessments = value
+
+    @property
     def review_max_age_days(self) -> int:
         return self.state.review_max_age_days
 

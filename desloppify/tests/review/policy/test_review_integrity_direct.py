@@ -33,29 +33,29 @@ def test_is_holistic_subjective_issue_accepts_id_summary_or_detail_markers():
     )
 
 
-def test_subjective_review_open_breakdown_counts_reasons_and_holistic_reasons():
+def test_subjective_review_open_breakdown_counts_reasons_and_dimension_counts():
     issues = {
-        "subjective_review::.::holistic_unreviewed": {
+        "subjective_review::.::naming_quality": {
             "detector": "subjective_review",
             "status": "open",
-            "detail": {"reason": "unreviewed"},
+            "detail": {"reason": "unassessed", "dimension": "naming_quality"},
         },
-        "subjective_review::src/a.py::changed": {
+        "subjective_review::.::logic_clarity": {
             "detector": "subjective_review",
             "status": "open",
-            "detail": {"reason": "changed"},
+            "detail": {"reason": "stale", "dimension": "logic_clarity"},
         },
-        "subjective_review::src/b.py::stale": {
+        "subjective_review::.::error_consistency": {
             "detector": "subjective_review",
             "status": "fixed",
-            "detail": {"reason": "stale"},
+            "detail": {"reason": "stale", "dimension": "error_consistency"},
         },
     }
 
-    total, reasons, holistic_reasons = subjective_review_open_breakdown(issues)
+    total, reasons, dimension_counts = subjective_review_open_breakdown(issues)
     assert total == 2
-    assert reasons == {"unreviewed": 1, "changed": 1}
-    assert holistic_reasons == {"unreviewed": 1}
+    assert reasons == {"unassessed": 1, "stale": 1}
+    assert dimension_counts == {"naming_quality": 1, "logic_clarity": 1}
 
 
 def test_unassessed_subjective_dimensions_finds_zero_placeholder_dimensions():

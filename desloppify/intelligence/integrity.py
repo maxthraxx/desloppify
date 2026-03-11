@@ -57,8 +57,13 @@ def is_subjective_review_open(issue: dict) -> bool:
 
 
 def is_holistic_subjective_issue(issue: dict, *, issue_id: str = "") -> bool:
-    """Best-effort check for holistic subjective-review coverage issues."""
+    """Best-effort check for holistic subjective-review coverage issues.
+
+    With dimension-level subjective_review issues, this checks for legacy
+    holistic markers (backward compat) and the new dimension-level format.
+    """
     candidate_id = str(issue.get("id") or issue_id or "")
+    # Legacy holistic markers
     if "::holistic_unreviewed" in candidate_id or "::holistic_stale" in candidate_id:
         return True
 
@@ -67,15 +72,22 @@ def is_holistic_subjective_issue(issue: dict, *, issue_id: str = "") -> bool:
         return True
 
     detail = issue.get("detail", {})
-    return bool(detail.get("holistic"))
+    if detail.get("holistic"):
+        return True
+
+    # Dimension-level issues are codebase-wide by nature
+    if issue.get("detector") == "subjective_review" and detail.get("dimension"):
+        return True
+
+    return False
 
 
 def subjective_review_open_breakdown(
     issues: Mapping[str, dict] | Iterable[dict],
 ) -> tuple[int, dict[str, int], dict[str, int]]:
-    """Return open subjective count plus reason and holistic-reason breakdowns."""
+    """Return open subjective count plus reason and dimension breakdowns."""
     reason_counts: dict[str, int] = {}
-    holistic_reason_counts: dict[str, int] = {}
+    dimension_counts: dict[str, int] = {}
     total = 0
 
     for issue_id, issue in _iter_issues(issues):
@@ -83,13 +95,15 @@ def subjective_review_open_breakdown(
             continue
 
         total += 1
-        reason = str(issue.get("detail", {}).get("reason", "other") or "other")
+        detail = issue.get("detail", {})
+        reason = str(detail.get("reason", "other") or "other")
         reason_counts[reason] = reason_counts.get(reason, 0) + 1
 
-        if is_holistic_subjective_issue(issue, issue_id=issue_id):
-            holistic_reason_counts[reason] = holistic_reason_counts.get(reason, 0) + 1
+        dim = str(detail.get("dimension", "") or "")
+        if dim:
+            dimension_counts[dim] = dimension_counts.get(dim, 0) + 1
 
-    return total, reason_counts, holistic_reason_counts
+    return total, reason_counts, dimension_counts
 
 
 def unassessed_subjective_dimensions(dim_scores: dict | None) -> list[str]:

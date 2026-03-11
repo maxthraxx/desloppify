@@ -8,7 +8,7 @@ from dataclasses import dataclass
 
 from desloppify.app.commands.helpers.lang import resolve_lang
 from desloppify.app.commands.helpers.runtime import command_runtime
-from desloppify.app.commands.helpers.state import require_completed_scan
+from desloppify.app.commands.helpers.state import require_scan_metrics
 from desloppify.base.exception_sets import CommandError
 
 from .batch.orchestrator import do_import_run, do_run_batches
@@ -229,10 +229,10 @@ def cmd_review(args: argparse.Namespace) -> None:
         mode_flags=mode_flags,
     )
 
-    # For default prepare and --run-batches modes, require a completed scan
-    # so the command doesn't hang building context from an empty/missing state.
+    # Default prepare and --run-batches need real scan-backed context rather
+    # than reconstructed plan inventory.
     if _is_default_prepare_mode(opts, mode_flags) or opts.run_batches:
-        if not require_completed_scan(state):
+        if not require_scan_metrics(state):
             return
 
     _run_review_mode(

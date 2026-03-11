@@ -20,6 +20,7 @@ from desloppify.engine.detectors.orphaned import (
     detect_orphaned_files,
 )
 from desloppify.engine.detectors.single_use import detect_single_use_abstractions
+from desloppify.engine._state.filtering import make_issue
 from desloppify.engine.policy.zones import adjust_potential, filter_entries
 from desloppify.languages._framework.base.structural import (
     add_structural_signal,
@@ -31,7 +32,7 @@ from desloppify.languages._framework.issue_factories import (
     make_orphaned_issues,
     make_single_use_issues,
 )
-from desloppify.state import Issue, make_issue
+from desloppify.state_io import Issue
 
 StructuralPhaseRunner = Callable[
     [Path, LangRuntimeContract],

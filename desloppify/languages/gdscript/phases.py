@@ -12,7 +12,7 @@ from desloppify.languages._framework.base.shared_phases import (
 )
 from desloppify.languages._framework.base.types import LangRuntimeContract
 from desloppify.languages.gdscript.detectors.deps import build_dep_graph
-from desloppify.state import Issue
+from desloppify.state_io import Issue
 
 GDSCRIPT_COMPLEXITY_SIGNALS = [
     ComplexitySignal("funcs", r"(?m)^\s*func\s+\w+\s*\(", weight=1, threshold=20),

@@ -5,17 +5,17 @@ from __future__ import annotations
 from collections import defaultdict
 
 from desloppify.base.config import DEFAULT_TARGET_STRICT_SCORE
-from desloppify.engine._work_queue.core import QueueBuildOptions, build_work_queue
+from desloppify.engine._work_queue.core import QueueBuildOptions
+from desloppify.engine.planning.queue_policy import build_execution_queue
 from desloppify.engine.planning.types import PlanState
 
+# Backward-compatible test seam for plan-item queue building.
+build_work_queue = build_execution_queue
 
-def plan_item_sections(issues: dict, *, state: PlanState | None = None) -> list[str]:
-    """Build per-file sections from the shared work-queue backend."""
-    queue_state: PlanState | dict = state or {"issues": issues}
+
+def _subjective_threshold_for_state(state: PlanState | dict | None) -> float:
     raw_target = (
-        (state or {}).get("config", {}).get(
-            "target_strict_score", DEFAULT_TARGET_STRICT_SCORE
-        )
+        (state or {}).get("config", {}).get("target_strict_score", DEFAULT_TARGET_STRICT_SCORE)
         if isinstance(state, dict)
         else DEFAULT_TARGET_STRICT_SCORE
     )
@@ -23,20 +23,15 @@ def plan_item_sections(issues: dict, *, state: PlanState | None = None) -> list[
         subjective_threshold = float(raw_target)
     except (TypeError, ValueError):
         subjective_threshold = DEFAULT_TARGET_STRICT_SCORE
-    subjective_threshold = max(0.0, min(100.0, subjective_threshold))
-    if "issues" not in queue_state:
-        queue_state = {**queue_state, "issues": issues}
+    return max(0.0, min(100.0, subjective_threshold))
 
-    queue = build_work_queue(
-        queue_state,
-        options=QueueBuildOptions(
-            count=None,
-            status="open",
-            include_subjective=True,
-            subjective_threshold=subjective_threshold,
-        ),
-    )
-    open_items = queue.get("items", [])
+
+def render_queue_item_sections(
+    open_items: list[dict],
+    *,
+    include_header: bool = True,
+) -> list[str]:
+    """Render per-file sections from an already-built queue item list."""
     by_file: dict[str, list] = defaultdict(list)
     for item in open_items:
         by_file[item.get("file", ".")].append(item)
@@ -46,13 +41,14 @@ def plan_item_sections(issues: dict, *, state: PlanState | None = None) -> list[
     if not open_items:
         return lines
 
-    lines.extend(
-        [
-            "---",
-            f"## Open Items ({total_count})",
-            "",
-        ]
-    )
+    if include_header:
+        lines.extend(
+            [
+                "---",
+                f"## Open Items ({total_count})",
+                "",
+            ]
+        )
 
     sorted_files = sorted(by_file.items(), key=lambda item: (-len(item[1]), item[0]))
     for filepath, file_items in sorted_files:
@@ -75,4 +71,28 @@ def plan_item_sections(issues: dict, *, state: PlanState | None = None) -> list[
     return lines
 
 
-__all__ = ["plan_item_sections"]
+def plan_item_sections(
+    issues: dict,
+    *,
+    state: PlanState | None = None,
+    plan: dict | None = None,
+) -> list[str]:
+    """Build per-file sections from the execution queue."""
+    queue_state: PlanState | dict = state or {"issues": issues}
+    if "issues" not in queue_state:
+        queue_state = {**queue_state, "issues": issues}
+
+    queue = build_work_queue(
+        queue_state,
+        options=QueueBuildOptions(
+            count=None,
+            status="open",
+            include_subjective=True,
+            subjective_threshold=_subjective_threshold_for_state(state),
+            plan=plan,
+        ),
+    )
+    return render_queue_item_sections(queue.get("items", []))
+
+
+__all__ = ["plan_item_sections", "render_queue_item_sections"]

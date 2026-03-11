@@ -195,7 +195,7 @@ def sync_issue_clusters(
         key_parts = key.split("::")
         subtype = key_parts[2] if len(key_parts) >= 3 else None
 
-        description = _generate_description(cluster_name, members, meta, subtype)
+        description = _generate_description(members, meta)
         action = _generate_action(meta, subtype)
 
         existing_name = existing_by_key.get(key)

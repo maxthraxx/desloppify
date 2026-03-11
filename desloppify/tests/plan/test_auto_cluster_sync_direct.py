@@ -149,7 +149,8 @@ def test_sync_subjective_clusters_creates_optional_under_target_cluster() -> Non
     }
 
 
-def test_sync_subjective_clusters_evicts_under_target_ids_when_objective_exists() -> None:
+def test_sync_subjective_clusters_no_eviction_when_objective_exists() -> None:
+    """auto_cluster_sync no longer evicts under_target IDs — sync_stale owns that."""
     plan = {
         "queue_order": [
             "subjective::architecture",
@@ -171,7 +172,7 @@ def test_sync_subjective_clusters_evicts_under_target_ids_when_objective_exists(
         under_target_ids=frozenset({"subjective::architecture", "subjective::api_surface"}),
     )
 
-    changes = sync_mod.sync_subjective_clusters(
+    sync_mod.sync_subjective_clusters(
         plan,
         state={"issues": issues},
         issues=issues,
@@ -181,24 +182,25 @@ def test_sync_subjective_clusters_evicts_under_target_ids_when_objective_exists(
         now=NOW,
         target_strict=95.0,
         policy=policy,
-        cycle_just_completed=False,
     )
 
-    assert changes == 2
-    assert plan["queue_order"] == ["unused::x"]
+    # Under-target IDs remain in queue — sync_stale is the authority on eviction
+    assert "subjective::architecture" in plan["queue_order"]
+    assert "subjective::api_surface" in plan["queue_order"]
+    assert "unused::x" in plan["queue_order"]
     assert "auto/under-target-review" not in plan["clusters"]
 
 
-def test_sync_subjective_clusters_escalates_after_repeated_defers() -> None:
-    plan = {
-        "queue_order": ["unused::x"],
-        "clusters": {},
-        "overrides": {},
-    }
-    existing_by_key: dict[str, str] = {}
-    active_auto_keys: set[str] = set()
-    issues = {"unused::x": _unused_issue("unused::x")}
+def test_sync_stale_escalates_after_repeated_defers() -> None:
+    """Escalation is now owned by sync_subjective_dimensions, not auto_cluster_sync."""
+    from desloppify.engine._plan.schema import empty_plan
+    from desloppify.engine._plan.sync.dimensions import sync_subjective_dimensions
 
+    plan = empty_plan()
+    plan["queue_order"] = ["unused::x"]
+    plan["plan_start_scores"] = {"strict": 50.0}  # mid-cycle
+
+    issues = {"unused::x": _unused_issue("unused::x")}
     policy = SubjectiveVisibility(
         has_objective_backlog=True,
         objective_count=1,
@@ -211,57 +213,48 @@ def test_sync_subjective_clusters_escalates_after_repeated_defers() -> None:
         "issues": issues,
         "scan_count": 1,
         "last_scan": "2026-03-01T00:00:00+00:00",
+        "dimension_scores": {
+            "architecture": {
+                "score": 50.0, "strict": 50.0, "checks": 1, "failing": 0,
+                "detectors": {"subjective_assessment": {"dimension_key": "architecture", "placeholder": False}},
+            },
+            "api_surface": {
+                "score": 50.0, "strict": 50.0, "checks": 1, "failing": 0,
+                "detectors": {"subjective_assessment": {"dimension_key": "api_surface", "placeholder": False}},
+            },
+        },
+        "subjective_assessments": {
+            "architecture": {"score": 50.0, "needs_review_refresh": True, "stale_since": "2026-01-01T00:00:00+00:00"},
+            "api_surface": {"score": 50.0, "needs_review_refresh": False},
+        },
     }
-    sync_mod.sync_subjective_clusters(
-        plan,
-        state=state,
-        issues=issues,
-        clusters=plan["clusters"],
-        existing_by_key=existing_by_key,
-        active_auto_keys=active_auto_keys,
-        now=NOW,
-        target_strict=95.0,
-        policy=policy,
-        cycle_just_completed=False,
-    )
+
+    # Defer 1
+    sync_subjective_dimensions(plan, state, policy=policy)
     assert plan["subjective_defer_meta"]["defer_count"] == 1
     assert plan["subjective_defer_meta"]["deferred_review_ids"] == [
         "subjective::api_surface",
         "subjective::architecture",
     ]
+    assert plan["subjective_defer_meta"]["deferred_stale_ids"] == [
+        "subjective::architecture",
+    ]
+    assert plan["subjective_defer_meta"]["deferred_under_target_ids"] == [
+        "subjective::api_surface",
+    ]
     assert "force_visible_ids" not in plan["subjective_defer_meta"]
 
+    # Defer 2
     state["scan_count"] = 2
     state["last_scan"] = "2026-03-02T00:00:00+00:00"
-    sync_mod.sync_subjective_clusters(
-        plan,
-        state=state,
-        issues=issues,
-        clusters=plan["clusters"],
-        existing_by_key=existing_by_key,
-        active_auto_keys=active_auto_keys,
-        now=NOW,
-        target_strict=95.0,
-        policy=policy,
-        cycle_just_completed=False,
-    )
+    sync_subjective_dimensions(plan, state, policy=policy)
     assert plan["subjective_defer_meta"]["defer_count"] == 2
     assert plan["queue_order"] == ["unused::x"]
 
+    # Defer 3 → escalation
     state["scan_count"] = 3
     state["last_scan"] = "2026-03-03T00:00:00+00:00"
-    sync_mod.sync_subjective_clusters(
-        plan,
-        state=state,
-        issues=issues,
-        clusters=plan["clusters"],
-        existing_by_key=existing_by_key,
-        active_auto_keys=active_auto_keys,
-        now=NOW,
-        target_strict=95.0,
-        policy=policy,
-        cycle_just_completed=False,
-    )
+    sync_subjective_dimensions(plan, state, policy=policy)
 
     defer_meta = plan["subjective_defer_meta"]
     assert defer_meta["defer_count"] == 3

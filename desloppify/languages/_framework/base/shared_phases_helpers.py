@@ -9,9 +9,10 @@ from typing import Any, Callable
 from desloppify.base.coercions import coerce_confidence
 from desloppify.base.discovery.paths import get_project_root
 from desloppify.base.output.terminal import log
+from desloppify.engine._state.filtering import make_issue
 from desloppify.engine.policy.zones import should_skip_issue
 from desloppify.languages._framework.base.types import DetectorCoverageStatus, LangRuntimeContract
-from desloppify.state import Issue, make_issue
+from desloppify.state_io import Issue
 
 
 def _filter_boilerplate_entries_by_zone(

@@ -14,12 +14,15 @@ def build_workflow_guide(attest_example: str) -> str:
         Work the two loops: **outer** (scan → score → at target? → rescan) and
         **inner** (plan → fix next → update plan → repeat until plan clear).
 
-        1. **Follow `next`**: `desloppify next` — the single source of truth for what to work on.
-           It respects the plan, surfaces auto-clustered batches, and tells you exactly what to do.
+        1. **Follow `next`**: `desloppify next` — the single source of truth for what to work on now.
+           It is the execution queue from the living plan, surfaces auto-clustered batches,
+           and tells you exactly what to do.
+           Use `desloppify backlog` only to inspect broader open work outside execution.
         2. **Fix & resolve**: Fix the issue, then:
            `desloppify plan resolve "<id>" --note "<what you did>" --confirm`
            Or with explicit attestation: `--attest "{attest_example}"`
-        3. **Plan strategically**: `desloppify plan` — reorder, cluster related issues, defer low-value work.
+        3. **Plan strategically**: `desloppify plan` / `desloppify plan queue` — reorder,
+           cluster related issues, and inspect the execution queue.
            Think about sequencing: what unblocks the most? What cascades? What can be batched?
         4. **Run auto-fixers** (if available): `desloppify autofix <fixer> --dry-run` to preview, then apply.
         5. **Rescan**: `desloppify scan --path <path>` — verify improvements, catch cascading effects.
@@ -41,7 +44,7 @@ def build_workflow_guide(attest_example: str) -> str:
           `desloppify plan skip --permanent "<detector>::*::<category>" --note "<why>" --attest "{attest_example}"`
 
         ### Understanding Scores
-        - **Overall**: 40% mechanical + 60% subjective. Lenient — wontfix doesn't count against you.
+        - **Overall**: 25% mechanical + 75% subjective. Lenient — wontfix doesn't count against you.
         - **Objective**: Mechanical detectors only (no subjective review component).
         - **Strict**: Same as overall, but wontfix items count as open. THIS IS YOUR NORTH STAR.
         - **Verified**: Like strict, but only credits fixes the scanner has confirmed.

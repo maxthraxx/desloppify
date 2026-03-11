@@ -6,7 +6,9 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import desloppify.engine._state.filtering as filtering_mod
+from desloppify.engine._work_queue.core import QueueBuildOptions
 import desloppify.engine.planning.helpers as plan_common_mod
+import desloppify.engine.planning.queue_policy as queue_policy_mod
 import desloppify.engine.planning.scan as plan_scan_mod
 import desloppify.engine.planning.select as plan_select_mod
 
@@ -96,3 +98,25 @@ def test_get_next_items_orders_by_tier_confidence_and_count():
     top = plan_select_mod.get_next_item(state)
     assert top is not None
     assert top["id"] == issue_c["id"]
+
+
+def test_build_open_plan_queue_uses_core_options_shape(monkeypatch) -> None:
+    captured: list[QueueBuildOptions] = []
+
+    def _build_work_queue(_state, *, options):
+        captured.append(options)
+        return {"items": [], "total": 0, "grouped": {}, "new_ids": set()}
+
+    monkeypatch.setattr(queue_policy_mod, "build_work_queue", _build_work_queue)
+
+    queue_policy_mod.build_open_plan_queue(
+        {"config": {"target_strict_score": 91}},
+        options=QueueBuildOptions(count=5, scan_path="src"),
+    )
+
+    assert captured
+    assert isinstance(captured[0], QueueBuildOptions)
+    assert captured[0].count == 5
+    assert captured[0].scan_path == "src"
+    assert captured[0].status == "open"
+    assert captured[0].subjective_threshold == 91.0

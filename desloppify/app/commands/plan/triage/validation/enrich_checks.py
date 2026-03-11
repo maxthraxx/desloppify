@@ -7,35 +7,75 @@ from pathlib import Path
 
 from desloppify.base.output.terminal import colorize
 
-_PATH_RE = re.compile(r"(?:src|supabase)/[\w./-]+\.\w+")
+from ..helpers import cluster_issue_ids
+
+_PATH_RE = re.compile(r"(?:[\w./-]+/)?(?:src|supabase)/[\w./-]+\.\w+")
 _EXT_SWAPS = {".ts": ".tsx", ".tsx": ".ts", ".js": ".jsx", ".jsx": ".js"}
 _VALID_EFFORTS = {"trivial", "small", "medium", "large"}
 
 
+def _manual_clusters_with_issues(plan: dict):
+    """Yield manual clusters that still carry issue IDs."""
+    for name, cluster in plan.get("clusters", {}).items():
+        if cluster.get("auto") or not cluster_issue_ids(cluster):
+            continue
+        yield name, cluster
+
+
+def _cluster_steps(cluster: dict) -> list[dict]:
+    """Return structured action steps for one cluster."""
+    return [
+        step
+        for step in (cluster.get("action_steps") or [])
+        if isinstance(step, dict)
+    ]
+
+
+def _detail_paths(detail: str) -> list[str]:
+    """Extract file paths from one step detail string."""
+    if not detail:
+        return []
+    return _PATH_RE.findall(detail)
+
+
+def _path_exists_or_alt_exists(repo_root: Path, path_str: str) -> bool:
+    """Return whether the referenced path or a ts/js sibling exists."""
+    path = repo_root / path_str
+    if path.exists():
+        return True
+    alt_ext = _EXT_SWAPS.get(path.suffix)
+    return bool(alt_ext and path.with_suffix(alt_ext).exists())
+
+
 def _require_organize_stage_for_enrich(stages: dict) -> bool:
     """Gate: organize must be done before enrich."""
-    if "organize" in stages:
-        return True
-    if "observe" not in stages:
-        print(colorize("  Cannot enrich: observe stage not complete.", "red"))
-        print(colorize('  Run: desloppify plan triage --stage observe --report "..."', "dim"))
-        return False
-    if "reflect" not in stages:
-        print(colorize("  Cannot enrich: reflect stage not complete.", "red"))
-        print(colorize('  Run: desloppify plan triage --stage reflect --report "..."', "dim"))
-        return False
-    print(colorize("  Cannot enrich: organize stage not complete.", "red"))
-    print(colorize('  Run: desloppify plan triage --stage organize --report "..."', "dim"))
-    return False
+    from .core import require_stage_prerequisite  # noqa: PLC0415
+
+    return require_stage_prerequisite(
+        stages,
+        flow="enrich",
+        messages={
+            "observe": (
+                "  Cannot enrich: observe stage not complete.",
+                '  Run: desloppify plan triage --stage observe --report "..."',
+            ),
+            "reflect": (
+                "  Cannot enrich: reflect stage not complete.",
+                '  Run: desloppify plan triage --stage reflect --report "..."',
+            ),
+            "organize": (
+                "  Cannot enrich: organize stage not complete.",
+                '  Run: desloppify plan triage --stage organize --report "..."',
+            ),
+        },
+    )
 
 
 def _underspecified_steps(plan: dict) -> list[tuple[str, int, int]]:
     """Return (cluster_name, bare_count, total_count) for steps missing detail or issue_refs."""
     results: list[tuple[str, int, int]] = []
-    for name, cluster in plan.get("clusters", {}).items():
-        if cluster.get("auto") or not cluster.get("issue_ids"):
-            continue
-        steps = cluster.get("action_steps") or []
+    for name, cluster in _manual_clusters_with_issues(plan):
+        steps = _cluster_steps(cluster)
         if not steps:
             continue
         bare = sum(
@@ -51,24 +91,16 @@ def _underspecified_steps(plan: dict) -> list[tuple[str, int, int]]:
 def _steps_with_bad_paths(plan: dict, repo_root: Path) -> list[tuple[str, int, list[str]]]:
     """Return steps referencing file paths that don't exist on disk."""
     results: list[tuple[str, int, list[str]]] = []
-    for name, cluster in plan.get("clusters", {}).items():
-        if cluster.get("auto") or not cluster.get("issue_ids"):
-            continue
-        for i, step in enumerate(cluster.get("action_steps") or []):
-            if not isinstance(step, dict):
-                continue
+    for name, cluster in _manual_clusters_with_issues(plan):
+        for i, step in enumerate(_cluster_steps(cluster)):
             detail = step.get("detail", "")
             if not detail:
                 continue
-            bad: list[str] = []
-            for path_str in _PATH_RE.findall(detail):
-                path = repo_root / path_str
-                if path.exists():
-                    continue
-                alt_ext = _EXT_SWAPS.get(path.suffix)
-                if alt_ext and path.with_suffix(alt_ext).exists():
-                    continue
-                bad.append(path_str)
+            bad = [
+                path_str
+                for path_str in _detail_paths(detail)
+                if not _path_exists_or_alt_exists(repo_root, path_str)
+            ]
             if bad:
                 results.append((name, i + 1, bad))
     return results
@@ -77,10 +109,8 @@ def _steps_with_bad_paths(plan: dict, repo_root: Path) -> list[tuple[str, int, l
 def _steps_without_effort(plan: dict) -> list[tuple[str, int, int]]:
     """Return (cluster_name, missing_count, total) for steps without effort tags."""
     results: list[tuple[str, int, int]] = []
-    for name, cluster in plan.get("clusters", {}).items():
-        if cluster.get("auto") or not cluster.get("issue_ids"):
-            continue
-        steps = cluster.get("action_steps") or []
+    for name, cluster in _manual_clusters_with_issues(plan):
+        steps = _cluster_steps(cluster)
         if not steps:
             continue
         missing = sum(
@@ -94,13 +124,10 @@ def _steps_without_effort(plan: dict) -> list[tuple[str, int, int]]:
 def _cluster_file_overlaps(plan: dict) -> list[tuple[str, str, list[str]]]:
     """Return pairs of clusters with overlapping file references in step details."""
     cluster_files: dict[str, set[str]] = {}
-    for name, cluster in plan.get("clusters", {}).items():
-        if cluster.get("auto") or not cluster.get("issue_ids"):
-            continue
+    for name, cluster in _manual_clusters_with_issues(plan):
         paths: set[str] = set()
-        for step in cluster.get("action_steps") or []:
-            if isinstance(step, dict) and step.get("detail"):
-                paths.update(_PATH_RE.findall(step["detail"]))
+        for step in _cluster_steps(cluster):
+            paths.update(_detail_paths(step.get("detail", "")))
         if paths:
             cluster_files[name] = paths
 
@@ -121,18 +148,15 @@ def _clusters_with_directory_scatter(
 ) -> list[tuple[str, int, list[str]]]:
     """Return clusters whose issues span too many unrelated directories."""
     results: list[tuple[str, int, list[str]]] = []
-    for name, cluster in plan.get("clusters", {}).items():
-        if cluster.get("auto") or not cluster.get("issue_ids"):
-            continue
+    for name, cluster in _manual_clusters_with_issues(plan):
         dirs: set[str] = set()
-        for step in cluster.get("action_steps") or []:
-            if isinstance(step, dict) and step.get("detail"):
-                for path_str in _PATH_RE.findall(step["detail"]):
-                    parts = path_str.split("/")
-                    if len(parts) >= 3:
-                        dirs.add("/".join(parts[:3]))
-                    elif len(parts) >= 2:
-                        dirs.add("/".join(parts[:2]))
+        for step in _cluster_steps(cluster):
+            for path_str in _detail_paths(step.get("detail", "")):
+                parts = path_str.split("/")
+                if len(parts) >= 3:
+                    dirs.add("/".join(parts[:3]))
+                elif len(parts) >= 2:
+                    dirs.add("/".join(parts[:2]))
         if len(dirs) >= threshold:
             results.append((name, len(dirs), sorted(dirs)[:6]))
     return results
@@ -145,11 +169,9 @@ def _clusters_with_high_step_ratio(
 ) -> list[tuple[str, int, int, float]]:
     """Return clusters where step count >= issue count (1:1 mapping)."""
     results: list[tuple[str, int, int, float]] = []
-    for name, cluster in plan.get("clusters", {}).items():
-        if cluster.get("auto") or not cluster.get("issue_ids"):
-            continue
-        steps = len(cluster.get("action_steps") or [])
-        issues = len(cluster.get("issue_ids") or [])
+    for name, cluster in _manual_clusters_with_issues(plan):
+        steps = len(_cluster_steps(cluster))
+        issues = len(cluster_issue_ids(cluster))
         if issues >= 3 and steps > 0:
             ratio = steps / issues
             if ratio > max_ratio:
@@ -160,13 +182,11 @@ def _clusters_with_high_step_ratio(
 def _steps_missing_issue_refs(plan: dict) -> list[tuple[str, int, int]]:
     """Return (cluster_name, missing_count, total) for steps without issue_refs."""
     results: list[tuple[str, int, int]] = []
-    for name, cluster in plan.get("clusters", {}).items():
-        if cluster.get("auto") or not cluster.get("issue_ids"):
-            continue
-        steps = cluster.get("action_steps") or []
+    for name, cluster in _manual_clusters_with_issues(plan):
+        steps = _cluster_steps(cluster)
         if not steps:
             continue
-        missing = sum(1 for step in steps if isinstance(step, dict) and not step.get("issue_refs"))
+        missing = sum(1 for step in steps if not step.get("issue_refs"))
         if missing:
             results.append((name, missing, len(steps)))
     return results
@@ -174,18 +194,15 @@ def _steps_missing_issue_refs(plan: dict) -> list[tuple[str, int, int]]:
 
 def _steps_with_vague_detail(plan: dict, repo_root: Path) -> list[tuple[str, int, str]]:
     """Return steps with detail too vague to be executor-ready."""
+    del repo_root
     results: list[tuple[str, int, str]] = []
-    for name, cluster in plan.get("clusters", {}).items():
-        if cluster.get("auto") or not cluster.get("issue_ids"):
-            continue
-        for i, step in enumerate(cluster.get("action_steps") or []):
-            if not isinstance(step, dict):
-                continue
+    for name, cluster in _manual_clusters_with_issues(plan):
+        for i, step in enumerate(_cluster_steps(cluster)):
             detail = step.get("detail", "")
             if not detail:
                 results.append((name, i + 1, step.get("title", "(no title)")))
                 continue
-            has_path = bool(_PATH_RE.search(detail))
+            has_path = bool(_detail_paths(detail))
             if len(detail) < 80 and not has_path:
                 results.append((name, i + 1, step.get("title", "(no title)")))
     return results
@@ -204,12 +221,8 @@ def _steps_referencing_skipped_issues(plan: dict) -> list[tuple[str, int, list[s
         return []
 
     results: list[tuple[str, int, list[str]]] = []
-    for name, cluster in plan.get("clusters", {}).items():
-        if cluster.get("auto") or not cluster.get("issue_ids"):
-            continue
-        for i, step in enumerate(cluster.get("action_steps") or []):
-            if not isinstance(step, dict):
-                continue
+    for name, cluster in _manual_clusters_with_issues(plan):
+        for i, step in enumerate(_cluster_steps(cluster)):
             refs = step.get("issue_refs") or []
             stale = [ref for ref in refs if ref in wontfixed]
             if stale:

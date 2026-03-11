@@ -127,3 +127,32 @@ class TestTriageCoverage:
         organized, total, _ = _triage_coverage(plan)
         assert total == 1
         assert organized == 1
+
+    def test_coverage_counts_issue_refs_when_issue_ids_missing(self):
+        """Cluster membership should recover from action_steps.issue_refs."""
+        plan = empty_plan()
+        plan["queue_order"] = [
+            *TRIAGE_STAGE_IDS,
+            "review::a.py::issue1",
+            "concerns::b.py::issue2",
+        ]
+        plan["clusters"]["recovered"] = {
+            "name": "recovered",
+            "issue_ids": [],
+            "description": "Recovered cluster",
+            "action_steps": [
+                {
+                    "title": "Fix both",
+                    "issue_refs": [
+                        "review::a.py::issue1",
+                        "concerns::b.py::issue2",
+                    ],
+                }
+            ],
+            "auto": False,
+        }
+
+        organized, total, _ = _triage_coverage(plan)
+
+        assert total == 2
+        assert organized == 2

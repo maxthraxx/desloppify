@@ -410,7 +410,13 @@ def test_build_query_payload_structure():
     assert payload["command"] == "next"
     assert len(payload["items"]) == 1
     assert payload["queue"]["total"] == 1
+    assert payload["queue"]["mode"] == "execution"
     assert payload["narrative"] is None
+
+
+def test_render_markdown_for_backlog_uses_backlog_heading():
+    text = next_output.render_markdown_for_command([], command="backlog")
+    assert "# Desloppify Backlog" in text
 
 
 def test_private_imports_is_dunder():

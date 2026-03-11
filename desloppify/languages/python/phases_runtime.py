@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from desloppify import state as state_mod
 from desloppify.engine.detectors import complexity as complexity_detector_mod
 from desloppify.engine.detectors import flat_dirs as flat_dirs_detector_mod
 from desloppify.engine.detectors import gods as gods_detector_mod
@@ -13,6 +12,7 @@ from desloppify.engine.detectors import large as large_detector_mod
 from desloppify.engine.detectors import orphaned as orphaned_detector_mod
 from desloppify.engine.detectors import single_use as single_use_detector_mod
 from desloppify.engine.detectors.base import ComplexitySignal, GodRule
+from desloppify.engine._state.filtering import make_issue
 from desloppify.engine.policy.zones import adjust_potential, filter_entries
 from desloppify.languages._framework.base.structural import (
     add_structural_signal,
@@ -33,7 +33,7 @@ from desloppify.languages.python.detectors import deps as deps_detector_mod
 from desloppify.languages.python.detectors import facade as facade_detector_mod
 from desloppify.languages.python.extractors import detect_passthrough_functions
 from desloppify.languages.python.extractors_classes import extract_py_classes
-from desloppify.state import Issue
+from desloppify.state_io import Issue
 
 
 def run_phase_structural(
@@ -93,7 +93,7 @@ def run_phase_structural(
         child_dir_count = int(entry.get("child_dir_count", 0))
         combined_score = int(entry.get("combined_score", entry.get("file_count", 0)))
         results.append(
-            state_mod.make_issue(
+            make_issue(
                 "flat_dirs",
                 entry["directory"],
                 "",
@@ -188,7 +188,7 @@ def run_phase_coupling(path: Path, lang: LangRun, *, log_fn) -> tuple[list[Issue
         tier = 4 if required_count >= 6 else 3
         confidence = "high" if required_count >= 6 else "medium"
         results.append(
-            state_mod.make_issue(
+            make_issue(
                 "coupling",
                 entry["file"],
                 entry["class"],

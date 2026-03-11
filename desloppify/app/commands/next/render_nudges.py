@@ -18,7 +18,6 @@ from desloppify.base.output.user_message import print_user_message
 from desloppify.engine._scoring.results.core import compute_health_breakdown
 from desloppify.engine._work_queue.core import ATTEST_EXAMPLE
 from desloppify.intelligence.integrity import (
-    is_holistic_subjective_issue,
     unassessed_subjective_dimensions,
 )
 
@@ -63,22 +62,25 @@ def render_single_item_resolution_hint(items: list[dict]) -> None:
     item = items[0]
     detector_name = item.get("detector", "")
     if detector_name == "subjective_review":
-        print(colorize("\n  Review with:", "dim"))
-        primary = item.get(
-            "primary_command", "desloppify show subjective"
-        )
-        print(f"    {primary}")
-        if is_holistic_subjective_issue(item):
-            print("    desloppify review --prepare")
-            print_user_message(
-                "Hey — this is a subjective review item. Run"
-                " `desloppify review --run-batches --dry-run`"
-                " to generate prompt files (one per batch)."
-                " Launch one subagent per prompt, all in"
-                " parallel. Then import with `--import-run"
-                " <run-dir> --scan-after-import`. Batches are"
-                " pre-defined — do NOT regroup them yourself."
+        dim_key = (item.get("detail") or {}).get("dimension", "")
+        primary = item.get("primary_command", "")
+        if not primary:
+            primary = (
+                f"desloppify review --prepare --dimensions {dim_key}"
+                if dim_key
+                else "desloppify review --prepare"
             )
+        print(colorize("\n  Review with:", "dim"))
+        print(f"    {primary}")
+        print_user_message(
+            "Hey — this is a subjective review item. Run"
+            " `desloppify review --run-batches --dry-run`"
+            " to generate prompt files (one per batch)."
+            " Launch one subagent per prompt, all in"
+            " parallel. Then import with `--import-run"
+            " <run-dir> --scan-after-import`. Batches are"
+            " pre-defined — do NOT regroup them yourself."
+        )
         return
 
     primary = item.get("primary_command", "")

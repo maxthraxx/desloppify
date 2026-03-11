@@ -1,6 +1,6 @@
   → query.json updated
 
-  Scores: overall 40.0/100 · objective 100.0/100 · strict 40.0/100 · verified 40.0/100
+  Scores: overall 25.0/100 · objective 100.0/100 · strict 25.0/100 · verified 25.0/100
   1 files · 9 LOC · 1 dirs · Last scan: 2026-02-18T10:53:26+00:00
   ────────────────────────────────────────────────────────────
 
@@ -20,14 +20,14 @@
   Action: fix=auto-fixer | move=reorganize | refactor=manual rewrite | manual=review & fix
 
   Score recipe:
-    overall = 40% mechanical + 60% subjective
+    overall = 25% mechanical + 75% subjective
     Pool averages: mechanical 100.0% · subjective 0.0%
     Biggest weighted drags:
-      - High Elegance: -13.20 pts (score 0.0%, 22.0% of subjective pool)
-      - Mid Elegance: -13.20 pts (score 0.0%, 22.0% of subjective pool)
-      - Type Safety: -7.20 pts (score 0.0%, 12.0% of subjective pool)
-      - Contracts: -7.20 pts (score 0.0%, 12.0% of subjective pool)
-      - Low Elegance: -7.20 pts (score 0.0%, 12.0% of subjective pool)
+      - High Elegance: -16.50 pts (score 0.0%, 22.0% of subjective pool)
+      - Mid Elegance: -16.50 pts (score 0.0%, 22.0% of subjective pool)
+      - Type Safety: -9.00 pts (score 0.0%, 12.0% of subjective pool)
+      - Contracts: -9.00 pts (score 0.0%, 12.0% of subjective pool)
+      - Low Elegance: -9.00 pts (score 0.0%, 12.0% of subjective pool)
 
   Focus: AI Generated Debt (0.0%) — re-review to improve
 

@@ -9,9 +9,11 @@ import shutil
 import sys
 from collections.abc import Iterator
 from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
+from desloppify.base.exception_sets import PLAN_LOAD_EXCEPTIONS
 from desloppify.base.discovery.file_paths import safe_write_text
 from desloppify.base.output.fallbacks import log_best_effort_failure
 from desloppify.engine._plan.schema import (
@@ -32,6 +34,15 @@ logger = logging.getLogger(__name__)
 _PLAN_FILE_SENTINEL = object()
 PLAN_FILE = _PLAN_FILE_SENTINEL
 _INITIAL_PLAN_FILE = _PLAN_FILE_SENTINEL
+
+
+@dataclass(frozen=True)
+class PlanLoadStatus:
+    """Resolved plan load result with degraded-mode signaling."""
+
+    plan: PlanModel | None
+    degraded: bool
+    error_kind: str | None = None
 
 
 def get_plan_file() -> Path:
@@ -129,6 +140,25 @@ def load_plan(path: Path | None = None) -> PlanModel:
     return cast(PlanModel, data)
 
 
+def resolve_plan_load_status(path: Path | None = None) -> PlanLoadStatus:
+    """Load a plan with explicit degraded-mode metadata."""
+    plan_path = path or _default_plan_file()
+    if not plan_path.exists():
+        return PlanLoadStatus(plan=None, degraded=False, error_kind=None)
+    try:
+        return PlanLoadStatus(
+            plan=load_plan(plan_path),
+            degraded=False,
+            error_kind=None,
+        )
+    except PLAN_LOAD_EXCEPTIONS as exc:
+        return PlanLoadStatus(
+            plan=None,
+            degraded=True,
+            error_kind=exc.__class__.__name__,
+        )
+
+
 def save_plan(plan: PlanModel | dict, path: Path | None = None) -> None:
     """Validate and save plan to disk atomically."""
     ensure_plan_defaults(plan)
@@ -174,10 +204,12 @@ def has_living_plan(path: Path | None = None) -> bool:
 
 __all__ = [
     "PLAN_FILE",
+    "PlanLoadStatus",
     "get_plan_file",
     "has_living_plan",
     "load_plan",
     "plan_lock",
     "plan_path_for_state",
+    "resolve_plan_load_status",
     "save_plan",
 ]

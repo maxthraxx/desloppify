@@ -16,7 +16,7 @@ from desloppify.app.commands.helpers.persist import save_state_or_exit
 from desloppify.app.commands.helpers.queue_progress import show_score_with_plan_context
 from desloppify.app.commands.helpers.state import state_path
 from desloppify.base.output.terminal import colorize
-from desloppify.state import coerce_assessment_score
+from desloppify.engine._state.resolution import coerce_assessment_score
 
 from .apply import _resolve_all_patterns, _write_resolve_query_entry
 from .living_plan import update_living_plan_after_resolve
@@ -119,6 +119,7 @@ def cmd_resolve(args: argparse.Namespace) -> None:
         args=args,
         all_resolved=all_resolved,
         attestation=attestation,
+        state_file=state_file,
     )
     mid_cluster = (
         cluster_ctx.cluster_name is not None and not cluster_ctx.cluster_completed

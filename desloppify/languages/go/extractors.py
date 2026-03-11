@@ -11,7 +11,7 @@ from pathlib import Path
 
 from desloppify.base.discovery.file_paths import resolve_path
 
-from desloppify.base.discovery.source import find_source_files
+from desloppify.base.discovery.source import SourceDiscoveryOptions, find_source_files
 from desloppify.engine.detectors.base import FunctionInfo
 
 GO_FILE_EXCLUSIONS = ["vendor", "testdata", ".git", "node_modules"]
@@ -27,7 +27,11 @@ _FUNC_DECL_RE = re.compile(
 
 def find_go_files(path: Path | str) -> list[str]:
     """Find Go source files under path."""
-    return find_source_files(path, [".go"], exclusions=GO_FILE_EXCLUSIONS)
+    return find_source_files(
+        path,
+        [".go"],
+        SourceDiscoveryOptions(exclusions=tuple(GO_FILE_EXCLUSIONS)),
+    )
 
 
 def _find_matching_brace(content: str, open_pos: int) -> int | None:
@@ -247,7 +251,10 @@ def extract_go_functions(filepath: str) -> list[FunctionInfo]:
         params = _extract_params(content, match.end() - 1)
 
         normalized = normalize_go_body(body)
-        body_hash = hashlib.md5(normalized.encode("utf-8")).hexdigest()[:12]
+        body_hash = hashlib.md5(
+            normalized.encode("utf-8"),
+            usedforsecurity=False,
+        ).hexdigest()[:12]
         functions.append(
             FunctionInfo(
                 name=name,

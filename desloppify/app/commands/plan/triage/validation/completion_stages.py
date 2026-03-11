@@ -44,7 +44,7 @@ def _auto_confirm_stage_for_complete(
     attestation: str | None,
     save_plan_fn=None,
 ) -> bool:
-    from .core import _auto_confirm_stage  # noqa: PLC0415
+    from .core import AutoConfirmStageRequest, _auto_confirm_stage  # noqa: PLC0415
 
     stage_record = stages.get(stage)
     if stage_record is None:
@@ -54,13 +54,15 @@ def _auto_confirm_stage_for_complete(
     return _auto_confirm_stage(
         plan=plan,
         stage_record=stage_record,
-        stage_name=stage,
-        stage_label=config["label"],
         attestation=attestation,
-        blocked_heading=config["blocked_heading"],
-        confirm_cmd=config["confirm_cmd"],
-        inline_hint=config["inline_hint"],
-        cluster_names=_manual_cluster_names(plan),
+        request=AutoConfirmStageRequest(
+            stage_name=stage,
+            stage_label=config["label"],
+            blocked_heading=config["blocked_heading"],
+            confirm_cmd=config["confirm_cmd"],
+            inline_hint=config["inline_hint"],
+            cluster_names=_manual_cluster_names(plan),
+        ),
         save_plan_fn=save_plan_fn,
     )
 
@@ -71,9 +73,12 @@ def _require_enrich_stage_for_complete(
     meta: dict,
     stages: dict,
 ) -> bool:
-    if "enrich" in stages:
+    from .core import _missing_stage_prerequisite  # noqa: PLC0415
+
+    missing = _missing_stage_prerequisite(stages, flow="complete:enrich")
+    if missing is None:
         return True
-    if "organize" not in stages:
+    if missing.stage_name != "enrich":
         return _require_organize_stage_for_complete(plan=plan, meta=meta, stages=stages)
 
     underspec = _underspecified_steps(plan)
@@ -125,30 +130,17 @@ def _require_sense_check_stage_for_complete(
     meta: dict,
     stages: dict,
 ) -> bool:
-    if "sense-check" in stages:
+    from .core import _missing_stage_prerequisite  # noqa: PLC0415
+
+    missing = _missing_stage_prerequisite(stages, flow="complete:sense-check")
+    if missing is None:
         return True
-    if "enrich" not in stages:
+    if missing.stage_name != "sense-check":
         return _require_enrich_stage_for_complete(plan=plan, meta=meta, stages=stages)
 
     print(colorize("  Cannot complete: sense-check stage not recorded.", "red"))
     print(colorize('  Run: desloppify plan triage --stage sense-check --report "..."', "dim"))
     return False
-
-
-def _auto_confirm_sense_check_for_complete(
-    *,
-    plan: dict,
-    stages: dict,
-    attestation: str | None,
-    save_plan_fn=None,
-) -> bool:
-    return _auto_confirm_stage_for_complete(
-        plan=plan,
-        stages=stages,
-        stage="sense-check",
-        attestation=attestation,
-        save_plan_fn=save_plan_fn,
-    )
 
 
 def _require_organize_stage_for_complete(
@@ -157,9 +149,12 @@ def _require_organize_stage_for_complete(
     meta: dict,
     stages: dict,
 ) -> bool:
-    if "organize" in stages:
+    from .core import _missing_stage_prerequisite  # noqa: PLC0415
+
+    missing = _missing_stage_prerequisite(stages, flow="complete:organize")
+    if missing is None:
         return True
-    if "observe" not in stages:
+    if missing.stage_name == "observe":
         print(colorize("  Cannot complete: no stages done yet.", "red"))
         print(colorize('  Start with: desloppify plan triage --stage observe --report "..."', "dim"))
         return False
@@ -185,26 +180,9 @@ def _require_organize_stage_for_complete(
     return False
 
 
-def _auto_confirm_organize_for_complete(
-    *,
-    plan: dict,
-    stages: dict,
-    attestation: str | None,
-    save_plan_fn=None,
-) -> bool:
-    return _auto_confirm_stage_for_complete(
-        plan=plan,
-        stages=stages,
-        stage="organize",
-        attestation=attestation,
-        save_plan_fn=save_plan_fn,
-    )
-
-
 __all__ = [
     "_auto_confirm_enrich_for_complete",
-    "_auto_confirm_organize_for_complete",
-    "_auto_confirm_sense_check_for_complete",
+    "_auto_confirm_stage_for_complete",
     "_require_enrich_stage_for_complete",
     "_require_organize_stage_for_complete",
     "_require_sense_check_stage_for_complete",

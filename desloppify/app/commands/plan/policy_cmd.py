@@ -7,9 +7,8 @@ import argparse
 from desloppify.base.output.terminal import colorize
 from desloppify.engine.plan_state import (
     add_rule,
-    load_policy,
+    load_policy_result,
     remove_rule,
-    render_policy_block,
     save_policy,
 )
 
@@ -30,14 +29,18 @@ def _cmd_policy_add(args: argparse.Namespace) -> None:
     if not text or not text.strip():
         print(colorize("  Rule text is required.", "red"))
         return
-    policy = load_policy()
+    result = load_policy_result()
+    _print_policy_load_warning(result)
+    policy = result.policy
     idx = add_rule(policy, text.strip())
     save_policy(policy)
     print(colorize(f"  Added rule #{idx}: {text.strip()}", "green"))
 
 
 def _cmd_policy_list(_args: argparse.Namespace) -> None:
-    policy = load_policy()
+    result = load_policy_result()
+    _print_policy_load_warning(result)
+    policy = result.policy
     rules = policy.get("rules", [])
     if not rules:
         print(colorize("  No project policy rules defined.", "dim"))
@@ -59,13 +62,27 @@ def _cmd_policy_remove(args: argparse.Namespace) -> None:
     if index is None:
         print(colorize("  --index is required for remove.", "red"))
         return
-    policy = load_policy()
+    result = load_policy_result()
+    _print_policy_load_warning(result)
+    policy = result.policy
     removed = remove_rule(policy, index)
     if removed is None:
         print(colorize(f"  No rule at index {index}.", "red"))
         return
     save_policy(policy)
     print(colorize(f"  Removed rule #{index}: {removed}", "green"))
+
+
+def _print_policy_load_warning(result) -> None:
+    if getattr(result, "ok", True):
+        return
+    detail = getattr(result, "message", "") or "unknown error"
+    print(
+        colorize(
+            f"  Warning: ignoring malformed project policy ({detail}).",
+            "yellow",
+        )
+    )
 
 
 __all__ = ["cmd_policy_dispatch"]

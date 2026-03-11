@@ -9,7 +9,14 @@ from desloppify.app.commands.helpers.rendering import (
     print_ranked_actions,
     print_replacement_groups,
 )
-from desloppify.app.commands.helpers.state import require_completed_scan, state_path
+from desloppify.app.commands.helpers.state import (
+    require_issue_inventory,
+    state_path,
+)
+from desloppify.engine._state.recovery import (
+    has_saved_plan_without_scan,
+    recover_state_from_saved_plan,
+)
 from desloppify.app.commands.helpers.subjective import print_subjective_followup
 
 # ── rendering.py: print_agent_plan ────────────────────────────────────
@@ -204,24 +211,74 @@ def test_state_path_returns_none_when_nothing_detected(monkeypatch):
     assert result is None
 
 
-# ── state.py: require_completed_scan ──────────────────────────────────
+# ── state.py: require_issue_inventory ─────────────────────────────────
 
 
-def test_require_completed_scan_with_last_scan():
+def test_require_issue_inventory_with_last_scan():
     """Returns True when state has a last_scan entry."""
-    assert require_completed_scan({"last_scan": "2026-01-01"}) is True
+    assert require_issue_inventory({"last_scan": "2026-01-01"}) is True
 
 
-def test_require_completed_scan_without_last_scan(capsys):
+def test_require_issue_inventory_without_last_scan(capsys):
     """Returns False and prints warning when no last_scan."""
-    assert require_completed_scan({}) is False
+    assert require_issue_inventory({}) is False
     out = capsys.readouterr().out
     assert "No scans yet" in out
 
 
-def test_require_completed_scan_none_last_scan(capsys):
+def test_require_issue_inventory_none_last_scan(capsys):
     """Falsy last_scan returns False."""
-    assert require_completed_scan({"last_scan": None}) is False
+    assert require_issue_inventory({"last_scan": None}) is False
+
+
+def test_require_issue_inventory_with_plan_reconstructed_inventory():
+    """Plan-reconstructed state should satisfy inventory-backed command gating."""
+    assert require_issue_inventory(
+        {
+            "last_scan": None,
+            "scan_metadata": {
+                "source": "plan_reconstruction",
+                "reconstructed_issue_count": 1,
+            },
+        }
+    ) is True
+
+
+def test_has_saved_plan_without_scan_detects_live_plan():
+    """Saved queue/triage metadata should unblock recovery mode."""
+    plan = {
+        "queue_order": ["review::a.py::1234"],
+        "clusters": {},
+        "epic_triage_meta": {},
+    }
+    assert has_saved_plan_without_scan({"issues": {}, "last_scan": None}, plan) is True
+
+
+def test_recover_state_from_saved_plan_rehydrates_queue_and_step_refs():
+    """Recovery should synthesize placeholder review issues from saved plan metadata."""
+    state = {"issues": {}, "last_scan": None}
+    plan = {
+        "queue_order": ["review::a.py::1234"],
+        "clusters": {
+            "cluster-a": {
+                "issue_ids": [],
+                "action_steps": [
+                    {"title": "Fix", "issue_refs": ["concerns::b.ts::5678"]},
+                ],
+            }
+        },
+        "epic_triage_meta": {"triage_stages": {"observe": {"report": "x"}}},
+    }
+
+    recovered = recover_state_from_saved_plan(state, plan)
+
+    assert recovered is not state
+    assert set(recovered["issues"]) == {
+        "review::a.py::1234",
+        "concerns::b.ts::5678",
+    }
+    assert recovered["issues"]["review::a.py::1234"]["summary"] == "review::a.py::1234"
+    assert recovered["issues"]["concerns::b.ts::5678"]["detector"] == "concerns"
 
 
 # ── subjective.py: print_subjective_followup ──────────────────────────

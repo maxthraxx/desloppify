@@ -17,6 +17,7 @@ from .layout import (
 )
 from .primitives import print_stage_progress
 from ..helpers import (
+    cluster_issue_ids,
     print_cascade_clear_feedback,
     triage_coverage,
 )
@@ -48,7 +49,7 @@ def _print_active_clusters(active_clusters: dict[str, dict]) -> None:
         return
     print(colorize("\n  Current clusters:", "cyan"))
     for name, cluster in active_clusters.items():
-        count = len(cluster.get("issue_ids", []))
+        count = len(cluster_issue_ids(cluster))
         desc = cluster.get("description") or ""
         desc_str = f" — {desc}" if desc else ""
         print(f"    {name}: {count} items{_cluster_tags(cluster)}{desc_str}")
@@ -58,7 +59,7 @@ def _unclustered_issue_ids(clusters: dict, open_issues: dict) -> list[str]:
     """Return issue IDs not currently assigned to any cluster."""
     all_clustered: set[str] = set()
     for cluster in clusters.values():
-        all_clustered.update(cluster.get("issue_ids", []))
+        all_clustered.update(cluster_issue_ids(cluster))
     return [fid for fid in open_issues if fid not in all_clustered]
 
 
@@ -80,7 +81,7 @@ def _print_unclustered_issues(unclustered: list[str], open_issues: dict) -> None
 def print_progress(plan: dict, open_issues: dict) -> None:
     """Show cluster state and unclustered issues."""
     clusters = plan.get("clusters", {})
-    active_clusters = {name: c for name, c in clusters.items() if c.get("issue_ids")}
+    active_clusters = {name: c for name, c in clusters.items() if cluster_issue_ids(c)}
     _print_active_clusters(active_clusters)
 
     unclustered = _unclustered_issue_ids(clusters, open_issues)
@@ -153,7 +154,7 @@ def print_organize_result(
         steps = cluster.get("action_steps", [])
         desc = cluster.get("description", "")
         desc_str = f" — {desc}" if desc else ""
-        print(colorize(f"    {name}: {len(cluster.get('issue_ids', []))} issues, {len(steps)} steps{desc_str}", "dim"))
+        print(colorize(f"    {name}: {len(cluster_issue_ids(cluster))} issues, {len(steps)} steps{desc_str}", "dim"))
 
     print()
     print(colorize("  ┌─ Prioritized organization (share with user) ────────────┐", "cyan"))
@@ -198,7 +199,7 @@ def _print_completed_clusters(completed: list[dict]) -> None:
     print(colorize("\n  Previously completed clusters:", "cyan"))
     for cluster in completed[:10]:
         name = cluster.get("name", "?")
-        count = len(cluster.get("issue_ids", []))
+        count = len(cluster_issue_ids(cluster))
         thesis = cluster.get("thesis", "")
         print(f"    {name}: {count} issues")
         if thesis:

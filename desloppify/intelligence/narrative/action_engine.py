@@ -18,7 +18,7 @@ from desloppify.intelligence.narrative.action_engine_routing import (
 )
 from desloppify.intelligence.narrative.action_models import ActionContext, ActionItem
 from desloppify.languages import get_lang
-from desloppify.state import StateModel
+from desloppify.state_io import StateModel
 
 
 def supported_fixers(state: StateModel, lang: str | None) -> set[str] | None:

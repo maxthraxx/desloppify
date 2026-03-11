@@ -7,8 +7,10 @@ import argparse
 from desloppify.base.discovery.paths import get_project_root
 from desloppify.base.output.terminal import colorize
 
+from ..helpers import has_triage_in_queue, inject_triage_stages
+from ..lifecycle import TriageLifecycleDeps, ensure_triage_started
 from ..services import TriageServices, default_triage_services
-from .orchestrator_common import ensure_triage_started
+from .orchestrator_common import STAGES
 
 
 def run_claude_orchestrator(
@@ -24,16 +26,27 @@ def run_claude_orchestrator(
         runtime = resolved_services.command_runtime(args)
         state = runtime.state
     plan = resolved_services.load_plan()
-    ensure_triage_started(
+    start_outcome = ensure_triage_started(
         plan,
-        resolved_services,
-        runner="claude",
+        services=resolved_services,
         state=state,
         attestation=getattr(args, "attestation", None),
+        log_action="triage_auto_start",
+        log_actor="system",
+        log_detail={
+            "source": "runner_auto_start",
+            "runner": "claude",
+            "injected_stage_ids": list(STAGES),
+        },
+        start_message="  Planning mode auto-started.",
+        deps=TriageLifecycleDeps(
+            has_triage_in_queue=has_triage_in_queue,
+            inject_triage_stages=inject_triage_stages,
+        ),
     )
-    plan = resolved_services.load_plan()
-    if plan.get("epic_triage_meta", {}).get("triage_start_blocked"):
+    if getattr(start_outcome, "status", None) == "blocked":
         return
+    plan = resolved_services.load_plan()
 
     print(colorize("\n  Claude triage orchestrator mode.", "bold"))
     print(colorize("  " + "─" * 60, "dim"))

@@ -8,7 +8,7 @@ import logging
 try:
     import defusedxml.ElementTree as _element_tree
 except ModuleNotFoundError:  # pragma: no cover
-    import xml.etree.ElementTree as _element_tree
+    import xml.etree.ElementTree as _element_tree  # nosec B405
 from pathlib import Path
 
 from desloppify.base.discovery.file_paths import resolve_path

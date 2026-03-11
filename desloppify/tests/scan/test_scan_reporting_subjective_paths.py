@@ -27,7 +27,7 @@ def test_show_score_model_breakdown_prints_recipe_and_drags(capsys):
     scan_reporting_dimensions_mod.show_score_model_breakdown(state)
     out = capsys.readouterr().out
     assert "Score recipe:" in out
-    assert "40% mechanical + 60% subjective" in out
+    assert "25% mechanical + 75% subjective" in out
     assert "Biggest weighted drags" in out
     assert "High elegance" in out
 

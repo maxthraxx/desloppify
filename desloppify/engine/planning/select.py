@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-from desloppify.engine._work_queue.core import (
-    QueueBuildOptions,
-    build_work_queue,
-)
+from desloppify.engine._work_queue.core import QueueBuildOptions
+from desloppify.engine.planning.queue_policy import build_execution_queue
 from desloppify.engine.planning.types import PlanItem, PlanState
 
 
@@ -16,10 +14,10 @@ def get_next_items(
 ) -> list[PlanItem]:
     """Get the N highest-priority open issues.
 
-    Legacy plan API intentionally returns only issue items (not synthetic
-    subjective queue items) so existing planner consumers stay stable.
+    This helper follows execution-queue semantics so it stays aligned with the
+    living plan while preserving the legacy issue-only return contract.
     """
-    result = build_work_queue(
+    result = build_execution_queue(
         state,
         options=QueueBuildOptions(
             count=count,

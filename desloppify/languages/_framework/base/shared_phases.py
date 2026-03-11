@@ -8,7 +8,7 @@ from typing import Any
 from desloppify.base.discovery.paths import get_project_root
 from desloppify.base.output.terminal import log
 from desloppify.languages._framework.base.types import LangRuntimeContract
-from desloppify.state import Issue
+from desloppify.state_io import Issue
 
 from .shared_phases_helpers import (
     _entries_to_issues as _entries_to_issues_impl,

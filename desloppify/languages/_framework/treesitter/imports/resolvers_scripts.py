@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 
 
@@ -57,9 +58,10 @@ def _read_composer_psr4(scan_path: str) -> dict[str, str]:
 
     mappings: dict[str, str] = {}
     composer_path = os.path.join(scan_path, "composer.json")
+    if not os.path.isfile(composer_path):
+        _PHP_COMPOSER_CACHE[scan_path] = mappings
+        return mappings
     try:
-        import json
-
         with open(composer_path) as f:
             data = json.load(f)
         for section in ("autoload", "autoload-dev"):
@@ -70,8 +72,8 @@ def _read_composer_psr4(scan_path: str) -> dict[str, str]:
                     mappings[prefix] = dirs
                 elif isinstance(dirs, list) and dirs:
                     mappings[prefix] = dirs[0]
-    except (OSError, ValueError, KeyError):
-        pass
+    except (OSError, ValueError, TypeError, AttributeError):
+        return mappings
     _PHP_COMPOSER_CACHE[scan_path] = mappings
     return mappings
 

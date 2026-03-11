@@ -376,6 +376,63 @@ class TestPrepareHolisticReview:
         assert batch["concern_signals"][0]["question"] == "is this intentional?"
         assert "truncated to 3 files from 6 candidates" in batch["why"]
 
+    def test_concern_batch_includes_fingerprints_and_finding_ids(self):
+        concerns = [
+            SimpleNamespace(
+                type="complexity_hotspot",
+                file="src/big.ts",
+                summary="Large file with high complexity",
+                question="Is this file doing too many things?",
+                evidence=("Flagged by: structural",),
+                fingerprint="abc123def456",
+                source_issues=("structural::big.ts::large_file", "structural::big.ts::high_complexity"),
+            ),
+            SimpleNamespace(
+                type="systemic_smell",
+                file="src/utils.ts",
+                summary="Broad exception pattern",
+                question="Is this intentional?",
+                evidence=("Flagged by: smells",),
+                fingerprint="xyz789",
+                source_issues=("smells::utils.ts::broad_except",),
+            ),
+        ]
+        batch = _batch_concerns(concerns)
+
+        assert batch is not None
+        signals = batch["concern_signals"]
+        assert len(signals) == 2
+
+        assert signals[0]["fingerprint"] == "abc123def456"
+        assert signals[0]["finding_ids"] == [
+            "structural::big.ts::large_file",
+            "structural::big.ts::high_complexity",
+        ]
+        assert signals[1]["fingerprint"] == "xyz789"
+        assert signals[1]["finding_ids"] == ["smells::utils.ts::broad_except"]
+
+        # judgment_finding_counts should be keyed by detector (from source issue IDs)
+        counts = batch["judgment_finding_counts"]
+        assert counts["structural"] == 2
+        assert counts["smells"] == 1
+
+    def test_concern_batch_omits_empty_fingerprint_and_source_issues(self):
+        concerns = [
+            SimpleNamespace(
+                type="design_concern",
+                file="src/a.ts",
+                summary="concern",
+                question="ok?",
+                evidence=(),
+            ),
+        ]
+        batch = _batch_concerns(concerns)
+        assert batch is not None
+        signal = batch["concern_signals"][0]
+        assert "fingerprint" not in signal
+        assert "finding_ids" not in signal
+        assert "judgment_finding_counts" not in batch
+
     def test_prepare_holistic_review_applies_max_files_to_concern_batch(
         self, tmp_path, monkeypatch
     ):
@@ -680,21 +737,26 @@ class TestImportHolisticIssues:
         assert entry.get("reviewed_at")
 
     def test_reviewed_files_auto_resolves_per_file_coverage_markers(self, tmp_path):
-        state = empty_state()
-        module_path = tmp_path / "pkg" / "module.py"
-        module_path.parent.mkdir(parents=True, exist_ok=True)
-        module_path.write_text("def run():\n    return 1\n")
+        """resolve_reviewed_file_coverage_issues is now a no-op.
 
-        coverage_id = "subjective_review::pkg/module.py::changed"
+        Dimension-level resolution is handled by resolve_holistic_coverage_issues
+        which checks assessed dimensions in state.  This test verifies that
+        importing a holistic review with an assessed dimension resolves the
+        dimension-level subjective_review issue.
+        """
+        state = empty_state()
+
+        coverage_id = "subjective_review::.::high_level_elegance"
         state["issues"][coverage_id] = {
             "id": coverage_id,
             "detector": "subjective_review",
-            "file": "pkg/module.py",
+            "file": ".",
+            "name": "high_level_elegance",
             "status": "open",
-            "summary": "File changed since last review",
-            "detail": {"reason": "changed"},
+            "summary": "High elegance — no assessment on record",
+            "detail": {"reason": "unassessed", "dimension": "high_level_elegance"},
             "tier": 4,
-            "confidence": "medium",
+            "confidence": "low",
             "first_seen": "2026-01-01T00:00:00+00:00",
             "last_seen": "2026-01-01T00:00:00+00:00",
             "resolved_at": None,
@@ -705,7 +767,6 @@ class TestImportHolisticIssues:
         payload = {
             "assessments": {"high_level_elegance": 95},
             "issues": [],
-            "reviewed_files": ["pkg/module.py"],
         }
 
         from desloppify.base.runtime_state import RuntimeContext, runtime_scope
@@ -715,7 +776,7 @@ class TestImportHolisticIssues:
             diff = _call_import_holistic_issues(payload, state, "python", project_root=tmp_path)
 
         assert diff["auto_resolved"] >= 1
-        assert state["issues"][coverage_id]["status"] == "auto_resolved"
+        assert state["issues"][coverage_id]["status"] == "fixed"
 
     def test_holistic_potential_added(self):
         state = empty_state()
@@ -1609,5 +1670,4 @@ class TestFilterBatchesToDimensions:
         assert len(filtered) == 1
         assert filtered[0]["name"] == "low_level_elegance"
         assert filtered[0]["files_to_read"] == ["core.py"]
-
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -15,18 +16,54 @@ def _default_policy_path() -> Path:
     return get_project_root() / ".desloppify" / "project_policy.json"
 
 
-def load_policy(path: Path | None = None) -> dict[str, Any]:
+@dataclass(frozen=True)
+class PolicyLoadResult:
+    ok: bool
+    policy: dict[str, Any]
+    message: str = ""
+    error_kind: str | None = None
+
+
+def load_policy_result(path: Path | None = None) -> PolicyLoadResult:
     p = path or _default_policy_path()
     if not p.exists():
-        return {"rules": []}
+        return PolicyLoadResult(ok=True, policy={"rules": []})
     try:
         data = json.loads(p.read_text())
-    except (json.JSONDecodeError, OSError):
-        return {"rules": []}
+    except json.JSONDecodeError as exc:
+        return PolicyLoadResult(
+            ok=False,
+            policy={"rules": []},
+            message=str(exc),
+            error_kind="policy_parse_error",
+        )
+    except OSError as exc:
+        return PolicyLoadResult(
+            ok=False,
+            policy={"rules": []},
+            message=str(exc),
+            error_kind="policy_read_error",
+        )
     if not isinstance(data, dict):
-        return {"rules": []}
+        return PolicyLoadResult(
+            ok=False,
+            policy={"rules": []},
+            message="project policy is not a JSON object",
+            error_kind="policy_invalid_shape",
+        )
     data.setdefault("rules", [])
-    return data
+    if not isinstance(data.get("rules"), list):
+        return PolicyLoadResult(
+            ok=False,
+            policy={"rules": []},
+            message="project policy 'rules' must be a list",
+            error_kind="policy_invalid_rules",
+        )
+    return PolicyLoadResult(ok=True, policy=data)
+
+
+def load_policy(path: Path | None = None) -> dict[str, Any]:
+    return load_policy_result(path).policy
 
 
 def save_policy(policy: dict[str, Any], path: Path | None = None) -> None:
@@ -69,6 +106,8 @@ def render_policy_block(policy: dict[str, Any]) -> str:
 __all__ = [
     "add_rule",
     "load_policy",
+    "load_policy_result",
+    "PolicyLoadResult",
     "remove_rule",
     "render_policy_block",
     "save_policy",

@@ -4,18 +4,18 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from desloppify import state as state_mod
 from desloppify.base.exception_sets import CommandError
 from desloppify.base.output.terminal import colorize
 from desloppify.engine._state.schema import StateModel
+from desloppify.state_scoring import score_snapshot
 
 if TYPE_CHECKING:
-    from desloppify.state import ScoreSnapshot
+    from desloppify.state_scoring import ScoreSnapshot
 
 
 def score_snapshot_or_error(state: StateModel) -> ScoreSnapshot:
     """Return a full score snapshot or raise CommandError when unavailable."""
-    snapshot = state_mod.score_snapshot(state)
+    snapshot = score_snapshot(state)
     if (
         snapshot.overall is None
         or snapshot.objective is None

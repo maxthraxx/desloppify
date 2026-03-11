@@ -13,16 +13,17 @@ _CLUSTER_MEMBER_SAMPLE_LIMIT = 25
 
 def _serialize_cluster_member(member: Mapping[str, Any]) -> dict[str, Any]:
     """Serialize a cluster member without nested plan metadata."""
-    return {
+    serialized: dict[str, Any] = {
         "id": member.get("id"),
-        "kind": member.get("kind", "issue"),
         "confidence": member.get("confidence"),
         "detector": member.get("detector"),
         "file": member.get("file"),
         "summary": member.get("summary"),
         "status": member.get("status"),
-        "primary_command": member.get("primary_command"),
     }
+    serialized["kind"] = member.get("kind", "issue")
+    serialized["primary_command"] = member.get("primary_command")
+    return serialized
 
 
 def _serialize_cluster_item(item: Mapping[str, Any]) -> dict[str, Any]:
@@ -35,7 +36,6 @@ def _serialize_cluster_item(item: Mapping[str, Any]) -> dict[str, Any]:
     member_count = int(item.get("member_count", len(members_raw)))
     serialized_cluster: dict[str, Any] = {
         "id": item.get("id"),
-        "kind": "cluster",
         "action_type": item.get("action_type", "manual_fix"),
         "summary": item.get("summary"),
         "member_count": member_count,
@@ -43,8 +43,9 @@ def _serialize_cluster_item(item: Mapping[str, Any]) -> dict[str, Any]:
         "cluster_name": item.get("cluster_name", item.get("id")),
         "cluster_auto": item.get("cluster_auto", True),
         "detector": item.get("detector"),
-        "primary_command": item.get("primary_command"),
     }
+    serialized_cluster["kind"] = "cluster"
+    serialized_cluster["primary_command"] = item.get("primary_command")
     if member_count > len(serialized_members):
         serialized_cluster["members_truncated"] = True
         serialized_cluster["members_sample_limit"] = _CLUSTER_MEMBER_SAMPLE_LIMIT
@@ -60,17 +61,18 @@ def _serialize_cluster_item(item: Mapping[str, Any]) -> dict[str, Any]:
 
 def _serialize_issue_item_base(item: Mapping[str, Any]) -> dict[str, Any]:
     """Serialize core issue fields shared across output modes."""
-    return {
+    serialized: dict[str, Any] = {
         "id": item.get("id"),
-        "kind": item.get("kind", "issue"),
         "confidence": item.get("confidence"),
         "detector": item.get("detector"),
         "file": item.get("file"),
         "summary": item.get("summary"),
         "detail": item.get("detail", {}),
         "status": item.get("status"),
-        "primary_command": item.get("primary_command"),
     }
+    serialized["kind"] = item.get("kind", "issue")
+    serialized["primary_command"] = item.get("primary_command")
+    return serialized
 
 
 def serialize_item(item: Mapping[str, Any]) -> dict[str, Any]:
@@ -115,20 +117,30 @@ def build_query_payload(
 ) -> dict[str, Any]:
     """Build JSON payload for query.json and non-terminal output modes."""
     serialized = [serialize_item(item) for item in items]
+    mode = "execution" if command == "next" else command
     queue_section: dict[str, Any] = {
         "total": queue.get("total", len(items)),
+        "mode": mode,
     }
+
+    agent_notes = [
+        "Do NOT use `desloppify plan skip` unless the user explicitly asks you to skip an item.",
+        "If you cannot fix an item, report it and move to the next one.",
+        "For cluster items: if the autofix_hint finds 0 results, drill into individual issues with the primary_command.",
+    ]
+    if command == "backlog":
+        agent_notes = [
+            "This is backlog discovery, not the active execution queue.",
+            "Use `desloppify next` for the current execution item.",
+            "Do NOT treat backlog rank as permission to bypass the living plan.",
+        ]
 
     payload: dict[str, Any] = {
         "command": command,
         "items": serialized,
         "queue": queue_section,
         "narrative": narrative,
-        "agent_notes": [
-            "Do NOT use `desloppify plan skip` unless the user explicitly asks you to skip an item.",
-            "If you cannot fix an item, report it and move to the next one.",
-            "For cluster items: if the autofix_hint finds 0 results, drill into individual issues with the primary_command.",
-        ],
+        "agent_notes": agent_notes,
     }
 
     if plan and (
@@ -158,8 +170,20 @@ def build_query_payload(
 
 def render_markdown(items: Sequence[Mapping[str, Any]]) -> str:
     """Render queue items as markdown."""
+    return render_markdown_for_command(items, command="next")
+
+
+def render_markdown_for_command(
+    items: Sequence[Mapping[str, Any]],
+    *,
+    command: str,
+) -> str:
+    """Render queue items as markdown for the given queue surface."""
+    heading = "# Desloppify Execution Queue"
+    if command == "backlog":
+        heading = "# Desloppify Backlog"
     lines = [
-        "# Desloppify Next Queue",
+        heading,
         "",
         "| Kind | Confidence | Summary | Command |",
         "|------|------------|---------|---------|",
@@ -181,6 +205,7 @@ def write_output_file(
     *,
     safe_write_text_fn,
     colorize_fn,
+    label: str = "queue output",
 ) -> bool:
     """Persist payload to file and print success/failure hints."""
     try:
@@ -188,7 +213,7 @@ def write_output_file(
         print(colorize_fn(f"Wrote {item_count} items to {output_file}", "green"))
     except OSError as exc:
         payload["output_error"] = str(exc)
-        print_write_error(output_file, exc, label="next output")
+        print_write_error(output_file, exc, label=label)
         return False
     return True
 
@@ -197,11 +222,13 @@ def emit_non_terminal_output(
     output_format: str,
     payload: dict[str, Any],
     items: Sequence[Mapping[str, Any]],
+    *,
+    command: str = "next",
 ) -> bool:
     """Render JSON/markdown output variants."""
     renderers = {
         "json": lambda: print(json.dumps(payload, indent=2)),
-        "md": lambda: print(render_markdown(items)),
+        "md": lambda: print(render_markdown_for_command(items, command=command)),
     }
     renderer = renderers.get(output_format)
     if renderer is None:
@@ -214,6 +241,7 @@ __all__ = [
     "build_query_payload",
     "emit_non_terminal_output",
     "render_markdown",
+    "render_markdown_for_command",
     "serialize_item",
     "write_output_file",
 ]

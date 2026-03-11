@@ -29,6 +29,7 @@ from desloppify.base.subjective_dimensions_constants import (
 from desloppify.base.subjective_dimensions_constants import (
     title_display_name as _title_display_name,
 )
+from desloppify.base.subjective_dimensions_merge import merge_dimension_meta
 from desloppify.base.text_utils import is_numeric
 
 
@@ -76,12 +77,18 @@ def default_dimension_keys() -> tuple[str, ...]:
 
 
 def default_dimension_keys_for_lang(lang_name: str | None) -> tuple[str, ...]:
-    """Return default subjective dimension keys for a language.
-
-    Language-specific filtering now happens in intelligence-layer metadata APIs.
-    """
-    _ = _normalize_lang_name(lang_name)
-    return default_dimension_keys()
+    """Return the enabled-by-default subjective dimension keys for one language."""
+    normalized_lang = _normalize_lang_name(lang_name)
+    if normalized_lang is None:
+        return default_dimension_keys()
+    metadata = load_subjective_dimension_metadata_for_lang(normalized_lang)
+    return tuple(
+        sorted(
+            dim
+            for dim, payload in metadata.items()
+            if bool(payload.get("enabled_by_default", False))
+        )
+    )
 
 
 def _build_metadata_registry() -> dict[str, dict[str, object]]:
@@ -96,6 +103,28 @@ def _build_metadata_registry() -> dict[str, dict[str, object]]:
     return out
 
 
+def _merge_lang_metadata(
+    metadata: dict[str, dict[str, object]],
+    *,
+    lang_name: str,
+) -> dict[str, dict[str, object]]:
+    try:
+        dimensions, prompts, _system_prompt = (
+            PROVIDER_STATE.load_dimensions_payload_for_lang_provider(lang_name)
+        )
+    except (ImportError, ValueError, TypeError, RuntimeError):
+        return metadata
+    for payload in metadata.values():
+        payload["enabled_by_default"] = False
+    merge_dimension_meta(
+        metadata,
+        dimensions=dimensions,
+        prompts=prompts,
+        override_existing=True,
+    )
+    return metadata
+
+
 @lru_cache(maxsize=1)
 def load_subjective_dimension_metadata() -> dict[str, dict[str, object]]:
     """Return canonical subjective metadata map."""
@@ -107,8 +136,11 @@ def load_subjective_dimension_metadata_for_lang(
     lang_name: str | None,
 ) -> dict[str, dict[str, object]]:
     """Return canonical metadata for a language."""
-    _ = _normalize_lang_name(lang_name)
-    return _build_metadata_registry()
+    normalized_lang = _normalize_lang_name(lang_name)
+    metadata = _build_metadata_registry()
+    if normalized_lang is None:
+        return metadata
+    return _merge_lang_metadata(metadata, lang_name=normalized_lang)
 
 
 def _metadata_registry(lang_name: str | None) -> dict[str, dict[str, object]]:

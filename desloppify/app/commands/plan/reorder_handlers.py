@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 
 from desloppify.app.commands.helpers.runtime import command_runtime
-from desloppify.app.commands.helpers.state import require_completed_scan
+from desloppify.app.commands.helpers.state import require_issue_inventory
 from desloppify.app.commands.plan.shared.patterns import resolve_ids_from_patterns
 from desloppify.base.output.terminal import colorize
 from desloppify.engine.plan_state import (
@@ -39,7 +39,7 @@ def resolve_target(plan: dict, target: str | None, position: str) -> str | None:
 def cmd_plan_reorder(args: argparse.Namespace) -> None:
     """Reorder issues in the queue."""
     state = command_runtime(args).state
-    if not require_completed_scan(state):
+    if not require_issue_inventory(state):
         return
 
     patterns: list[str] = getattr(args, "patterns", [])

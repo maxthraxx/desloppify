@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import Counter
+from dataclasses import dataclass
 
 from desloppify.app.commands.helpers.queue_progress import format_plan_delta
 from desloppify.base.output.terminal import colorize
@@ -21,8 +22,20 @@ _ACTION_TYPE_LABELS = {
 _CLUSTER_NAME_LABELS = {
     "auto/initial-review": "Initial subjective review",
     "auto/stale-review": "Stale subjective review",
-    "auto/under-target-review": "Optional re-review",
+    "auto/under-target-review": "Below-target re-review",
 }
+
+
+@dataclass(frozen=True)
+class ClusterTypeLabels:
+    action_types: dict[str, str]
+    cluster_names: dict[str, str]
+
+
+CLUSTER_TYPE_LABELS = ClusterTypeLabels(
+    action_types=_ACTION_TYPE_LABELS,
+    cluster_names=_CLUSTER_NAME_LABELS,
+)
 
 
 def scorecard_subjective(
@@ -73,9 +86,9 @@ def render_grouped(items: list[dict], group: str) -> None:
 
 
 def _cluster_type_label(cluster_name: str, action_type: str) -> str:
-    if cluster_name in _CLUSTER_NAME_LABELS:
-        return _CLUSTER_NAME_LABELS[cluster_name]
-    return _ACTION_TYPE_LABELS.get(action_type, "Grouped task")
+    if cluster_name in CLUSTER_TYPE_LABELS.cluster_names:
+        return CLUSTER_TYPE_LABELS.cluster_names[cluster_name]
+    return CLUSTER_TYPE_LABELS.action_types.get(action_type, "Grouped task")
 
 
 def _render_cluster_files(members: list[dict]) -> None:
@@ -142,42 +155,35 @@ def _step_display_text(step: str | dict) -> str:
     return str(step)
 
 
-def render_cluster_item(item: dict) -> None:
-    """Render an auto-cluster task card."""
-    member_count = int(item.get("member_count", 0))
-    action_type = item.get("action_type", "manual_fix")
+def _cluster_header_bits(item: dict) -> tuple[str, str, str, list[dict]]:
     cluster_name = item.get("id", "")
-    is_optional = bool(item.get("cluster_optional"))
-    type_label = _cluster_type_label(cluster_name, action_type)
+    action_type = item.get("action_type", "manual_fix")
     action_steps = item.get("action_steps") or []
     done_count = sum(1 for s in action_steps if isinstance(s, dict) and s.get("done"))
     step_badge = f" [{done_count}/{len(action_steps)} steps done]" if action_steps else ""
-    optional_tag = " — optional" if is_optional else ""
-    print(colorize(f"  ({type_label}, {member_count} issues{step_badge}{optional_tag})", "bold"))
-    print(colorize("  " + "─" * 60, "dim"))
-    print(f"  {colorize(item.get('summary', ''), 'yellow')}")
+    optional_tag = " — optional" if item.get("cluster_optional") else ""
+    type_label = _cluster_type_label(cluster_name, action_type)
+    return cluster_name, type_label, f"{step_badge}{optional_tag}", action_steps
 
-    # Action steps
-    if action_steps:
-        show_count = min(3, len(action_steps))
-        for i, step in enumerate(action_steps[:show_count], 1):
-            marker = "[x]" if isinstance(step, dict) and step.get("done") else "[ ]"
-            print(colorize(f"    {i}. {marker} {_step_display_text(step)}", "dim"))
-        remaining = len(action_steps) - show_count
-        if remaining > 0:
-            print(colorize(f"    ... and {remaining} more — drill in to view all", "dim"))
 
-    dep_order = item.get("dependency_order")
+def _render_cluster_steps(action_steps: list[dict]) -> None:
+    if not action_steps:
+        return
+    show_count = min(3, len(action_steps))
+    for i, step in enumerate(action_steps[:show_count], 1):
+        marker = "[x]" if isinstance(step, dict) and step.get("done") else "[ ]"
+        print(colorize(f"    {i}. {marker} {_step_display_text(step)}", "dim"))
+    remaining = len(action_steps) - show_count
+    if remaining > 0:
+        print(colorize(f"    ... and {remaining} more — drill in to view all", "dim"))
+
+
+def _render_cluster_priority(dep_order: object) -> None:
     if dep_order is not None and dep_order <= 2:
         print(colorize("  Priority: complete before other clusters", "cyan"))
 
-    # Cluster members
-    members = item.get("members", [])
-    if members:
-        _render_cluster_files(members)
-        _render_cluster_sample(members)
 
-    # Primary action
+def _render_cluster_primary_action(item: dict) -> None:
     autofix_hint = item.get("autofix_hint")
     primary_command = item.get("primary_command")
     if autofix_hint:
@@ -185,6 +191,26 @@ def render_cluster_item(item: dict) -> None:
         print(colorize("  If auto finds 0, drill into individual issues:", "dim"))
     if primary_command:
         print(colorize(f"  Action: {primary_command}", "cyan"))
+
+
+def render_cluster_item(item: dict) -> None:
+    """Render an auto-cluster task card."""
+    member_count = int(item.get("member_count", 0))
+    is_optional = bool(item.get("cluster_optional"))
+    cluster_name, type_label, suffix, action_steps = _cluster_header_bits(item)
+    print(colorize(f"  ({type_label}, {member_count} issues{suffix})", "bold"))
+    print(colorize("  " + "─" * 60, "dim"))
+    print(f"  {colorize(item.get('summary', ''), 'yellow')}")
+
+    _render_cluster_steps(action_steps)
+    _render_cluster_priority(item.get("dependency_order"))
+
+    members = item.get("members", [])
+    if members:
+        _render_cluster_files(members)
+        _render_cluster_sample(members)
+
+    _render_cluster_primary_action(item)
 
     if is_optional:
         _render_optional_cluster_commands(cluster_name)
@@ -196,19 +222,9 @@ def render_cluster_item(item: dict) -> None:
 def render_queue_header(queue: dict, explain: bool) -> None:
     del explain
     total = queue.get("total", 0)
-    items = queue.get("items", [])
-    # When the only item is the "run scan" workflow action, show "Queue cleared"
-    # instead of a misleading "1 items" count.
-    if (
-        total == 1
-        and len(items) == 1
-        and items[0].get("id") == "workflow::run-scan"
-    ):
-        print(colorize("\n  Queue cleared (1 workflow step)", "bold"))
-    else:
-        print(colorize(f"\n  Queue: {total} item{'s' if total != 1 else ''}", "bold"))
-        if total > 5:
-            print(colorize("  (Skip items only when explicitly requested.)", "dim"))
+    print(colorize(f"\n  Queue: {total} item{'s' if total != 1 else ''}", "bold"))
+    if total > 5:
+        print(colorize("  (Skip items only when explicitly requested.)", "dim"))
 
 
 def show_empty_queue(
@@ -255,6 +271,8 @@ def render_compact_item(item: dict, idx: int, total: int) -> None:
 
 
 __all__ = [
+    "CLUSTER_TYPE_LABELS",
+    "ClusterTypeLabels",
     "cluster_action_commands",
     "effort_tag",
     "is_auto_fix_command",

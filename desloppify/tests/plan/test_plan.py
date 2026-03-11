@@ -498,15 +498,14 @@ class TestGetNextItems:
             confidence="high",
             detail={"dimension": "naming_quality"},
         )
-        mech = _issue("mech_item", detector="smells", tier=3, confidence="high")
+        # Review is non-objective — only surfaces when no objective items remain.
         st = _state(
-            [mech, review],
+            [review],
             subjective_assessments={"naming_quality": {"score": 92}},
         )
         items = get_next_items(st, count=2)
         ids = {item["id"] for item in items}
         assert "review_item" in ids
-        assert "mech_item" in ids
 
     def test_review_issues_reorder_by_confidence_then_review_weight(self):
         standard = _issue(
@@ -549,5 +548,6 @@ class TestGetNextItems:
         )
         items = get_next_items(st, count=2)
         ids = {item["id"] for item in items}
+        # Review is non-objective — filtered when objective items exist
         assert "urgent" in ids
-        assert "review_low" in ids
+        assert "review_low" not in ids

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import desloppify.app.commands.scan.workflow as scan_workflow_mod
 from desloppify.app.commands.scan.orchestrator import ScanOrchestrator
 from desloppify.app.commands.scan.workflow import ScanMergeResult, ScanNoiseSnapshot
 
@@ -65,3 +66,51 @@ def test_scan_orchestrator_forwards_runtime_and_payloads() -> None:
     reminder_payload = {"messages": ["re-run stale review dimensions"]}
     orchestrator.persist_reminders(reminder_payload)
     assert calls["persist"] == (runtime, reminder_payload)
+
+
+def test_run_scan_generation_uses_planning_scan_surface(monkeypatch) -> None:
+    calls: dict[str, object] = {}
+
+    monkeypatch.setattr(scan_workflow_mod, "enable_file_cache", lambda: calls.setdefault("file_cache_on", True))
+    monkeypatch.setattr(scan_workflow_mod, "disable_file_cache", lambda: calls.setdefault("file_cache_off", True))
+    monkeypatch.setattr(scan_workflow_mod, "enable_parse_cache", lambda: calls.setdefault("parse_cache_on", True))
+    monkeypatch.setattr(scan_workflow_mod, "disable_parse_cache", lambda: calls.setdefault("parse_cache_off", True))
+    monkeypatch.setattr(
+        scan_workflow_mod,
+        "generate_plan_issues",
+        lambda path, *, lang, options: (
+            calls.setdefault("generate", (path, lang, options)),
+            ([{"id": "open-1"}], {"smells": 1}),
+        )[1],
+    )
+    monkeypatch.setattr(scan_workflow_mod, "collect_codebase_metrics", lambda _lang, _path: {"loc": 10})
+    monkeypatch.setattr(scan_workflow_mod, "warn_explicit_lang_with_no_files", lambda *_a, **_k: None)
+    monkeypatch.setattr(scan_workflow_mod, "get_exclusions", lambda: [])
+    monkeypatch.setattr(scan_workflow_mod, "_augment_stale_wontfix_impl", lambda issues, **_k: (issues, 0))
+
+    runtime = SimpleNamespace(
+        path=".",
+        lang=SimpleNamespace(file_finder=None),
+        effective_include_slow=True,
+        zone_overrides={"src": "prod"},
+        profile="full",
+        args=SimpleNamespace(lang=None),
+        state={},
+        config={},
+    )
+
+    issues, potentials, metrics = scan_workflow_mod.run_scan_generation(runtime)
+
+    assert issues == [{"id": "open-1"}]
+    assert potentials["smells"] == 1
+    assert potentials["stale_wontfix"] == 0
+    assert metrics == {"loc": 10}
+    assert calls["generate"][0] == "."
+    assert calls["generate"][1] is runtime.lang
+    assert calls["generate"][2].include_slow is True
+    assert calls["generate"][2].zone_overrides == {"src": "prod"}
+    assert calls["generate"][2].profile == "full"
+    assert calls["file_cache_on"] is True
+    assert calls["file_cache_off"] is True
+    assert calls["parse_cache_on"] is True
+    assert calls["parse_cache_off"] is True

@@ -14,13 +14,13 @@ from desloppify.base.config import (
     DEFAULT_TARGET_STRICT_SCORE,
     target_strict_score_from_config,
 )
-from desloppify.base.exception_sets import PLAN_LOAD_EXCEPTIONS
 from desloppify.engine.plan_queue import (
     SubjectiveVisibility,
     compute_subjective_visibility,
     has_living_plan,
     load_plan,
 )
+from desloppify.engine.plan_state import PlanLoadStatus
 from desloppify.engine._state.schema import StateModel
 
 
@@ -31,15 +31,6 @@ class _PlanAutoLoad:
 # Sentinel: "auto-load plan from disk" (the default).
 _PLAN_AUTO_LOAD = _PlanAutoLoad()
 PlanOption = dict | None | _PlanAutoLoad
-
-
-@dataclass(frozen=True)
-class PlanLoadStatus:
-    """Resolved plan load result with degraded-mode signaling."""
-
-    plan: dict | None
-    degraded: bool
-    error_kind: str | None = None
 
 
 @dataclass(frozen=True)
@@ -70,13 +61,22 @@ def resolve_plan_load_status(
 
     try:
         resolved_plan = load_plan()
-    except PLAN_LOAD_EXCEPTIONS as exc:
+        return PlanLoadStatus(plan=resolved_plan, degraded=False, error_kind=None)
+    except OSError as exc:
         return PlanLoadStatus(
             plan=None,
             degraded=True,
             error_kind=exc.__class__.__name__,
         )
-    return PlanLoadStatus(plan=resolved_plan, degraded=False, error_kind=None)
+    except (
+        ValueError,
+        UnicodeDecodeError,
+    ) as exc:
+        return PlanLoadStatus(
+            plan=None,
+            degraded=True,
+            error_kind=exc.__class__.__name__,
+        )
 
 
 def queue_context(

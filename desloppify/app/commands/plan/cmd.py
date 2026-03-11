@@ -11,7 +11,7 @@ from desloppify.app.commands.helpers.queue_progress import (
 )
 from desloppify.app.commands.helpers.rendering import print_agent_plan
 from desloppify.app.commands.helpers.runtime import command_runtime
-from desloppify.app.commands.helpers.state import require_completed_scan
+from desloppify.app.commands.helpers.state import require_issue_inventory
 from desloppify.app.commands.plan.cluster import cmd_cluster_dispatch
 from desloppify.app.commands.plan.commit_log import cmd_commit_log_dispatch
 from desloppify.app.commands.plan.override import (
@@ -26,6 +26,7 @@ from desloppify.app.commands.plan.override import (
 )
 from desloppify.app.commands.plan.policy_cmd import cmd_policy_dispatch
 from desloppify.app.commands.plan.queue_render import cmd_plan_queue
+from desloppify.app.commands.plan.repair_state import cmd_plan_repair_state
 from desloppify.app.commands.plan.reorder_handlers import cmd_plan_reorder
 from desloppify.app.commands.plan.triage.command import cmd_plan_triage
 from desloppify.engine.plan_state import (
@@ -55,7 +56,7 @@ def cmd_plan_output(args: argparse.Namespace) -> None:
     runtime = command_runtime(args)
     state = runtime.state
 
-    if not require_completed_scan(state):
+    if not require_issue_inventory(state):
         return
 
     config_warning = check_config_staleness(runtime.config)
@@ -185,7 +186,7 @@ def _cmd_plan_show(args: argparse.Namespace) -> None:
     if active:
         print(f"  Focus:            {active}")
     if superseded:
-        print(f"  Disappeared:      {superseded} (resolved or removed since last scan)")
+        print(f"  Scan drift:       {superseded} (no longer actionable in current state)")
 
     _print_commit_tracking(plan)
 
@@ -221,6 +222,7 @@ _PLAN_ACTION_HANDLERS = {
     "scan-gate": cmd_plan_scan_gate,
     "commit-log": cmd_commit_log_dispatch,
     "policy": cmd_policy_dispatch,
+    "repair-state": cmd_plan_repair_state,
 }
 
 

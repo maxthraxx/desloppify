@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from desloppify.engine.plan_triage import TRIAGE_STAGE_SPECS
 from desloppify.engine._scoring.subjective.core import DISPLAY_NAMES
 from desloppify.engine._state.schema import StateModel
 from desloppify.engine._work_queue.helpers import (
@@ -19,6 +20,7 @@ from desloppify.engine._work_queue.synthetic_workflow import (
     build_create_plan_item,
     build_deferred_disposition_item,
     build_import_scores_item,
+    build_run_scan_item,
     build_score_checkpoint_item,
 )
 from desloppify.engine._work_queue.types import WorkQueueItem
@@ -117,10 +119,9 @@ def build_triage_stage_items(plan: dict, state: dict) -> list[WorkQueueItem]:
     force_visible = bool(meta.get("triage_force_visible"))
     confirmed = confirmed_triage_stage_names(meta)
     recorded_unconfirmed = recorded_unconfirmed_triage_stage_names(meta)
-    stage_names = ("observe", "reflect", "organize", "enrich", "sense-check", "commit")
     present_names = {
         name
-        for sid, name in zip(TRIAGE_STAGE_IDS, stage_names, strict=False)
+        for name, sid in TRIAGE_STAGE_SPECS
         if sid in present_ids
     }
     present_names.update(recorded_unconfirmed)
@@ -136,7 +137,7 @@ def build_triage_stage_items(plan: dict, state: dict) -> list[WorkQueueItem]:
 
     label_map = dict(TRIAGE_STAGE_LABELS)
     items: list[WorkQueueItem] = []
-    for sid, name in zip(TRIAGE_STAGE_IDS, stage_names, strict=False):
+    for name, sid in TRIAGE_STAGE_SPECS:
         if name not in present_names:
             continue
         if name in confirmed:
@@ -158,7 +159,6 @@ def build_triage_stage_items(plan: dict, state: dict) -> list[WorkQueueItem]:
             "detector": "triage",
             "file": ".",
             "kind": "workflow_stage",
-            "force_visible": force_visible,
             "summary": f"Triage: {label_map.get(name, name)}",
             "detail": {
                 "total_review_issues": open_review_count,
@@ -173,6 +173,7 @@ def build_triage_stage_items(plan: dict, state: dict) -> list[WorkQueueItem]:
             "blocked_by": blocked_by,
             "is_blocked": bool(blocked_by),
         }
+        item["force_visible"] = force_visible
         item["primary_command"] = cmd
         items.append(item)
     return items
@@ -279,6 +280,7 @@ __all__ = [
     "build_create_plan_item",
     "build_deferred_disposition_item",
     "build_import_scores_item",
+    "build_run_scan_item",
     "build_score_checkpoint_item",
     "build_subjective_items",
     "build_triage_stage_items",

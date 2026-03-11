@@ -101,6 +101,7 @@ def merge_and_write_results(
 ) -> tuple[Path, list[str]]:
     """Merge batch results, enrich with metadata, and write to disk."""
     merged = merge_batch_results_fn(batch_results)
+    quality = merged.get("review_quality", {})
     reviewed_files = collect_reviewed_files_from_batches(
         batches=batches,
         selected_indexes=successful_indexes,
@@ -164,7 +165,7 @@ def merge_and_write_results(
     merged_path = run_dir / "holistic_issues_merged.json"
     safe_write_text_fn(merged_path, json.dumps(merged, indent=2) + "\n")
     print(colorize_fn(f"\n  Merged outputs: {merged_path}", "bold"))
-    print_review_quality(merged.get("review_quality", {}), colorize_fn=colorize_fn)
+    print_review_quality(quality, colorize_fn=colorize_fn)
     return merged_path, missing_after_import
 
 

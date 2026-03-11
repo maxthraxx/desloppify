@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
+from pathlib import Path
 from typing import NamedTuple
 
 from desloppify.base.exception_sets import PLAN_LOAD_EXCEPTIONS
@@ -19,6 +20,7 @@ from desloppify.engine.plan_state import (
     add_uncommitted_issues,
     has_living_plan,
     load_plan,
+    plan_path_for_state,
     purge_uncommitted_ids,
     save_plan,
 )
@@ -58,14 +60,16 @@ def update_living_plan_after_resolve(
     args: argparse.Namespace,
     all_resolved: list[str],
     attestation: str | None,
+    state_file: Path | str | None = None,
 ) -> tuple[dict | None, ClusterContext]:
     """Apply resolve side effects to the living plan when it exists."""
+    plan_path = plan_path_for_state(Path(state_file)) if state_file else None
     plan = None
     ctx = ClusterContext(cluster_name=None, cluster_completed=False, cluster_remaining=0)
     try:
-        if not has_living_plan():
+        if not has_living_plan(plan_path):
             return None, ctx
-        plan = load_plan()
+        plan = load_plan(plan_path)
         ctx = capture_cluster_context(plan, all_resolved)
         purged = purge_ids(plan, all_resolved)
         step_messages = auto_complete_steps(plan)
@@ -92,7 +96,7 @@ def update_living_plan_after_resolve(
         elif args.status == "open":
             purge_uncommitted_ids(plan, all_resolved)
         clear_postflight_scan_completion(plan, issue_ids=all_resolved)
-        save_plan(plan)
+        save_plan(plan, plan_path)
         if purged:
             print(colorize(f"  Plan updated: {purged} item(s) removed from queue.", "dim"))
     except PLAN_LOAD_EXCEPTIONS:

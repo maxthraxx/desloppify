@@ -17,8 +17,8 @@ from .runner.orchestrator_codex_pipeline import run_codex_pipeline
 from .runner.orchestrator_common import parse_only_stages
 from .runner.stage_prompts import cmd_stage_prompt
 from .services import TriageServices
-from .stage_completion_commands import cmd_confirm_existing, cmd_triage_complete
-from .stages import commands as _flow_mod
+from .stages.completion import cmd_confirm_existing, cmd_triage_complete
+from .stages.commands import run_stage_command
 
 
 def _cmd_triage_start(
@@ -42,6 +42,7 @@ def _cmd_triage_start(
                 )
             )
             meta["triage_stages"] = {}
+            _helpers_mod.ensure_active_triage_issue_ids(plan, state)
             _helpers_mod.inject_triage_stages(plan)
             services.save_plan(plan)
             services.append_log_entry(
@@ -53,6 +54,7 @@ def _cmd_triage_start(
             services.save_plan(plan)
             print(colorize("  Stages cleared. Begin with observe:", "green"))
         else:
+            _helpers_mod.ensure_active_triage_issue_ids(plan, state)
             _helpers_mod.inject_triage_stages(plan)
             services.save_plan(plan)
             print(colorize("  Begin with observe:", "green"))
@@ -63,15 +65,13 @@ def _cmd_triage_start(
     start_outcome = _lifecycle_mod.ensure_triage_started(
         plan,
         services=services,
-        request=_lifecycle_mod.TriageStartRequest(
-            state=state,
-            attestation=attestation,
-            log_action="triage_start",
-            log_actor="user",
-            log_detail={"action": "start"},
-            start_message="  Planning mode started (6 stages queued).",
-            start_message_style="green",
-        ),
+        state=state,
+        attestation=attestation,
+        log_action="triage_start",
+        log_actor="user",
+        log_detail={"action": "start"},
+        start_message="  Planning mode started (6 stages queued).",
+        start_message_style="green",
     )
     if start_outcome.status == "blocked":
         return
@@ -114,10 +114,11 @@ def _run_dry_run(
     plan = services.load_plan()
     si = services.collect_triage_input(plan, state)
     prompt = services.build_triage_prompt(si)
-    print(colorize("  Epic triage - dry run", "bold"))
+    existing_clusters = getattr(si, "existing_clusters", getattr(si, "existing_epics", {}))
+    print(colorize("  Cluster triage - dry run", "bold"))
     print(colorize("  " + "─" * 60, "dim"))
     print(f"  Open review issues: {len(si.open_issues)}")
-    print(f"  Existing clusters: {len(si.existing_epics)}")
+    print(f"  Existing clusters: {len(existing_clusters)}")
     print(f"  New since last: {len(si.new_since_last)}")
     print(f"  Resolved since last: {len(si.resolved_since_last)}")
     print(colorize("\n  Prompt that would be sent to LLM:", "dim"))
@@ -125,40 +126,16 @@ def _run_dry_run(
     print(prompt)
 
 
-def _run_stage_command(
-    args: argparse.Namespace,
-    *,
-    stage: str | None,
-    services: TriageServices,
-) -> bool:
-    if stage == "observe":
-        _flow_mod.cmd_stage_observe(args, services=services)
-        return True
-    if stage == "reflect":
-        _flow_mod.cmd_stage_reflect(args, services=services)
-        return True
-    if stage == "organize":
-        _flow_mod.cmd_stage_organize(args, services=services)
-        return True
-    if stage == "enrich":
-        _flow_mod.cmd_stage_enrich(args, services=services)
-        return True
-    if stage == "sense-check":
-        _flow_mod.cmd_stage_sense_check(args, services=services)
-        return True
-    return False
-
-
 def run_triage_workflow(
     args: argparse.Namespace,
     *,
     services: TriageServices,
-    require_completed_scan_fn: Callable[[dict], bool],
+    require_issue_inventory_fn: Callable[[dict], bool],
 ) -> None:
     """Route `plan triage` args through one orchestration seam."""
     runtime = services.command_runtime(args)
     state = runtime.state
-    if not require_completed_scan_fn(state):
+    if not require_issue_inventory_fn(state):
         return
 
     if getattr(args, "stage_prompt", None):
@@ -181,7 +158,7 @@ def run_triage_workflow(
         return
 
     stage = getattr(args, "stage", None)
-    if _run_stage_command(args, stage=stage, services=services):
+    if run_stage_command(stage, args, services=services):
         return
 
     if getattr(args, "dry_run", False):

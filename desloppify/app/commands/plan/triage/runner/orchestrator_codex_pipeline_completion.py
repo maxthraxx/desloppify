@@ -150,7 +150,7 @@ def complete_pipeline(
         state=getattr(args, "state", None),
     )
 
-    from ..stage_completion_commands import _cmd_triage_complete
+    from ..stages.completion import _cmd_triage_complete
 
     _cmd_triage_complete(complete_args, services=services)
 

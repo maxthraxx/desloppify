@@ -50,7 +50,7 @@ def test_scaffold_lang_creates_standard_files(tmp_path, monkeypatch):
         assert (lang_dir / rel_path).exists(), f"missing scaffold path: {rel_path}"
 
     init_text = (lang_dir / "__init__.py").read_text()
-    assert '@register_lang("ruby")' in init_text
+    assert "register_full_plugin" in init_text
     assert "holistic_review_dimensions=HOLISTIC_REVIEW_DIMENSIONS" in init_text
 
     review_text = (lang_dir / "review.py").read_text()

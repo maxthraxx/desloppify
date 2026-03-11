@@ -19,15 +19,18 @@ def _init_template(
         f'''"""Language configuration for {lang_name}."""\n\n'''
         "from __future__ import annotations\n\n"
         "from pathlib import Path\n\n"
-        "from .. import register_lang\n"
-        "from ..base.phase_builders import (\n"
+        "from desloppify.base.discovery.paths import get_area\n"
+        "from desloppify.base.discovery.source import find_source_files\n"
+        "from desloppify.engine.hook_registry import register_lang_hooks\n"
+        "from desloppify.engine.policy.zones import COMMON_ZONE_RULES\n"
+        "from desloppify.languages._framework.base.phase_builders import (\n"
         "    detector_phase_security,\n"
         "    detector_phase_test_coverage,\n"
         "    shared_subjective_duplicates_tail,\n"
         ")\n"
-        "from ..base.types import DetectorPhase, LangConfig\n"
-        "from ...utils import find_source_files\n"
-        "from ...policy.zones import COMMON_ZONE_RULES\n"
+        "from desloppify.languages._framework.base.types import DetectorPhase, LangConfig\n"
+        "from desloppify.languages._framework.registration import register_full_plugin\n"
+        "from . import test_coverage as test_coverage_hooks\n"
         "from .commands import get_detect_commands\n"
         "from .extractors import extract_functions\n"
         "from .phases import _phase_placeholder\n"
@@ -46,7 +49,6 @@ def _init_template(
         "def _build_dep_graph(path: Path) -> dict:\n"
         "    from .detectors.deps import build_dep_graph\n\n"
         "    return build_dep_graph(path)\n\n\n"
-        f'@register_lang("{lang_name}")\n'
         f"class {class_name}(LangConfig):\n"
         "    def __init__(self):\n"
         "        super().__init__(\n"
@@ -64,11 +66,14 @@ def _init_template(
         "                *shared_subjective_duplicates_tail(),\n"
         "            ],\n"
         "            fixers={},\n"
-        '            get_area=lambda filepath: filepath.split("/")[0],\n'
+        "            get_area=get_area,\n"
         "            detect_commands=get_detect_commands(),\n"
         "            boundaries=[],\n"
         '            typecheck_cmd="",\n'
         "            file_finder=_find_files,\n"
+        "            large_threshold=500,\n"
+        "            complexity_threshold=15,\n"
+        '            default_scan_profile="full",\n'
         f"            detect_markers={marker_repr},\n"
         '            external_test_dirs=["tests", "test"],\n'
         f"            test_file_extensions={ext_repr},\n"
@@ -82,6 +87,26 @@ def _init_template(
         "            extract_functions=extract_functions,\n"
         f"            zone_rules={lang_name.upper()}_ZONE_RULES,\n"
         "        )\n"
+        "\n\n"
+        "def register() -> None:\n"
+        '    """Register the language config and hooks through the canonical entrypoint."""\n'
+        "    register_full_plugin(\n"
+        f'        "{lang_name}",\n'
+        f"        {class_name},\n"
+        "        test_coverage=test_coverage_hooks,\n"
+        "    )\n"
+        "\n\n"
+        "def register_hooks() -> None:\n"
+        '    """Register language hook modules without config bootstrap."""\n'
+        f'    register_lang_hooks("{lang_name}", test_coverage=test_coverage_hooks)\n'
+        "\n\n"
+        f"Config = {class_name}\n\n\n"
+        "__all__ = [\n"
+        '    "Config",\n'
+        f'    "{class_name}",\n'
+        '    "register",\n'
+        '    "register_hooks",\n'
+        ']\n'
     )
 
 
@@ -90,7 +115,7 @@ def _phases_template() -> str:
         '"""Phase runners for language plugin scaffolding."""\n\n'
         "from __future__ import annotations\n\n"
         "from pathlib import Path\n\n"
-        "from ..base.types import LangConfig\n\n\n"
+        "from desloppify.languages._framework.base.types import LangConfig\n\n\n"
         "def _phase_placeholder(_path: Path, _lang: LangConfig) -> tuple[list[dict], dict[str, int]]:\n"
         '    """Placeholder phase. Replace with real detector orchestration."""\n'
         "    return [], {}\n"
@@ -101,12 +126,13 @@ def _commands_template(lang_name: str) -> str:
     return (
         '"""Detect command registry for language plugin scaffolding."""\n\n'
         "from __future__ import annotations\n\n"
-        "from typing import TYPE_CHECKING, Callable\n\n"
-        "from ...utils import c\n\n"
+        "from collections.abc import Callable\n"
+        "from typing import TYPE_CHECKING\n\n"
+        "from desloppify.base.output.terminal import colorize\n\n"
         "if TYPE_CHECKING:\n"
         "    import argparse\n\n\n"
         "def cmd_placeholder(_args: argparse.Namespace) -> None:\n"
-        f'    print(c("{lang_name}: placeholder detector command (not implemented)", "yellow"))\n\n\n'
+        f'    print(colorize("{lang_name}: placeholder detector command (not implemented)", "yellow"))\n\n\n'
         "def get_detect_commands() -> dict[str, Callable[..., None]]:\n"
         '    return {"placeholder": cmd_placeholder}\n'
     )

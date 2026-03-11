@@ -67,7 +67,7 @@ def _print_score_lines(
         print("\n".join(lines))
     # Score legend — always shown in LLM block so agents understand the scoring model
     print("Score guide:")
-    print("  overall  = 40% mechanical + 60% subjective (lenient — ignores wontfix)")
+    print("  overall  = 25% mechanical + 75% subjective (lenient — ignores wontfix)")
     print("  objective = mechanical detectors only (no subjective review)")
     print("  strict   = like overall, but wontfix counts against you  <-- your north star")
     print("  verified = strict, but only credits scan-verified fixes")
@@ -318,8 +318,8 @@ def print_llm_summary(
         strict_score=scores.strict,
     )
     if has_plan:
-        print("\nFollow the living plan: `desloppify next` for your next task,")
-        print("`desloppify plan` to view the full queue.")
+        print("\nFollow the living plan: `desloppify next` for your next execution task,")
+        print("`desloppify backlog` for broader backlog discovery, and `desloppify plan` for plan details.")
     else:
         _print_workflow_guide()
     _print_narrative_status(narrative)
@@ -329,7 +329,7 @@ def print_llm_summary(
     if has_plan:
         print_user_message(
             "Hey — please follow the living plan. Run `desloppify"
-            " next` for your next task. No need to reply, just"
+            " next` for your next execution task. No need to reply, just"
             " continue."
         )
 

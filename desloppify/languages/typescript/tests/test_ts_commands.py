@@ -1,6 +1,6 @@
-"""Tests for desloppify.languages.typescript.detectors.cli — command registry."""
+"""Tests for desloppify.languages.typescript.commands — command registry."""
 
-from desloppify.languages.typescript.detectors.cli import get_detect_commands
+from desloppify.languages.typescript.commands import get_detect_commands
 
 # ── get_detect_commands() ─────────────────────────────────────
 

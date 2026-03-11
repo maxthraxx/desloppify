@@ -10,7 +10,7 @@ from desloppify.app.commands.helpers.guardrails import print_triage_guardrail_in
 from desloppify.app.commands.helpers.lang import resolve_lang
 from desloppify.app.commands.helpers.query import write_query
 from desloppify.app.commands.helpers.runtime import command_runtime
-from desloppify.app.commands.helpers.state import require_completed_scan
+from desloppify.app.commands.helpers.state import require_issue_inventory
 from desloppify.app.skill_docs import check_skill_version
 from desloppify.base.config import target_strict_score_from_config
 from desloppify.base.exception_sets import PLAN_LOAD_EXCEPTIONS, CommandError
@@ -116,7 +116,7 @@ def cmd_show(args: argparse.Namespace) -> None:
     state = runtime.state
     config = runtime.config
 
-    if not require_completed_scan(state):
+    if not require_issue_inventory(state):
         return
 
     skill_warning = check_skill_version()

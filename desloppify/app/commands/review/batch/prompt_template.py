@@ -11,10 +11,12 @@ from desloppify.intelligence.review.feedback_contract import (
 
 from ..prompt_sections import (
     PromptBatchContext,
+    batch_dimension_prompts,
     build_batch_context,
     join_non_empty_sections,
     render_dimension_prompts_block,
     render_historical_focus,
+    render_judgment_findings_section,
     render_mechanical_concern_signals,
     render_scan_evidence_note,
     render_scoring_frame,
@@ -75,7 +77,10 @@ def _render_output_schema(context: PromptBatchContext, batch_index: int) -> str:
         '    "confidence": "high|medium|low",\n'
         '    "impact_scope": "local|module|subsystem|codebase",\n'
         '    "fix_scope": "single_edit|multi_file_refactor|architectural_change",\n'
-        '    "root_cause_cluster": "optional_cluster_name_when_supported_by_history"\n'
+        '    "root_cause_cluster": "optional_cluster_name_when_supported_by_history",\n'
+        '    "concern_verdict": "confirmed|dismissed  // for concern signals only",\n'
+        '    "concern_fingerprint": "abc123  // required when dismissed; copy from signal fingerprint",\n'
+        '    "reasoning": "why dismissed  // optional, for dismissed only"\n'
         "  }],\n"
         '  "retrospective": {\n'
         '    "root_causes": ["optional: concise root-cause hypotheses"],\n'
@@ -84,18 +89,6 @@ def _render_output_schema(context: PromptBatchContext, batch_index: int) -> str:
         "  }\n"
         "}\n"
     )
-
-
-def _extract_dimension_prompts(batch: dict[str, object]) -> dict[str, dict[str, object]]:
-    """Extract dimension prompts embedded by explode_to_single_dimension."""
-    prompt = batch.get("_dimension_prompt")
-    if not isinstance(prompt, dict):
-        return {}
-    dims = batch.get("dimensions", [])
-    if isinstance(dims, list) and len(dims) == 1:
-        return {str(dims[0]): prompt}
-    return {}
-
 
 def render_batch_prompt(
     *,
@@ -107,7 +100,7 @@ def render_batch_prompt(
 ) -> str:
     """Render one subagent prompt for a holistic investigation batch."""
     context = build_batch_context(batch, batch_index)
-    dim_prompts = _extract_dimension_prompts(batch)
+    dim_prompts = context.dimension_prompts or batch_dimension_prompts(batch)
     return join_non_empty_sections(
         _render_metadata_block(
             repo_root=repo_root,
@@ -122,6 +115,7 @@ def render_batch_prompt(
         render_seed_files_block(context),
         render_historical_focus(batch),
         render_mechanical_concern_signals(batch),
+        render_judgment_findings_section(batch),
         render_task_requirements(issues_cap=context.issues_cap, dim_set=context.dimension_set),
         render_scope_enums(),
         _render_output_schema(context, batch_index),

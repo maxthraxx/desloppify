@@ -1,4 +1,4 @@
-"""Plan mutation helpers for epic triage."""
+"""Plan mutation helpers for cluster triage."""
 
 from __future__ import annotations
 
@@ -29,6 +29,18 @@ class TriageMutationResult:
     strategy_summary: str = ""
     triage_version: int = 0
     dry_run: bool = False
+
+    @property
+    def clusters_created(self) -> int:
+        return self.epics_created
+
+    @property
+    def clusters_updated(self) -> int:
+        return self.epics_updated
+
+    @property
+    def clusters_completed(self) -> int:
+        return self.epics_completed
 
 
 def _epic_sort_key(epic_data: dict) -> int:
@@ -103,7 +115,7 @@ def _upsert_triage_clusters(
 ) -> tuple[int, int]:
     created = 0
     updated = 0
-    for epic_data in sorted(triage.epics, key=_epic_sort_key):
+    for epic_data in sorted(triage.clusters, key=_epic_sort_key):
         raw_name = epic_data["name"]
         epic_name = _normalized_epic_name(raw_name)
         existing = clusters.get(epic_name)
@@ -130,7 +142,7 @@ def _reorder_queue_by_dependency(
     epic_issue_ids: set[str] = set()
     epic_ordered_ids: list[str] = []
     dismissed_set = set(dismissed_ids)
-    for epic_data in sorted(triage.epics, key=_epic_sort_key):
+    for epic_data in sorted(triage.clusters, key=_epic_sort_key):
         for fid in epic_data["issue_ids"]:
             if fid in epic_issue_ids or fid in dismissed_set:
                 continue
@@ -181,9 +193,9 @@ def apply_triage_to_plan(
 ) -> TriageMutationResult:
     """Apply parsed triage result to the living plan.
 
-    1. Creates/updates triage-clusters in plan["clusters"]
+    1. Creates/updates triage clusters in plan["clusters"]
     2. Marks dismissed issues as triaged_out skips
-    3. Reorders queue_order to group epic members by dependency_order
+    3. Reorders queue_order to group cluster members by dependency_order
     4. Updates epic_triage_meta with snapshot hash
     """
     ensure_plan_defaults(plan)

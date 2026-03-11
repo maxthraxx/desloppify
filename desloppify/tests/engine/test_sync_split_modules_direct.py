@@ -88,7 +88,7 @@ def test_triage_stage_helpers_ignore_non_stage_meta_dicts() -> None:
 def test_epic_triage_dismiss_moves_issues_to_skipped() -> None:
     triage = SimpleNamespace(
         dismissed_issues=[SimpleNamespace(issue_id="id1", reason="false_positive")],
-        epics=[{"dismissed": ["id2"]}],
+        clusters=[{"dismissed": ["id2"]}],
     )
     order = ["id1", "id2", "id3"]
     skipped: dict = {}
@@ -267,7 +267,7 @@ def test_auto_cluster_grouping_filters_to_open_unsuppressed_non_manual_items(
     monkeypatch.setattr(
         auto_cluster_sync_mod,
         "DETECTORS",
-        {"unused": {"name": "unused"}},
+        {"unused": SimpleNamespace(name="unused", needs_judgment=False)},
     )
 
     issues = {
@@ -390,7 +390,7 @@ def test_sync_issue_clusters_handles_name_collisions_and_user_modified_clusters(
     monkeypatch.setattr(
         auto_cluster_sync_mod,
         "DETECTORS",
-        {"unused": {"name": "unused"}},
+        {"unused": SimpleNamespace(name="unused", needs_judgment=False)},
     )
 
     changes = auto_cluster_sync_mod.sync_issue_clusters(
@@ -424,8 +424,20 @@ def test_sync_workflow_helpers_inject_expected_items(monkeypatch) -> None:
     assert r2.injected == ["workflow::create-plan"]
 
     plan = {"queue_order": []}
-    r3 = sync_workflow_mod.sync_import_scores_needed(plan, state, assessment_mode="issues_only")
+    r3 = sync_workflow_mod.sync_import_scores_needed(
+        plan,
+        state,
+        assessment_mode="issues_only",
+        import_file="/tmp/review/issues.json",
+        import_payload={
+            "issues": [],
+            "assessments": {"naming_quality": 80},
+            "provenance": {"packet_sha256": "abc123", "packet_path": "/tmp/review_packet_blind.json"},
+        },
+    )
     assert r3.injected == ["workflow::import-scores"]
+    assert plan["refresh_state"]["pending_import_scores"]["import_file"] == "/tmp/review/issues.json"
+    assert plan["refresh_state"]["pending_import_scores"]["packet_sha256"] == "abc123"
 
     plan = {"queue_order": []}
     r4 = sync_workflow_mod.sync_communicate_score_needed(
@@ -438,6 +450,93 @@ def test_sync_workflow_helpers_inject_expected_items(monkeypatch) -> None:
 
     monkeypatch.setattr(sync_workflow_mod.stale_policy_mod, "current_unscored_ids", lambda *_a, **_k: {"s"})
     assert sync_workflow_mod._no_unscored(state, policy=None) is False
+
+
+def test_sync_import_scores_prunes_stale_workflow_after_trusted_import() -> None:
+    plan = {
+        "queue_order": ["workflow::import-scores", "review::x"],
+        "refresh_state": {
+            "pending_import_scores": {
+                "timestamp": "2026-03-10T10:00:00+00:00",
+                "import_file": "/tmp/issues.json",
+            }
+        },
+    }
+    state = {
+        "assessment_import_audit": [
+            {
+                "timestamp": "2026-03-10T10:00:00+00:00",
+                "mode": "issues_only",
+                "import_file": "/tmp/issues.json",
+            },
+            {
+                "timestamp": "2026-03-10T10:05:00+00:00",
+                "mode": "trusted_internal",
+                "import_file": "/tmp/merged.json",
+            },
+        ]
+    }
+
+    result = sync_workflow_mod.sync_import_scores_needed(plan, state, assessment_mode=None)
+
+    assert result.pruned == ["workflow::import-scores"]
+    assert plan["queue_order"] == ["review::x"]
+    assert plan["refresh_state"] == {}
+
+
+def test_sync_import_scores_updates_metadata_on_consecutive_issues_only_import() -> None:
+    """A second issues_only import should update pending metadata to the latest batch."""
+    plan: dict = {"queue_order": []}
+    state: dict = {
+        "assessment_import_audit": [
+            {
+                "timestamp": "2026-03-10T10:00:00+00:00",
+                "mode": "issues_only",
+                "import_file": "/tmp/review-v1.json",
+            },
+        ]
+    }
+
+    # First issues_only import injects the workflow item with v1 metadata
+    r1 = sync_workflow_mod.sync_import_scores_needed(
+        plan,
+        state,
+        assessment_mode="issues_only",
+        import_file="/tmp/review-v1.json",
+        import_payload={
+            "issues": [{"id": "a"}],
+            "assessments": {"naming_quality": 80},
+            "provenance": {"packet_sha256": "hash-v1"},
+        },
+    )
+    assert r1.injected == ["workflow::import-scores"]
+    assert plan["refresh_state"]["pending_import_scores"]["packet_sha256"] == "hash-v1"
+
+    # Second issues_only import with updated data should update metadata
+    state["assessment_import_audit"].append(
+        {
+            "timestamp": "2026-03-10T10:10:00+00:00",
+            "mode": "issues_only",
+            "import_file": "/tmp/review-v2.json",
+        },
+    )
+    r2 = sync_workflow_mod.sync_import_scores_needed(
+        plan,
+        state,
+        assessment_mode="issues_only",
+        import_file="/tmp/review-v2.json",
+        import_payload={
+            "issues": [{"id": "a"}, {"id": "b"}],
+            "assessments": {"naming_quality": 85, "design_coherence": 70},
+            "provenance": {"packet_sha256": "hash-v2"},
+        },
+    )
+    assert r2.changes == 1
+    assert r2.injected == []  # not re-injected, just updated
+    assert r2.resurfaced == ["workflow::import-scores"]
+    meta = plan["refresh_state"]["pending_import_scores"]
+    assert meta["import_file"] == "/tmp/review-v2.json"
+    assert meta["packet_sha256"] == "hash-v2"
 
 
 def test_sync_communicate_score_reinjects_after_trusted_score_import() -> None:
@@ -529,22 +628,40 @@ def test_lifecycle_filter_respects_initial_reviews_triage_and_endgame_rules() ->
     assert all(not str(item.get("id", "")).startswith("triage::") for item in filtered_mid)
     assert all(item.get("kind") != "subjective_dimension" for item in filtered_mid)
 
-    endgame_items = [
+    scan_before_every_postflight_phase = [
+        {"kind": "workflow_action", "id": "workflow::run-scan"},
+        {"kind": "workflow_action", "id": "workflow::communicate-score"},
         {"kind": "workflow_stage", "id": "triage::observe"},
-        {"kind": "workflow_action", "id": "workflow::create-plan"},
+        {"kind": "issue", "id": "review::src/a.py::naming", "detector": "review"},
     ]
-    filtered_endgame = lifecycle_mod.apply_lifecycle_filter(endgame_items)
-    assert filtered_endgame == endgame_items
+    filtered_scan_phase = lifecycle_mod.apply_lifecycle_filter(
+        scan_before_every_postflight_phase
+    )
+    assert filtered_scan_phase == [scan_before_every_postflight_phase[0]]
 
     subjective_before_score_and_triage = [
         {"kind": "workflow_action", "id": "workflow::communicate-score"},
         {"kind": "workflow_stage", "id": "triage::observe"},
-        {"kind": "subjective_dimension", "id": "subjective::naming", "initial_review": False},
+        {"kind": "issue", "id": "review::src/a.py::naming", "detector": "review"},
     ]
     filtered_subjective_phase = lifecycle_mod.apply_lifecycle_filter(
         subjective_before_score_and_triage
     )
     assert filtered_subjective_phase == [subjective_before_score_and_triage[2]]
+
+    workflow_before_triage = [
+        {"kind": "workflow_action", "id": "workflow::communicate-score"},
+        {"kind": "workflow_stage", "id": "triage::observe"},
+    ]
+    filtered_workflow_phase = lifecycle_mod.apply_lifecycle_filter(workflow_before_triage)
+    assert filtered_workflow_phase == [workflow_before_triage[0]]
+
+    triage_only_items = [
+        {"kind": "workflow_stage", "id": "triage::observe"},
+        {"kind": "workflow_action", "id": "workflow::deferred-disposition"},
+    ]
+    filtered_deferred_phase = lifecycle_mod.apply_lifecycle_filter(triage_only_items)
+    assert filtered_deferred_phase == [triage_only_items[1]]
 
     forced_items = [
         {
@@ -579,14 +696,89 @@ def test_lifecycle_filter_treats_clusters_as_objective() -> None:
 
 
 def test_lifecycle_filter_forces_triage_when_only_subjective_clusters() -> None:
-    """When only subjective clusters remain, triage should still be forced."""
+    """Subjective review clusters should surface before triage once scan is done."""
     items = [
         {"kind": "workflow_stage", "id": "triage::observe"},
         {"kind": "cluster", "id": "auto/subjective_review", "detector": "subjective_assessment"},
     ]
     filtered = lifecycle_mod.apply_lifecycle_filter(items)
-    # Subjective cluster is not objective — triage should be forced
-    assert any(str(item.get("id", "")).startswith("triage::") for item in filtered)
+    assert filtered == [items[1]]
+
+
+def test_resolve_lifecycle_phase_corrects_stale_persisted_execute_state() -> None:
+    items = [{"kind": "workflow_action", "id": "workflow::run-scan"}]
+    plan = {"refresh_state": {"lifecycle_phase": "execute"}}
+
+    phase = lifecycle_mod.resolve_lifecycle_phase(items, plan=plan)
+
+    assert phase == "scan"
+
+
+def test_postflight_non_objective_detectors_match_non_objective_policy() -> None:
+    """Post-flight non-objective detectors should match the shared policy."""
+    from desloppify.engine.plan_queue import NON_OBJECTIVE_DETECTORS
+
+    assert lifecycle_mod.POSTFLIGHT_NON_OBJECTIVE_DETECTORS <= NON_OBJECTIVE_DETECTORS
+    assert lifecycle_mod.POSTFLIGHT_NON_OBJECTIVE_DETECTORS == NON_OBJECTIVE_DETECTORS
+
+
+def test_is_postflight_non_objective_item_uses_postflight_detector_set() -> None:
+    """Non-initial post-flight items should match the shared detector set."""
+    for det in lifecycle_mod.POSTFLIGHT_NON_OBJECTIVE_DETECTORS:
+        item = {"kind": "issue", "id": f"{det}::x", "detector": det}
+        assert lifecycle_mod._is_postflight_non_objective_item(item) is True
+    initial_review = {
+        "kind": "subjective_dimension",
+        "id": "subjective::naming",
+        "detector": "subjective_assessment",
+        "initial_review": True,
+    }
+    assert lifecycle_mod._is_postflight_non_objective_item(initial_review) is False
+
+
+def test_lifecycle_filter_hides_subjective_review_issue_while_objective_work_exists() -> None:
+    items = [
+        {"kind": "issue", "id": "unused::a", "detector": "unused"},
+        {
+            "kind": "issue",
+            "id": "subjective_review::src/a.py::changed",
+            "detector": "subjective_review",
+        },
+    ]
+
+    filtered = lifecycle_mod.apply_lifecycle_filter(items)
+
+    ids = {str(item.get("id", "")) for item in filtered}
+    assert "unused::a" in ids
+    assert "subjective_review::src/a.py::changed" not in ids
+
+
+def test_lifecycle_filter_hides_subjective_review_cluster_while_objective_work_exists() -> None:
+    items = [
+        {"kind": "issue", "id": "unused::a", "detector": "unused"},
+        {"kind": "cluster", "id": "auto/subjective_review", "detector": "subjective_review"},
+    ]
+
+    filtered = lifecycle_mod.apply_lifecycle_filter(items)
+
+    ids = {str(item.get("id", "")) for item in filtered}
+    assert "unused::a" in ids
+    assert "auto/subjective_review" not in ids
+
+
+def test_lifecycle_filter_shows_subjective_review_when_objective_queue_is_drained() -> None:
+    items = [
+        {"kind": "workflow_stage", "id": "triage::observe"},
+        {
+            "kind": "issue",
+            "id": "subjective_review::src/a.py::changed",
+            "detector": "subjective_review",
+        },
+    ]
+
+    filtered = lifecycle_mod.apply_lifecycle_filter(items)
+
+    assert filtered == [items[1]]
 
 
 def test_triage_playbook_commands_cover_runner_and_stage_validation() -> None:

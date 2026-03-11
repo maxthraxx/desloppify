@@ -7,7 +7,7 @@ from pathlib import Path
 
 from desloppify import state as state_mod
 from desloppify.app.commands.helpers.runtime import command_runtime
-from desloppify.app.commands.helpers.state import require_completed_scan, state_path
+from desloppify.app.commands.helpers.state import require_issue_inventory, state_path
 from desloppify.app.commands.plan.shared.patterns import resolve_ids_from_patterns
 from desloppify.app.commands.plan.override_io import (
     _plan_file_for_state,
@@ -32,7 +32,7 @@ from desloppify.engine.plan_queue import clear_postflight_scan_completion
 def cmd_plan_describe(args: argparse.Namespace) -> None:
     """Set augmented description on issues."""
     state = command_runtime(args).state
-    if not require_completed_scan(state):
+    if not require_issue_inventory(state):
         return
 
     patterns: list[str] = getattr(args, "patterns", [])
@@ -54,7 +54,7 @@ def cmd_plan_describe(args: argparse.Namespace) -> None:
 def cmd_plan_note(args: argparse.Namespace) -> None:
     """Set note on issues."""
     state = command_runtime(args).state
-    if not require_completed_scan(state):
+    if not require_issue_inventory(state):
         return
 
     patterns: list[str] = getattr(args, "patterns", [])

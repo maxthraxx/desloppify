@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from desloppify.engine.planning.queue_policy import (
+    build_backlog_queue,
+    build_execution_queue,
+)
 from desloppify.engine._work_queue.core import QueueBuildOptions
 from desloppify.engine._work_queue.core import build_work_queue as _build_work_queue
 
@@ -177,6 +181,9 @@ def test_force_visible_subjective_bypasses_endgame_gate():
     ids = [item["id"] for item in queue["items"]]
     assert "subjective::naming_quality" in ids
     assert "smells::src/a.py::x" in ids
+    assert plan["subjective_defer_meta"]["force_visible_ids"] == [
+        "subjective::naming_quality"
+    ]
 
 
 def test_triage_pending_does_not_unhide_stale_subjective_items():
@@ -254,6 +261,56 @@ def test_force_visible_triage_stage_bypasses_objective_gate():
     assert "smells::src/a.py::x" in ids
 
 
+def test_execution_queue_hides_unplanned_state_issues():
+    """Execution queues should only surface work explicitly tracked by the plan."""
+    from desloppify.engine._plan.schema import empty_plan
+
+    state = _state(
+        [
+            _issue("smells::src/a.py::planned", detector="smells"),
+            _issue("smells::src/b.py::unplanned", detector="smells"),
+        ]
+    )
+    plan = empty_plan()
+    plan["queue_order"] = ["smells::src/a.py::planned"]
+
+    queue = build_execution_queue(
+        state,
+        options=QueueBuildOptions(
+            count=None,
+            include_subjective=False,
+            plan=plan,
+        ),
+    )
+    ids = [item["id"] for item in queue["items"]]
+    assert ids == ["smells::src/a.py::planned"]
+
+
+def test_backlog_queue_excludes_plan_tracked_items():
+    """Backlog view should exclude work already tracked in the execution plan."""
+    from desloppify.engine._plan.schema import empty_plan
+
+    state = _state(
+        [
+            _issue("smells::src/a.py::planned", detector="smells"),
+            _issue("smells::src/b.py::unplanned", detector="smells"),
+        ]
+    )
+    plan = empty_plan()
+    plan["queue_order"] = ["smells::src/a.py::planned"]
+
+    queue = build_backlog_queue(
+        state,
+        options=QueueBuildOptions(
+            count=None,
+            include_subjective=False,
+            plan=plan,
+        ),
+    )
+    ids = [item["id"] for item in queue["items"]]
+    assert ids == ["smells::src/b.py::unplanned"]
+
+
 # ── Lifecycle filter runs after plan_presort ───────────
 
 
@@ -307,13 +364,13 @@ def test_skipped_objective_items_dont_block_subjective():
     queue = build_work_queue(
         state, count=None, include_subjective=True, plan=plan,
     )
-    subj_ids = [
-        i["id"] for i in queue["items"] if i["id"].startswith("subjective::")
-    ]
+    ids = [i["id"] for i in queue["items"]]
     # All objective items skipped → lifecycle filter sees no objective work
-    # → stale subjective item surfaces
-    assert len(subj_ids) == 1
-    assert "subjective::naming_quality" in subj_ids
+    # → but deferred disposition precedes subjective in lifecycle
+    assert "workflow::deferred-disposition" in ids
+    # Subjective items are gated behind deferred disposition
+    subj_ids = [i for i in ids if i.startswith("subjective::")]
+    assert len(subj_ids) == 0
 
 
 # ── Wontfix / resolved issues excluded (#193) ──────────
@@ -446,6 +503,7 @@ def test_subjective_phase_precedes_score_and_triage_when_objective_drained():
             "subjective::naming_quality",
         ],
         "queue_skipped": {},
+        "refresh_state": {"postflight_scan_completed_at_scan_count": 1},
     }
     queue = build_work_queue(state, count=None, include_subjective=True, plan=plan)
     ids = [item["id"] for item in queue["items"]]
