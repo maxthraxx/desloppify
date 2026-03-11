@@ -69,6 +69,33 @@ def test_sync_plan_after_import_no_living_plan(monkeypatch) -> None:
     )
 
 
+def test_print_review_import_sync_reports_new_ids_and_triage_commands(capsys) -> None:
+    state = {
+        "issues": {
+            "review::alpha": {"summary": "Alpha summary"},
+            "review::beta": {"summary": "Beta summary"},
+        }
+    }
+    result = SimpleNamespace(
+        new_ids={"review::alpha", "review::beta"},
+        stale_pruned_from_queue=["review::stale"],
+        triage_injected=True,
+    )
+
+    plan_sync_mod._print_review_import_sync(
+        state,
+        result,
+        workflow_injected=False,
+    )
+
+    out = capsys.readouterr().out
+    assert "2 new review issue(s) added to queue" in out
+    assert "Alpha summary" in out
+    assert "stale review issue(s) removed from queue" in out
+    assert plan_sync_mod.TRIAGE_CMD_RUN_STAGES_CODEX in out
+    assert plan_sync_mod.TRIAGE_CMD_RUN_STAGES_CLAUDE in out
+
+
 def test_sync_plan_after_import_scopes_living_plan_to_state_file(monkeypatch, tmp_path) -> None:
     seen: dict[str, object] = {}
 
@@ -754,6 +781,39 @@ def test_print_import_results_writes_query_payload(monkeypatch) -> None:
     assert payload["action"] == "import"
     assert payload["next_command"] == "desloppify next"
     assert payload["assessment_import"]["mode"] == "issues_only"
+
+
+def test_print_import_results_reports_provisional_warning(capsys, monkeypatch) -> None:
+    monkeypatch.setattr(results_mod.narrative_mod, "compute_narrative", lambda *_a, **_k: {})
+    monkeypatch.setattr(results_mod.import_helpers_mod, "print_skipped_validation_details", lambda *_a, **_k: None)
+    monkeypatch.setattr(results_mod.import_helpers_mod, "print_assessments_summary", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        results_mod.import_helpers_mod,
+        "print_open_review_summary",
+        lambda *_a, **_k: "desloppify next",
+    )
+    monkeypatch.setattr(
+        results_mod.import_helpers_mod,
+        "print_review_import_scores_and_integrity",
+        lambda *_a, **_k: [],
+    )
+    monkeypatch.setattr(results_mod, "show_score_with_plan_context", lambda *_a, **_k: None)
+    monkeypatch.setattr(results_mod, "write_query", lambda _payload: None)
+
+    results_mod.print_import_results(
+        state={"issues": {}},
+        lang_name="python",
+        config={},
+        diff={"new": 1, "auto_resolved": 0, "reopened": 0},
+        prev=SimpleNamespace(overall=0),
+        label="Holistic review",
+        provisional_count=2,
+        assessment_policy=SimpleNamespace(mode="manual_override", trusted=False, reason="manual"),
+        scorecard_subjective_at_target_fn=lambda *_a, **_k: [],
+    )
+
+    out = capsys.readouterr().out
+    assert "manual override assessments are provisional" in out
 
 
 def test_plan_sync_source_preserves_scoped_sync_pipeline_contract() -> None:
