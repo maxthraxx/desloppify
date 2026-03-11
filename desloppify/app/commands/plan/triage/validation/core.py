@@ -71,6 +71,76 @@ class AutoConfirmStageRequest:
     cluster_names: list[str] | None = None
 
 
+@dataclass(frozen=True)
+class StagePrerequisite:
+    """One required upstream stage for a triage workflow seam."""
+
+    stage_name: str
+    require_confirmation: bool = False
+
+
+_STAGE_PREREQUISITES = {
+    "organize": (
+        StagePrerequisite("observe"),
+        StagePrerequisite("reflect"),
+    ),
+    "enrich": (
+        StagePrerequisite("observe"),
+        StagePrerequisite("reflect"),
+        StagePrerequisite("organize"),
+    ),
+    "sense-check": (
+        StagePrerequisite("enrich", require_confirmation=True),
+    ),
+    "complete:organize": (
+        StagePrerequisite("observe"),
+        StagePrerequisite("organize"),
+    ),
+    "complete:enrich": (
+        StagePrerequisite("observe"),
+        StagePrerequisite("organize"),
+        StagePrerequisite("enrich"),
+    ),
+    "complete:sense-check": (
+        StagePrerequisite("observe"),
+        StagePrerequisite("organize"),
+        StagePrerequisite("enrich"),
+        StagePrerequisite("sense-check"),
+    ),
+}
+
+
+def _missing_stage_prerequisite(
+    stages: dict,
+    *,
+    flow: str,
+) -> StagePrerequisite | None:
+    """Return the first missing upstream stage required by one triage flow."""
+    for prerequisite in _STAGE_PREREQUISITES.get(flow, ()):
+        stage_record = stages.get(prerequisite.stage_name)
+        if stage_record is None:
+            return prerequisite
+        if prerequisite.require_confirmation and not stage_record.get("confirmed_at"):
+            return prerequisite
+    return None
+
+
+def require_stage_prerequisite(
+    stages: dict,
+    *,
+    flow: str,
+    messages: dict[str, tuple[str, str]],
+) -> bool:
+    """Print consistent prerequisite guidance for simple triage stage gates."""
+    missing = _missing_stage_prerequisite(stages, flow=flow)
+    if missing is None:
+        return True
+    blocked_heading, command_hint = messages[missing.stage_name]
+    print(colorize(blocked_heading, "red"))
+    print(colorize(command_hint, "dim"))
+    return False
+
+
 def _auto_confirm_stage(
     *,
     plan: dict,
@@ -271,15 +341,20 @@ def _validate_reflect_issue_accounting(
 
 
 def _require_reflect_stage_for_organize(stages: dict) -> bool:
-    if "reflect" in stages:
-        return True
-    if "observe" not in stages:
-        print(colorize("  Cannot organize: observe stage not complete.", "red"))
-        print(colorize('  Run: desloppify plan triage --stage observe --report "..."', "dim"))
-        return False
-    print(colorize("  Cannot organize: reflect stage not complete.", "red"))
-    print(colorize('  Run: desloppify plan triage --stage reflect --report "..."', "dim"))
-    return False
+    return require_stage_prerequisite(
+        stages,
+        flow="organize",
+        messages={
+            "observe": (
+                "  Cannot organize: observe stage not complete.",
+                '  Run: desloppify plan triage --stage observe --report "..."',
+            ),
+            "reflect": (
+                "  Cannot organize: reflect stage not complete.",
+                '  Run: desloppify plan triage --stage reflect --report "..."',
+            ),
+        },
+    )
 
 
 def _auto_confirm_reflect_for_organize(
@@ -438,6 +513,7 @@ __all__ = [
     "_require_prior_strategy_for_confirm",
     "_require_reflect_stage_for_organize",
     "_require_sense_check_stage_for_complete",
+    "_missing_stage_prerequisite",
     "_resolve_completion_strategy",
     "_resolve_confirm_existing_strategy",
     "_underspecified_steps",
@@ -447,4 +523,5 @@ __all__ = [
     "_steps_with_vague_detail",
     "_steps_without_effort",
     "_validate_recurring_dimension_mentions",
+    "require_stage_prerequisite",
 ]

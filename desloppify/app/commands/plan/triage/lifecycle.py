@@ -30,19 +30,6 @@ class TriageStartOutcome:
 
 
 @dataclass(frozen=True)
-class TriageStartRequest:
-    """Input contract for triage-start side effects and logging."""
-
-    state: StateModel | None = None
-    attestation: str | None = None
-    log_action: str | None = None
-    log_actor: str = "system"
-    log_detail: Mapping[str, object] | None = None
-    start_message: str | None = None
-    start_message_style: str = "cyan"
-
-
-@dataclass(frozen=True)
 class TriageLifecycleDeps:
     """Dependency seams for triage lifecycle starts (for tests/callers)."""
 
@@ -84,11 +71,16 @@ def ensure_triage_started(
     plan: PlanModel,
     *,
     services: TriageServices,
-    request: TriageStartRequest | None = None,
+    state: StateModel | None = None,
+    attestation: str | None = None,
+    log_action: str | None = None,
+    log_actor: str = "system",
+    log_detail: Mapping[str, object] | None = None,
+    start_message: str | None = None,
+    start_message_style: str = "cyan",
     deps: TriageLifecycleDeps | None = None,
 ) -> TriageStartOutcome:
     """Ensure triage stages are injected or return a blocked/already-active outcome."""
-    start_request = request or TriageStartRequest()
     resolved_deps = deps or TriageLifecycleDeps()
     meta = plan.setdefault("epic_triage_meta", {})
 
@@ -98,11 +90,9 @@ def ensure_triage_started(
 
     decision = resolved_deps.decide_triage_start(
         plan,
-        start_request.state,
+        state,
         explicit_start=True,
-        attested_override=bool(
-            start_request.attestation and len(start_request.attestation.strip()) >= 30
-        ),
+        attested_override=bool(attestation and len(attestation.strip()) >= 30),
     )
     if decision.action == "defer":
         meta["triage_start_blocked"] = decision.reason
@@ -114,22 +104,22 @@ def ensure_triage_started(
     meta.pop("triage_start_blocked", None)
     meta.setdefault("triage_stages", {})
 
-    if start_request.log_action:
-        detail = dict(start_request.log_detail or {})
+    if log_action:
+        detail = dict(log_detail or {})
         detail.setdefault("injected_stage_ids", list(TRIAGE_STAGE_IDS))
         services.append_log_entry(
             plan,
-            start_request.log_action,
-            actor=start_request.log_actor,
+            log_action,
+            actor=log_actor,
             detail=detail,
         )
 
     services.save_plan(plan)
-    if start_request.start_message:
+    if start_message:
         print(
             resolved_deps.colorize(
-                start_request.start_message,
-                start_request.start_message_style,
+                start_message,
+                start_message_style,
             )
         )
     return TriageStartOutcome(status="started", reason=decision.reason)
@@ -137,7 +127,6 @@ def ensure_triage_started(
 
 __all__ = [
     "TriageLifecycleDeps",
-    "TriageStartRequest",
     "TriageStartOutcome",
     "ensure_triage_started",
 ]

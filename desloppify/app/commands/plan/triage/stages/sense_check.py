@@ -9,18 +9,18 @@ from pathlib import Path
 
 from desloppify.base.output.terminal import colorize
 
-from .stages.records import record_sense_check_stage, resolve_reusable_report
-from .validation.enrich_quality import evaluate_enrich_quality
-from .validation.enrich_checks import (
+from .records import record_sense_check_stage, resolve_reusable_report
+from ..validation.enrich_quality import evaluate_enrich_quality
+from ..validation.enrich_checks import (
     _steps_missing_issue_refs,
     _steps_with_bad_paths,
     _steps_with_vague_detail,
     _steps_without_effort,
     _underspecified_steps,
 )
-from .helpers import has_triage_in_queue, open_review_ids_from_state, print_cascade_clear_feedback
-from .services import TriageServices, default_triage_services
-from .stage_flow_enrich import ColorizeFn
+from ..helpers import has_triage_in_queue, open_review_ids_from_state, print_cascade_clear_feedback
+from ..services import TriageServices, default_triage_services
+from .enrich import ColorizeFn
 
 
 @dataclass(frozen=True)
@@ -110,13 +110,13 @@ def run_stage_sense_check(
         print(resolved_deps.colorize(f"  Report too short: {len(report)} chars (minimum 100).", "red"))
         return
 
-    from .stages.evidence_parsing import (
+    from .evidence_parsing import (
         EvidenceFailure,
         format_evidence_failures,
         validate_report_has_file_paths,
         validate_report_references_clusters,
     )
-    from .helpers import manual_clusters_with_issues
+    from ..helpers import manual_clusters_with_issues
 
     sc_evidence_failures: list[EvidenceFailure] = []
     has_open_review_work = bool(open_review_ids_from_state(state))

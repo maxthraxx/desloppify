@@ -73,9 +73,12 @@ def _require_enrich_stage_for_complete(
     meta: dict,
     stages: dict,
 ) -> bool:
-    if "enrich" in stages:
+    from .core import _missing_stage_prerequisite  # noqa: PLC0415
+
+    missing = _missing_stage_prerequisite(stages, flow="complete:enrich")
+    if missing is None:
         return True
-    if "organize" not in stages:
+    if missing.stage_name != "enrich":
         return _require_organize_stage_for_complete(plan=plan, meta=meta, stages=stages)
 
     underspec = _underspecified_steps(plan)
@@ -127,9 +130,12 @@ def _require_sense_check_stage_for_complete(
     meta: dict,
     stages: dict,
 ) -> bool:
-    if "sense-check" in stages:
+    from .core import _missing_stage_prerequisite  # noqa: PLC0415
+
+    missing = _missing_stage_prerequisite(stages, flow="complete:sense-check")
+    if missing is None:
         return True
-    if "enrich" not in stages:
+    if missing.stage_name != "sense-check":
         return _require_enrich_stage_for_complete(plan=plan, meta=meta, stages=stages)
 
     print(colorize("  Cannot complete: sense-check stage not recorded.", "red"))
@@ -143,9 +149,12 @@ def _require_organize_stage_for_complete(
     meta: dict,
     stages: dict,
 ) -> bool:
-    if "organize" in stages:
+    from .core import _missing_stage_prerequisite  # noqa: PLC0415
+
+    missing = _missing_stage_prerequisite(stages, flow="complete:organize")
+    if missing is None:
         return True
-    if "observe" not in stages:
+    if missing.stage_name == "observe":
         print(colorize("  Cannot complete: no stages done yet.", "red"))
         print(colorize('  Start with: desloppify plan triage --stage observe --report "..."', "dim"))
         return False

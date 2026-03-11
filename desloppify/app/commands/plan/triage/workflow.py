@@ -17,7 +17,7 @@ from .runner.orchestrator_codex_pipeline import run_codex_pipeline
 from .runner.orchestrator_common import parse_only_stages
 from .runner.stage_prompts import cmd_stage_prompt
 from .services import TriageServices
-from .stage_completion_commands import cmd_confirm_existing, cmd_triage_complete
+from .stages.completion import cmd_confirm_existing, cmd_triage_complete
 from .stages.commands import run_stage_command
 
 
@@ -63,15 +63,13 @@ def _cmd_triage_start(
     start_outcome = _lifecycle_mod.ensure_triage_started(
         plan,
         services=services,
-        request=_lifecycle_mod.TriageStartRequest(
-            state=state,
-            attestation=attestation,
-            log_action="triage_start",
-            log_actor="user",
-            log_detail={"action": "start"},
-            start_message="  Planning mode started (6 stages queued).",
-            start_message_style="green",
-        ),
+        state=state,
+        attestation=attestation,
+        log_action="triage_start",
+        log_actor="user",
+        log_detail={"action": "start"},
+        start_message="  Planning mode started (6 stages queued).",
+        start_message_style="green",
     )
     if start_outcome.status == "blocked":
         return

@@ -49,19 +49,26 @@ def _path_exists_or_alt_exists(repo_root: Path, path_str: str) -> bool:
 
 def _require_organize_stage_for_enrich(stages: dict) -> bool:
     """Gate: organize must be done before enrich."""
-    if "organize" in stages:
-        return True
-    if "observe" not in stages:
-        print(colorize("  Cannot enrich: observe stage not complete.", "red"))
-        print(colorize('  Run: desloppify plan triage --stage observe --report "..."', "dim"))
-        return False
-    if "reflect" not in stages:
-        print(colorize("  Cannot enrich: reflect stage not complete.", "red"))
-        print(colorize('  Run: desloppify plan triage --stage reflect --report "..."', "dim"))
-        return False
-    print(colorize("  Cannot enrich: organize stage not complete.", "red"))
-    print(colorize('  Run: desloppify plan triage --stage organize --report "..."', "dim"))
-    return False
+    from .core import require_stage_prerequisite  # noqa: PLC0415
+
+    return require_stage_prerequisite(
+        stages,
+        flow="enrich",
+        messages={
+            "observe": (
+                "  Cannot enrich: observe stage not complete.",
+                '  Run: desloppify plan triage --stage observe --report "..."',
+            ),
+            "reflect": (
+                "  Cannot enrich: reflect stage not complete.",
+                '  Run: desloppify plan triage --stage reflect --report "..."',
+            ),
+            "organize": (
+                "  Cannot enrich: organize stage not complete.",
+                '  Run: desloppify plan triage --stage organize --report "..."',
+            ),
+        },
+    )
 
 
 def _underspecified_steps(plan: dict) -> list[tuple[str, int, int]]:

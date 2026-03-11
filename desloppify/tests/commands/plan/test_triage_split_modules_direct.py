@@ -396,7 +396,7 @@ def test_lifecycle_ensure_triage_started_handles_active_blocked_and_started() ->
     blocked = triage_lifecycle_mod.ensure_triage_started(
         blocked_plan,
         services=services,
-        request=triage_lifecycle_mod.TriageStartRequest(state={"issues": {}}),
+        state={"issues": {}},
         deps=triage_lifecycle_mod.TriageLifecycleDeps(
             has_triage_in_queue=lambda _plan: False,
             decide_triage_start=lambda *_a, **_k: SimpleNamespace(
@@ -414,12 +414,10 @@ def test_lifecycle_ensure_triage_started_handles_active_blocked_and_started() ->
     started = triage_lifecycle_mod.ensure_triage_started(
         started_plan,
         services=services,
-        request=triage_lifecycle_mod.TriageStartRequest(
-            state={"issues": {}},
-            log_action="triage_start",
-            log_detail={"source": "test"},
-            start_message="started",
-        ),
+        state={"issues": {}},
+        log_action="triage_start",
+        log_detail={"source": "test"},
+        start_message="started",
         deps=triage_lifecycle_mod.TriageLifecycleDeps(
             has_triage_in_queue=lambda _plan: False,
             inject_triage_stages=lambda plan: injected.extend(
@@ -561,7 +559,7 @@ def test_complete_pipeline_uses_completion_command(monkeypatch) -> None:
         state["completed"] = True
 
     monkeypatch.setattr(
-        "desloppify.app.commands.plan.triage.stage_completion_commands._cmd_triage_complete",
+        "desloppify.app.commands.plan.triage.stages.completion._cmd_triage_complete",
         fake_complete,
     )
 

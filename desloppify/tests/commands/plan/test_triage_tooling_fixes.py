@@ -582,7 +582,7 @@ def test_high_step_ratio_skips_small_clusters() -> None:
 
 def test_auto_start_preserves_existing_stages(monkeypatch) -> None:
     """Auto-start in stage commands should NOT clear existing triage_stages."""
-    import desloppify.app.commands.plan.triage.stage_flow_observe_reflect_organize as observe_flow
+    import desloppify.app.commands.plan.triage.stages.observe as observe_flow
 
     existing_stages = {
         "observe": {"report": "analysis", "confirmed_at": "2026-01-01"},

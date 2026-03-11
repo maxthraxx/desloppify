@@ -27,7 +27,7 @@ import desloppify.intelligence.review.issue_merge as issue_merge_mod
 def test_direct_coverage_split_queue_batch_modules_smoke():
     assert callable(triage_flow_mod.cmd_stage_organize)
     assert callable(triage_flow_mod.cmd_stage_reflect)
-    assert callable(triage_flow_mod._cmd_stage_observe)
+    assert callable(triage_flow_mod.cmd_stage_observe)
     assert callable(triage_handlers_mod.cmd_plan_triage)
     assert callable(backlog_mod.cmd_backlog)
     assert callable(queue_policy_mod.build_open_plan_queue)

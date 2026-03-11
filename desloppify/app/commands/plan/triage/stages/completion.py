@@ -7,9 +7,9 @@ import argparse
 from desloppify.base.output.terminal import colorize
 from desloppify.base.output.user_message import print_user_message
 
-from .stages.records import record_confirm_existing_completion
-from .stages.rendering import _print_complete_summary
-from .validation.core import (
+from .records import record_confirm_existing_completion
+from .rendering import _print_complete_summary
+from ..validation.core import (
     _auto_confirm_enrich_for_complete,
     _completion_clusters_valid,
     _completion_strategy_valid,
@@ -25,17 +25,17 @@ from .validation.core import (
     _resolve_completion_strategy,
     _resolve_confirm_existing_strategy,
 )
-from .validation.completion_stages import (
+from ..validation.completion_stages import (
     _auto_confirm_stage_for_complete,
 )
-from .helpers import (
+from ..helpers import (
     apply_completion,
     has_triage_in_queue,
     manual_clusters_with_issues,
     open_review_ids_from_state,
     triage_coverage,
 )
-from .services import TriageServices, default_triage_services
+from ..services import TriageServices, default_triage_services
 
 
 def _print_completion_coverage_warning(*, organized: int, total: int) -> None:

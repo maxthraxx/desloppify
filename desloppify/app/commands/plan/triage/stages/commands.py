@@ -4,14 +4,12 @@ from __future__ import annotations
 
 import argparse
 
+from .observe import cmd_stage_observe
+from .organize import cmd_stage_organize
+from .reflect import cmd_stage_reflect
 from ..services import TriageServices
-from ..stage_flow_enrich import cmd_stage_enrich
-from ..stage_flow_observe_reflect_organize import (
-    cmd_stage_observe,
-    cmd_stage_organize,
-    cmd_stage_reflect,
-)
-from ..stage_flow_sense_check import cmd_stage_sense_check
+from .enrich import cmd_stage_enrich
+from .sense_check import cmd_stage_sense_check
 
 STAGE_COMMAND_HANDLERS = {
     "observe": cmd_stage_observe,
@@ -20,12 +18,6 @@ STAGE_COMMAND_HANDLERS = {
     "enrich": cmd_stage_enrich,
     "sense-check": cmd_stage_sense_check,
 }
-
-_cmd_stage_observe = cmd_stage_observe
-_cmd_stage_reflect = cmd_stage_reflect
-_cmd_stage_organize = cmd_stage_organize
-_cmd_stage_enrich = cmd_stage_enrich
-_cmd_stage_sense_check = cmd_stage_sense_check
 
 
 def run_stage_command(
@@ -44,11 +36,6 @@ def run_stage_command(
 
 __all__ = [
     "STAGE_COMMAND_HANDLERS",
-    "_cmd_stage_enrich",
-    "_cmd_stage_observe",
-    "_cmd_stage_organize",
-    "_cmd_stage_reflect",
-    "_cmd_stage_sense_check",
     "cmd_stage_enrich",
     "cmd_stage_observe",
     "cmd_stage_organize",

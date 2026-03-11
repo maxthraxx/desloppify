@@ -10,22 +10,22 @@ from pathlib import Path
 from desloppify.base.output.terminal import colorize
 from desloppify.base.output.user_message import print_user_message
 
-from .stages.records import record_enrich_stage, resolve_reusable_report
-from .validation.enrich_quality import evaluate_enrich_quality
-from .validation.enrich_checks import (
+from .records import record_enrich_stage, resolve_reusable_report
+from ..validation.enrich_quality import evaluate_enrich_quality
+from ..validation.enrich_checks import (
     _enrich_report_or_error,
     _require_organize_stage_for_enrich,
     _steps_with_bad_paths,
     _steps_without_effort,
     _underspecified_steps,
 )
-from .helpers import (
+from ..helpers import (
     count_log_activity_since,
     has_triage_in_queue,
     open_review_ids_from_state,
     print_cascade_clear_feedback,
 )
-from .services import TriageServices, default_triage_services
+from ..services import TriageServices, default_triage_services
 
 ColorizeFn = Callable[[str, str], str]
 
@@ -85,7 +85,7 @@ def _require_confirmed_organize_stage(
 
     auto_confirm_organize_for_complete = deps.auto_confirm_organize_for_complete
     if auto_confirm_organize_for_complete is None:
-        from .validation.completion_stages import _auto_confirm_stage_for_complete
+        from ..validation.completion_stages import _auto_confirm_stage_for_complete
 
         auto_confirm_organize_for_complete = _auto_confirm_stage_for_complete
     return auto_confirm_organize_for_complete(

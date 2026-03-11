@@ -22,6 +22,7 @@ from .orchestrator_codex_observe import run_observe
 from .orchestrator_codex_pipeline_context import StageRunContext
 from .orchestrator_codex_sense import run_sense_check
 from .stage_prompts import build_stage_prompt
+from ..validation.core import _missing_stage_prerequisite
 from .stage_prompts_instruction_shared import PromptMode
 
 
@@ -183,13 +184,8 @@ def preflight_stage(
         return True, None
 
     if stage == "sense-check":
-        enrich_confirmed_at = (
-            plan.get("epic_triage_meta", {})
-            .get("triage_stages", {})
-            .get("enrich", {})
-            .get("confirmed_at")
-        )
-        if enrich_confirmed_at:
+        stages = plan.get("epic_triage_meta", {}).get("triage_stages", {})
+        if _missing_stage_prerequisite(stages, flow="sense-check") is None:
             return True, None
         reason = "enrich_not_confirmed"
         append_run_log(f"stage-preflight-failed stage={stage} reason={reason}")

@@ -8,7 +8,7 @@ from desloppify.base.discovery.paths import get_project_root
 from desloppify.base.output.terminal import colorize
 
 from ..helpers import has_triage_in_queue, inject_triage_stages
-from ..lifecycle import TriageLifecycleDeps, TriageStartRequest, ensure_triage_started
+from ..lifecycle import TriageLifecycleDeps, ensure_triage_started
 from ..services import TriageServices, default_triage_services
 from .orchestrator_common import STAGES
 
@@ -29,18 +29,16 @@ def run_claude_orchestrator(
     start_outcome = ensure_triage_started(
         plan,
         services=resolved_services,
-        request=TriageStartRequest(
-            state=state,
-            attestation=getattr(args, "attestation", None),
-            log_action="triage_auto_start",
-            log_actor="system",
-            log_detail={
-                "source": "runner_auto_start",
-                "runner": "claude",
-                "injected_stage_ids": list(STAGES),
-            },
-            start_message="  Planning mode auto-started.",
-        ),
+        state=state,
+        attestation=getattr(args, "attestation", None),
+        log_action="triage_auto_start",
+        log_actor="system",
+        log_detail={
+            "source": "runner_auto_start",
+            "runner": "claude",
+            "injected_stage_ids": list(STAGES),
+        },
+        start_message="  Planning mode auto-started.",
         deps=TriageLifecycleDeps(
             has_triage_in_queue=has_triage_in_queue,
             inject_triage_stages=inject_triage_stages,
