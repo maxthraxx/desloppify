@@ -7,13 +7,18 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 from desloppify.base.output.fallbacks import print_write_error
+from desloppify.engine._work_queue.types import (
+    SerializedClusterMember,
+    SerializedQueueItem,
+    WorkQueueItem,
+)
 
 _CLUSTER_MEMBER_SAMPLE_LIMIT = 25
 
 
-def _serialize_cluster_member(member: Mapping[str, Any]) -> dict[str, Any]:
+def _serialize_cluster_member(member: WorkQueueItem) -> SerializedClusterMember:
     """Serialize a cluster member without nested plan metadata."""
-    serialized: dict[str, Any] = {
+    serialized: SerializedClusterMember = {
         "id": member.get("id"),
         "confidence": member.get("confidence"),
         "detector": member.get("detector"),
@@ -26,7 +31,7 @@ def _serialize_cluster_member(member: Mapping[str, Any]) -> dict[str, Any]:
     return serialized
 
 
-def _serialize_cluster_item(item: Mapping[str, Any]) -> dict[str, Any]:
+def _serialize_cluster_item(item: WorkQueueItem) -> SerializedQueueItem:
     """Serialize cluster queue meta-items with sampled members."""
     members_raw = item.get("members", [])
     serialized_members = [
@@ -34,7 +39,7 @@ def _serialize_cluster_item(item: Mapping[str, Any]) -> dict[str, Any]:
         for member in members_raw[:_CLUSTER_MEMBER_SAMPLE_LIMIT]
     ]
     member_count = int(item.get("member_count", len(members_raw)))
-    serialized_cluster: dict[str, Any] = {
+    serialized_cluster: SerializedQueueItem = {
         "id": item.get("id"),
         "action_type": item.get("action_type", "manual_fix"),
         "summary": item.get("summary"),
@@ -59,9 +64,9 @@ def _serialize_cluster_item(item: Mapping[str, Any]) -> dict[str, Any]:
     return serialized_cluster
 
 
-def _serialize_issue_item_base(item: Mapping[str, Any]) -> dict[str, Any]:
+def _serialize_issue_item_base(item: WorkQueueItem) -> SerializedQueueItem:
     """Serialize core issue fields shared across output modes."""
-    serialized: dict[str, Any] = {
+    serialized: SerializedQueueItem = {
         "id": item.get("id"),
         "confidence": item.get("confidence"),
         "detector": item.get("detector"),
@@ -75,7 +80,7 @@ def _serialize_issue_item_base(item: Mapping[str, Any]) -> dict[str, Any]:
     return serialized
 
 
-def serialize_item(item: Mapping[str, Any]) -> dict[str, Any]:
+def serialize_item(item: WorkQueueItem) -> SerializedQueueItem:
     """Build a serializable output dict from a queue item."""
     if item.get("kind") == "cluster":
         return _serialize_cluster_item(item)
@@ -109,7 +114,7 @@ def serialize_item(item: Mapping[str, Any]) -> dict[str, Any]:
 
 def build_query_payload(
     queue: Mapping[str, Any],
-    items: Sequence[Mapping[str, Any]],
+    items: Sequence[WorkQueueItem],
     *,
     command: str,
     narrative: Mapping[str, Any] | None,
@@ -174,7 +179,7 @@ def render_markdown(items: Sequence[Mapping[str, Any]]) -> str:
 
 
 def render_markdown_for_command(
-    items: Sequence[Mapping[str, Any]],
+    items: Sequence[WorkQueueItem],
     *,
     command: str,
 ) -> str:
@@ -221,7 +226,7 @@ def write_output_file(
 def emit_non_terminal_output(
     output_format: str,
     payload: dict[str, Any],
-    items: Sequence[Mapping[str, Any]],
+    items: Sequence[WorkQueueItem],
     *,
     command: str = "next",
 ) -> bool:

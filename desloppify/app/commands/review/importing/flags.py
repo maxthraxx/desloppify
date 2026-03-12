@@ -6,7 +6,9 @@ from dataclasses import dataclass
 
 from desloppify import state as state_mod
 from desloppify.intelligence.review.dimensions import normalize_dimension_name
-from desloppify.intelligence.review.importing.contracts_types import ReviewImportPayload
+from desloppify.intelligence.review.importing.contracts_types import (
+    NormalizedReviewImportPayload,
+)
 
 from .parse import ImportParseOptions
 
@@ -72,7 +74,7 @@ def validate_import_flag_combos(
         raise ImportFlagValidationError("--manual-override requires --attest")
 
 
-def imported_assessment_keys(issues_data: ReviewImportPayload) -> set[str]:
+def imported_assessment_keys(issues_data: NormalizedReviewImportPayload) -> set[str]:
     """Return normalized assessment dimension keys from payload."""
     raw_assessments = issues_data["assessments"]
     keys: set[str] = set()

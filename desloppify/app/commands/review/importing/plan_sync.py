@@ -37,7 +37,7 @@ from desloppify.engine.plan_triage import (
     TRIAGE_CMD_RUN_STAGES_CODEX,
 )
 from desloppify.intelligence.review.importing.contracts_types import (
-    ReviewImportPayload,
+    NormalizedReviewImportPayload,
 )
 from desloppify.state_scoring import score_snapshot
 
@@ -49,7 +49,7 @@ class PlanImportSyncRequest:
     state_file: str | Path | None = None
     config: dict | None = None
     import_file: str | None = None
-    import_payload: ReviewImportPayload | None = None
+    import_payload: NormalizedReviewImportPayload | None = None
 
 
 @dataclass(frozen=True)
@@ -198,7 +198,7 @@ def _print_workflow_injected_message(workflow_injected_ids: list[str]) -> None:
 
 def _build_import_sync_inputs(
     diff: dict,
-    import_payload: ReviewImportPayload | None,
+    import_payload: NormalizedReviewImportPayload | None,
 ) -> _ImportSyncInputs:
     assessment_keys = (
         imported_assessment_keys(import_payload)

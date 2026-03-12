@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from desloppify.intelligence.review.importing.contracts_types import (
+    NormalizedReviewImportPayload,
     ReviewImportPayload,
 )
 from desloppify.intelligence.review.importing.contracts_models import (
@@ -63,3 +64,16 @@ def test_review_import_payload_is_raw_optional_envelope() -> None:
         "dimension_notes",
         "_assessment_policy",
     }.issubset(optional)
+
+
+def test_normalized_review_import_payload_requires_fully_populated_contract() -> None:
+    required = set(getattr(NormalizedReviewImportPayload, "__required_keys__", set()))
+    assert required == {
+        "issues",
+        "assessments",
+        "reviewed_files",
+        "review_scope",
+        "provenance",
+        "dimension_notes",
+        "_assessment_policy",
+    }

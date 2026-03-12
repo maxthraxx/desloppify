@@ -1,6 +1,7 @@
 """Validation and guardrail helpers for triage stage workflow."""
 
 from __future__ import annotations
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Literal
 
@@ -69,9 +70,26 @@ require_stage_prerequisite = require_prerequisite
 _analyze_reflect_issue_accounting = analyze_reflect_issue_accounting
 _validate_reflect_issue_accounting = validate_reflect_accounting
 
+RecurringDimensionBuckets = dict[str, dict[str, list[str]]]
 
-def _auto_confirm_stage(*args, **kwargs):
-    return confirm_stage(*args, **kwargs)
+
+def _auto_confirm_stage(
+    *,
+    plan: dict,
+    stage_record: dict,
+    attestation: str | None,
+    request: AutoConfirmStageRequest,
+    save_plan_fn: Callable[..., None] | None = None,
+    utc_now_fn: Callable[[], str] | None = None,
+) -> bool:
+    return confirm_stage(
+        plan=plan,
+        stage_record=stage_record,
+        attestation=attestation,
+        request=request,
+        save_plan_fn=save_plan_fn,
+        utc_now_fn=utc_now_fn,
+    )
 
 
 def _auto_confirm_observe_if_attested(
@@ -123,7 +141,7 @@ def _validate_recurring_dimension_mentions(
     *,
     report: str,
     recurring_dims: list[str],
-    recurring: dict,
+    recurring: RecurringDimensionBuckets,
 ) -> bool:
     if not recurring_dims:
         return True

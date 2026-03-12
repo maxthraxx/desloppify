@@ -6,6 +6,10 @@ directly. This facade remains for tests and older imports.
 
 from __future__ import annotations
 
+from desloppify.intelligence.review.importing.contracts_types import (
+    NormalizedReviewImportPayload,
+)
+
 from .output import (
     print_assessment_mode_banner,
     print_assessment_policy_notice,
@@ -35,7 +39,7 @@ def load_import_issues_data(
     *,
     config: ImportLoadConfig | None = None,
     options: ImportParseOptions | None = None,
-):
+) -> NormalizedReviewImportPayload:
     """Load import payload while preserving the legacy ``config=`` keyword."""
     return parse_load_import_issues_data(
         import_file,

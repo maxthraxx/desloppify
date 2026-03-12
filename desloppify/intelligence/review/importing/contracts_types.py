@@ -87,9 +87,22 @@ class ReviewImportPayload(TypedDict, total=False):
     _assessment_policy: NotRequired[AssessmentImportPolicy]
 
 
+class NormalizedReviewImportPayload(TypedDict):
+    """Normalized review import payload after parser-level validation."""
+
+    issues: list[ReviewIssuePayload]
+    assessments: dict[str, Any]
+    reviewed_files: list[str]
+    review_scope: dict[str, Any]
+    provenance: dict[str, Any]
+    dimension_notes: dict[str, Any]
+    _assessment_policy: AssessmentImportPolicy
+
+
 __all__ = [
     "AssessmentImportPolicy",
     "AssessmentProvenanceStatus",
+    "NormalizedReviewImportPayload",
     "REVIEW_ISSUE_REQUIRED_FIELDS",
     "ReviewImportPayload",
     "ReviewIssuePayload",

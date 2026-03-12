@@ -19,6 +19,7 @@ from desloppify.intelligence.review.importing.contracts_models import (
     AssessmentImportPolicyModel,
 )
 from desloppify.intelligence.review.importing.contracts_types import (
+    NormalizedReviewImportPayload,
     ReviewImportPayload,
     ReviewIssuePayload,
 )
@@ -90,7 +91,7 @@ def _coerce_import_parse_options(
 
 def _normalize_import_payload_shape(
     payload: ImportRootPayload,
-) -> tuple[ReviewImportPayload | None, list[str]]:
+) -> tuple[NormalizedReviewImportPayload | None, list[str]]:
     """Normalize payload into required-key contract with strict type checks."""
     errors: list[str] = []
     issues = payload.get("issues")
@@ -178,7 +179,7 @@ def _has_non_empty_strings(items: object) -> bool:
 
 
 def _validate_holistic_issues_schema(
-    issues_data: ReviewImportPayload,
+    issues_data: NormalizedReviewImportPayload,
     *,
     lang_name: str | None = None,
 ) -> list[str]:
@@ -247,7 +248,7 @@ def _feedback_dimensions_from_dimension_notes(dimension_notes: object) -> set[st
 
 
 def _validate_assessment_feedback(
-    issues_data: ReviewImportPayload,
+    issues_data: NormalizedReviewImportPayload,
 ) -> tuple[list[str], list[str]]:
     """Return dimensions missing required feedback and required low-score issues."""
     assessments = issues_data["assessments"]
@@ -324,7 +325,7 @@ def _validate_override_option_conflicts(
 
 
 def _validate_feedback_requirements(
-    issues_data: ReviewImportPayload,
+    issues_data: NormalizedReviewImportPayload,
     *,
     override_enabled: bool,
     override_attest: str | None,
@@ -356,7 +357,7 @@ def _validate_feedback_requirements(
 
 
 def _validate_schema_requirements(
-    issues_data: ReviewImportPayload,
+    issues_data: NormalizedReviewImportPayload,
     *,
     lang_name: str | None,
     allow_partial: bool,
@@ -381,7 +382,7 @@ def _parse_and_validate_import(
     import_file: str,
     *,
     options: ImportParseOptions | None = None,
-) -> tuple[ReviewImportPayload | None, list[str]]:
+) -> tuple[NormalizedReviewImportPayload | None, list[str]]:
     """Load, parse, and validate a review import file with filesystem I/O."""
     resolved_options = _coerce_import_parse_options(options)
 
@@ -450,7 +451,7 @@ def load_import_issues_data(
     *,
     colorize_fn=None,
     options: ImportParseOptions | None = None,
-) -> ReviewImportPayload:
+) -> NormalizedReviewImportPayload:
     """Load and normalize review import payload to object format.
 
     Raises ``ImportPayloadLoadError`` when validation fails.

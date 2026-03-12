@@ -12,6 +12,7 @@ from desloppify.intelligence.review.importing.contracts_models import (
 )
 from desloppify.intelligence.review.importing.contracts_types import (
     AssessmentImportPolicy,
+    NormalizedReviewImportPayload,
     ReviewImportPayload,
 )
 
@@ -65,7 +66,7 @@ def _resolve_packet_path(raw_path: object) -> Path | None:
 
 
 def _assessment_provenance_status(
-    issues_data: ReviewImportPayload,
+    issues_data: NormalizedReviewImportPayload,
     *,
     import_file: str,
 ) -> AssessmentProvenanceModel:
@@ -157,7 +158,7 @@ def validate_attested_external_attestation(attest: str | None) -> str | None:
 
 
 def apply_assessment_import_policy(
-    issues_data: ReviewImportPayload,
+    issues_data: NormalizedReviewImportPayload,
     *,
     import_file: str,
     attested_external: bool,
@@ -166,7 +167,7 @@ def apply_assessment_import_policy(
     manual_attest: str | None,
     trusted_assessment_source: bool,
     trusted_assessment_label: str | None,
-) -> tuple[ReviewImportPayload | None, list[str]]:
+) -> tuple[NormalizedReviewImportPayload | None, list[str]]:
     """Apply trust gating for assessment imports (issues import always allowed)."""
     assessments = issues_data["assessments"]
     has_assessments = bool(assessments)
@@ -218,21 +219,21 @@ def apply_assessment_import_policy(
 
 
 def _attach_assessment_policy(
-    payload: ReviewImportPayload,
+    payload: NormalizedReviewImportPayload,
     policy: AssessmentImportPolicyModel,
-) -> ReviewImportPayload:
+) -> NormalizedReviewImportPayload:
     normalized = dict(payload)
     normalized[ASSESSMENT_POLICY_KEY] = policy.to_dict()
     return normalized
 
 
 def _apply_attested_external_policy(
-    issues_data: ReviewImportPayload,
+    issues_data: NormalizedReviewImportPayload,
     *,
     policy: AssessmentImportPolicyModel,
     provenance_status: AssessmentProvenanceModel,
     attested_attest: str | None,
-) -> tuple[ReviewImportPayload | None, list[str]]:
+) -> tuple[NormalizedReviewImportPayload | None, list[str]]:
     normalized_attest = validate_attested_external_attestation(attested_attest)
     if normalized_attest is None:
         return None, [
@@ -260,11 +261,11 @@ def _apply_attested_external_policy(
 
 
 def _apply_manual_override_policy(
-    issues_data: ReviewImportPayload,
+    issues_data: NormalizedReviewImportPayload,
     *,
     policy: AssessmentImportPolicyModel,
     manual_attest: str | None,
-) -> tuple[ReviewImportPayload | None, list[str]]:
+) -> tuple[NormalizedReviewImportPayload | None, list[str]]:
     if not isinstance(manual_attest, str) or not manual_attest.strip():
         return None, ["--manual-override requires --attest"]
     override_policy = replace(
@@ -277,7 +278,7 @@ def _apply_manual_override_policy(
 
 
 def _issues_only_reason(
-    issues_data: ReviewImportPayload,
+    issues_data: NormalizedReviewImportPayload,
     *,
     provenance_status: AssessmentProvenanceModel,
 ) -> str:
@@ -301,11 +302,11 @@ def _issues_only_reason(
 
 
 def _apply_issues_only_policy(
-    issues_data: ReviewImportPayload,
+    issues_data: NormalizedReviewImportPayload,
     *,
     policy: AssessmentImportPolicyModel,
     provenance_status: AssessmentProvenanceModel,
-) -> tuple[ReviewImportPayload, list[str]]:
+) -> tuple[NormalizedReviewImportPayload, list[str]]:
     issues_only_policy = replace(
         policy,
         mode="issues_only",
@@ -317,7 +318,9 @@ def _apply_issues_only_policy(
     return payload, []
 
 
-def assessment_policy_from_payload(payload: ReviewImportPayload) -> AssessmentImportPolicy:
+def assessment_policy_from_payload(
+    payload: NormalizedReviewImportPayload | ReviewImportPayload,
+) -> AssessmentImportPolicy:
     """Return parsed assessment policy metadata from a loaded import payload."""
     policy = payload[ASSESSMENT_POLICY_KEY]
     if isinstance(policy, dict):
@@ -326,7 +329,7 @@ def assessment_policy_from_payload(payload: ReviewImportPayload) -> AssessmentIm
 
 
 def assessment_policy_model_from_payload(
-    payload: ReviewImportPayload,
+    payload: NormalizedReviewImportPayload | ReviewImportPayload,
 ) -> AssessmentImportPolicyModel:
     """Return typed assessment policy metadata from a loaded import payload."""
     return AssessmentImportPolicyModel.from_mapping(assessment_policy_from_payload(payload))

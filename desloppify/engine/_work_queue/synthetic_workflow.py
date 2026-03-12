@@ -24,7 +24,29 @@ from desloppify.engine.plan_triage import (
     triage_run_stages_command,
     triage_runner_commands,
 )
-from desloppify.engine._work_queue.types import WorkQueueItem
+from desloppify.engine._work_queue.types import WorkflowActionItem
+
+
+def _workflow_action_item(
+    *,
+    item_id: str,
+    summary: str,
+    primary_command: str,
+    detail: dict[str, object] | None = None,
+) -> WorkflowActionItem:
+    return {
+        "id": item_id,
+        "tier": 1,
+        "confidence": "high",
+        "detector": "workflow",
+        "file": ".",
+        "kind": "workflow_action",
+        "summary": summary,
+        "detail": detail or {},
+        "primary_command": primary_command,
+        "blocked_by": [],
+        "is_blocked": False,
+    }
 
 
 def _confirm_attestation_hint(stage: str) -> str:
@@ -111,7 +133,7 @@ def _create_plan_planning_tools(plan: dict) -> list[dict[str, str]]:
     )
 
 
-def build_score_checkpoint_item(plan: dict, state: dict) -> WorkQueueItem | None:
+def build_score_checkpoint_item(plan: dict, state: dict) -> WorkflowActionItem | None:
     """Build a synthetic work item for ``workflow::score-checkpoint`` if queued."""
     if WORKFLOW_SCORE_CHECKPOINT_ID not in plan.get("queue_order", []):
         return None
@@ -124,15 +146,10 @@ def build_score_checkpoint_item(plan: dict, state: dict) -> WorkQueueItem | None
     delta = round(strict - plan_start, 1) if plan_start is not None else None
     delta_str = f" ({'+' if delta > 0 else ''}{delta:.1f})" if delta else ""
 
-    return {
-        "id": WORKFLOW_SCORE_CHECKPOINT_ID,
-        "tier": 1,
-        "confidence": "high",
-        "detector": "workflow",
-        "file": ".",
-        "kind": "workflow_action",
-        "summary": f"Score checkpoint: strict {strict:.1f}/100{delta_str}",
-        "detail": {
+    return _workflow_action_item(
+        item_id=WORKFLOW_SCORE_CHECKPOINT_ID,
+        summary=f"Score checkpoint: strict {strict:.1f}/100{delta_str}",
+        detail={
             "strict": strict,
             "plan_start_strict": plan_start,
             "delta": delta,
@@ -141,35 +158,26 @@ def build_score_checkpoint_item(plan: dict, state: dict) -> WorkQueueItem | None
                 manual_fallback=triage_manual_stage_command("observe"),
             ),
         },
-        "primary_command": triage_run_stages_command(only_stages="observe"),
-        "blocked_by": [],
-        "is_blocked": False,
-    }
+        primary_command=triage_run_stages_command(only_stages="observe"),
+    )
 
 
-def build_create_plan_item(plan: dict) -> WorkQueueItem | None:
+def build_create_plan_item(plan: dict) -> WorkflowActionItem | None:
     """Build a synthetic work item for ``workflow::create-plan`` if queued."""
     if WORKFLOW_CREATE_PLAN_ID not in plan.get("queue_order", []):
         return None
 
-    return {
-        "id": WORKFLOW_CREATE_PLAN_ID,
-        "tier": 1,
-        "confidence": "high",
-        "detector": "workflow",
-        "file": ".",
-        "kind": "workflow_action",
-        "summary": "Create prioritized plan from review results",
-        "detail": {
+    return _workflow_action_item(
+        item_id=WORKFLOW_CREATE_PLAN_ID,
+        summary="Create prioritized plan from review results",
+        detail={
             "planning_tools": _create_plan_planning_tools(plan),
         },
-        "primary_command": _create_plan_primary_command(plan),
-        "blocked_by": [],
-        "is_blocked": False,
-    }
+        primary_command=_create_plan_primary_command(plan),
+    )
 
 
-def build_import_scores_item(plan: dict, state: dict) -> WorkQueueItem | None:
+def build_import_scores_item(plan: dict, state: dict) -> WorkflowActionItem | None:
     """Build a synthetic work item for ``workflow::import-scores`` if queued."""
     if WORKFLOW_IMPORT_SCORES_ID not in plan.get("queue_order", []):
         return None
@@ -186,30 +194,23 @@ def build_import_scores_item(plan: dict, state: dict) -> WorkQueueItem | None:
     if packet_sha:
         explanation += f" Expected packet sha256: `{packet_sha}`."
 
-    return {
-        "id": WORKFLOW_IMPORT_SCORES_ID,
-        "tier": 1,
-        "confidence": "high",
-        "detector": "workflow",
-        "file": ".",
-        "kind": "workflow_action",
-        "summary": "Import assessment scores with attestation",
-        "detail": {
+    return _workflow_action_item(
+        item_id=WORKFLOW_IMPORT_SCORES_ID,
+        summary="Import assessment scores with attestation",
+        detail={
             "explanation": explanation,
             "expected_import_file": import_file,
             "packet_sha256": packet_sha,
         },
-        "primary_command": (
+        primary_command=(
             f"desloppify review --import {quoted_import_file} --attested-external "
             '--attest "I validated this review was completed without awareness '
             'of overall score and is unbiased."'
         ),
-        "blocked_by": [],
-        "is_blocked": False,
-    }
+    )
 
 
-def build_communicate_score_item(plan: dict, state: dict) -> WorkQueueItem | None:
+def build_communicate_score_item(plan: dict, state: dict) -> WorkflowActionItem | None:
     """Build a synthetic work item for ``workflow::communicate-score`` if queued."""
     if WORKFLOW_COMMUNICATE_SCORE_ID not in plan.get("queue_order", []):
         return None
@@ -227,49 +228,36 @@ def build_communicate_score_item(plan: dict, state: dict) -> WorkQueueItem | Non
     delta = round(strict - prev_start, 1) if prev_start is not None else None
     delta_str = f" ({'+' if delta > 0 else ''}{delta:.1f})" if delta else ""
 
-    return {
-        "id": WORKFLOW_COMMUNICATE_SCORE_ID,
-        "tier": 1,
-        "confidence": "high",
-        "detector": "workflow",
-        "file": ".",
-        "kind": "workflow_action",
-        "summary": f"Communicate updated score to user: strict {strict:.1f}/100{delta_str}",
-        "detail": {
+    return _workflow_action_item(
+        item_id=WORKFLOW_COMMUNICATE_SCORE_ID,
+        summary=f"Communicate updated score to user: strict {strict:.1f}/100{delta_str}",
+        detail={
             "strict": strict,
             "previous_plan_start_strict": prev_start,
             "delta": delta,
         },
-        "primary_command": (
+        primary_command=(
             f'desloppify plan resolve "{WORKFLOW_COMMUNICATE_SCORE_ID}" '
             '--note "Score communicated" --confirm'
         ),
-        "blocked_by": [],
-        "is_blocked": False,
-    }
+    )
 
 
-def build_run_scan_item(plan: dict) -> WorkQueueItem | None:
+def build_run_scan_item(plan: dict) -> WorkflowActionItem | None:
     """Build a synthetic item for the first post-flight scan step."""
     if not postflight_scan_pending(plan):
         return None
 
-    return {
-        "id": WORKFLOW_RUN_SCAN_ID,
-        "tier": 1,
-        "confidence": "high",
-        "detector": "workflow",
-        "file": ".",
-        "kind": "workflow_action",
-        "summary": "Run post-flight scan to refresh queue and surface follow-up review work.",
-        "detail": {
+    item = _workflow_action_item(
+        item_id=WORKFLOW_RUN_SCAN_ID,
+        summary="Run post-flight scan to refresh queue and surface follow-up review work.",
+        detail={
             "phase": "postflight_scan",
         },
-        "execution_visibility": "always",
-        "primary_command": "desloppify scan",
-        "blocked_by": [],
-        "is_blocked": False,
-    }
+        primary_command="desloppify scan",
+    )
+    item["execution_visibility"] = "always"
+    return item
 
 
 def _temporary_skipped_ids(plan: dict) -> list[str]:
@@ -316,7 +304,7 @@ def _deferred_cluster_breakdown(
     return cluster_count, individual_count
 
 
-def build_deferred_disposition_item(plan: dict) -> WorkQueueItem | None:
+def build_deferred_disposition_item(plan: dict) -> WorkflowActionItem | None:
     """Build a synthetic item prompting deferred backlog disposition."""
     deferred_ids = _temporary_skipped_ids(plan)
     if not deferred_ids:
@@ -344,20 +332,14 @@ def build_deferred_disposition_item(plan: dict) -> WorkQueueItem | None:
         '--attest "I have actually reviewed these deferred items and I am not gaming the score by skipping them permanently."'
     )
 
-    return {
-        "id": WORKFLOW_DEFERRED_DISPOSITION_ID,
-        "tier": 1,
-        "confidence": "high",
-        "detector": "workflow",
-        "file": ".",
-        "kind": "workflow_action",
-        "execution_visibility": "always",
-        "summary": (
+    item = _workflow_action_item(
+        item_id=WORKFLOW_DEFERRED_DISPOSITION_ID,
+        summary=(
             "Deferred backlog decision required: "
             f"{cluster_count} {cluster_label} + {individual_count} individual {individual_label} "
             "must be reactivated, moved to backlog, or marked wontfix."
         ),
-        "detail": {
+        detail={
             "temporary_skipped_count": count,
             "deferred_cluster_count": cluster_count,
             "deferred_individual_count": individual_count,
@@ -401,10 +383,10 @@ def build_deferred_disposition_item(plan: dict) -> WorkQueueItem | None:
                 },
             ],
         },
-        "primary_command": reactivate_cmd,
-        "blocked_by": [],
-        "is_blocked": False,
-    }
+        primary_command=reactivate_cmd,
+    )
+    item["execution_visibility"] = "always"
+    return item
 
 
 __all__ = [

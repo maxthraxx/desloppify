@@ -20,6 +20,12 @@ from .scoring import DimensionMergeScorer
 _DIMENSION_SCORER = DimensionMergeScorer()
 
 
+def _coerce_numeric_score(score: object) -> float | None:
+    if isinstance(score, bool) or not isinstance(score, int | float):
+        return None
+    return float(score)
+
+
 def assessment_weight(
     *,
     dimension: str,
@@ -64,14 +70,15 @@ def _accumulate_batch_scores(
     result_issues = result["issues"]
     result_notes = result["dimension_notes"]
     for key, score in result["assessments"].items():
-        if isinstance(score, bool):
-            continue
-        score_value, weight = _weighted_batch_score(
+        weighted_score = _weighted_batch_score(
             key,
             score,
             issues=result_issues,
             dimension_notes=result_notes,
         )
+        if weighted_score is None:
+            continue
+        score_value, weight = weighted_score
         _record_batch_score(
             key,
             score_value,
@@ -96,8 +103,10 @@ def _weighted_batch_score(
     *,
     issues: list[BatchIssuePayload],
     dimension_notes: dict[str, BatchDimensionNotePayload],
-) -> tuple[float, float]:
-    score_value = float(score)  # type: ignore[arg-type]
+) -> tuple[float, float] | None:
+    score_value = _coerce_numeric_score(score)
+    if score_value is None:
+        return None
     weight = assessment_weight(
         dimension=key,
         issues=issues,

@@ -139,6 +139,52 @@ class SubjectiveDimensionItem(QueueItemCommon, total=False):
     stale: bool
 
 
+class SerializedClusterMember(TypedDict, total=False):
+    """Serialized cluster member payload used by next/backlog JSON output."""
+
+    id: str | None
+    kind: QueueItemKind
+    confidence: str | None
+    detector: str | None
+    file: str | None
+    summary: str | None
+    status: str | None
+    primary_command: str | None
+
+
+class SerializedQueueItem(TypedDict, total=False):
+    """Serialized queue item payload written to query/output surfaces."""
+
+    id: str | None
+    kind: QueueItemKind
+    confidence: str | None
+    detector: str | None
+    file: str | None
+    summary: str | None
+    detail: dict[str, Any]
+    status: str | None
+    primary_command: str | None
+    blocked_by: list[str]
+    is_blocked: bool
+    explain: dict[str, Any]
+    queue_position: int
+    plan_description: str
+    plan_note: str
+    plan_cluster: PlanClusterRef
+    plan_skipped: bool
+    plan_skip_kind: str
+    plan_skip_reason: str
+    action_type: str
+    member_count: int
+    members: list["SerializedClusterMember"]
+    cluster_name: str
+    cluster_auto: bool
+    members_truncated: bool
+    members_sample_limit: int
+    autofix_hint: str
+    action_steps: list[dict[str, Any]]
+
+
 WorkQueueItem: TypeAlias = (
     IssueQueueItem
     | ClusterQueueItem
@@ -156,6 +202,8 @@ __all__ = [
     "QueueItemBase",
     "QueueItemCommon",
     "QueueItemKind",
+    "SerializedClusterMember",
+    "SerializedQueueItem",
     "SubjectiveDimensionItem",
     "WorkflowActionItem",
     "WorkflowStageItem",
