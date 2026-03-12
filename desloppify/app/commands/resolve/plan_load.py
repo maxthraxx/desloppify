@@ -6,6 +6,8 @@ import sys
 from dataclasses import dataclass
 
 from desloppify.base.output.terminal import colorize
+from desloppify.engine._work_queue.context import resolve_plan_load_status
+
 
 @dataclass(frozen=True)
 class DegradedPlanWarning:
@@ -21,6 +23,42 @@ class DegradedPlanWarningState:
     """Mutable per-call-chain dedupe state for degraded resolve warnings."""
 
     warned: bool = False
+
+
+@dataclass(frozen=True)
+class ResolvePlanAccess:
+    """Resolved living-plan access contract for one resolve attempt."""
+
+    plan: dict | None
+    degraded: bool
+    error_kind: str | None
+    warning_state: DegradedPlanWarningState
+
+    def usable_plan(self, *, behavior: str) -> dict | None:
+        """Return the loaded plan, warning once when resolve falls back."""
+        if self.degraded:
+            warn_plan_load_degraded_once(
+                error_kind=self.error_kind,
+                behavior=behavior,
+                warning_state=self.warning_state,
+            )
+            return None
+        return self.plan if isinstance(self.plan, dict) else None
+
+
+def load_resolve_plan_access(
+    *,
+    warning_state: DegradedPlanWarningState | None = None,
+) -> ResolvePlanAccess:
+    """Resolve plan access once so all degraded behavior shares one warning state."""
+    resolved_warning_state = warning_state or DegradedPlanWarningState()
+    status = resolve_plan_load_status()
+    return ResolvePlanAccess(
+        plan=status.plan,
+        degraded=status.degraded,
+        error_kind=status.error_kind,
+        warning_state=resolved_warning_state,
+    )
 
 
 def warn_plan_load_degraded_once(
@@ -69,5 +107,7 @@ def _reset_degraded_plan_warning_for_tests() -> None:
 __all__ = [
     "DegradedPlanWarning",
     "DegradedPlanWarningState",
+    "ResolvePlanAccess",
+    "load_resolve_plan_access",
     "warn_plan_load_degraded_once",
 ]

@@ -196,6 +196,39 @@ def test_reconcile_review_import_prunes_stale_review_ids_even_without_new_ids(
     assert plan["clusters"]["manual/objective"]["issue_ids"] == ["smells::keep"]
 
 
+def test_reconcile_review_import_prunes_stale_triage_recovery_metadata(
+    monkeypatch,
+) -> None:
+    plan = {
+        "queue_order": ["review::live", "review::stale"],
+        "clusters": {},
+        "epic_triage_meta": {
+            "triaged_ids": ["review::live", "review::stale"],
+            "active_triage_issue_ids": ["review::live", "review::stale"],
+            "undispositioned_issue_ids": ["review::live", "review::stale"],
+            "undispositioned_issue_count": 2,
+        },
+    }
+    state = {"issues": {}}
+
+    monkeypatch.setattr(reconcile_import_mod, "compute_open_issue_ids", lambda _s: {"review::live"})
+    monkeypatch.setattr(reconcile_import_mod, "compute_new_issue_ids", lambda _p, _s: set())
+    monkeypatch.setattr(
+        reconcile_import_mod,
+        "sync_triage_needed",
+        lambda _p, _s, policy=None: SimpleNamespace(injected=[], deferred=False),
+    )
+
+    result = reconcile_import_mod.sync_plan_after_review_import(plan, state, policy=None)
+
+    assert result is not None
+    assert result.stale_pruned_from_queue == ["review::stale"]
+    assert plan["epic_triage_meta"]["triaged_ids"] == ["review::live", "review::stale"]
+    assert plan["epic_triage_meta"]["active_triage_issue_ids"] == ["review::live"]
+    assert plan["epic_triage_meta"]["undispositioned_issue_ids"] == ["review::live"]
+    assert plan["epic_triage_meta"]["undispositioned_issue_count"] == 1
+
+
 def test_schema_migration_helpers_cover_legacy_cleanup() -> None:
     assert (
         schema_helpers_mod._has_synthesis_artifacts(
@@ -537,6 +570,28 @@ def test_sync_import_scores_updates_metadata_on_consecutive_issues_only_import()
     meta = plan["refresh_state"]["pending_import_scores"]
     assert meta["import_file"] == "/tmp/review-v2.json"
     assert meta["packet_sha256"] == "hash-v2"
+
+
+def test_pending_import_scores_meta_ignores_malformed_refresh_state() -> None:
+    plan = {
+        "refresh_state": {
+            "pending_import_scores": "bad-shape",
+        }
+    }
+    state = {
+        "assessment_import_audit": [
+            {
+                "timestamp": "2026-03-10T10:00:00+00:00",
+                "mode": "issues_only",
+                "import_file": "/tmp/review.json",
+            }
+        ]
+    }
+
+    meta = sync_workflow_mod.pending_import_scores_meta(plan, state)
+
+    assert meta is not None
+    assert meta.import_file == "/tmp/review.json"
 
 
 def test_sync_communicate_score_reinjects_after_trusted_score_import() -> None:

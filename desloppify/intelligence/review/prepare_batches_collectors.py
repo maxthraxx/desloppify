@@ -7,6 +7,7 @@ from .prepare_batches_collectors_quality import (
     _arch_coupling_files,
     _conventions_files,
     _testing_api_files,
+    _workflow_seam_files,
 )
 from .prepare_batches_collectors_structure import (
     _ai_debt_files,
@@ -24,7 +25,7 @@ _DIMENSION_FILE_MAPPING: dict[str, str] = {
     "abstraction_fitness": "abstractions",
     "dependency_health": "abstractions",
     "low_level_elegance": "abstractions",
-    "mid_level_elegance": "package_org",
+    "mid_level_elegance": "workflow_seams",
     "test_strategy": "testing_api",
     "api_surface_coherence": "testing_api",
     "authorization_consistency": "authorization",
@@ -43,6 +44,7 @@ _FILE_COLLECTORS = {
     "conventions": _conventions_files,
     "abstractions": _abstractions_files,
     "testing_api": _testing_api_files,
+    "workflow_seams": _workflow_seam_files,
     "authorization": _authorization_files,
     "ai_debt": _ai_debt_files,
     "package_org": _package_org_files,

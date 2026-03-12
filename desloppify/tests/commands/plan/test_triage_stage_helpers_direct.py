@@ -157,6 +157,24 @@ def test_unclustered_review_issues_falls_back_to_queue_scan() -> None:
     ]
 
 
+def test_unclustered_review_issues_ignores_stale_frozen_triage_ids() -> None:
+    plan = {
+        "clusters": {},
+        "skipped": {},
+        "epic_triage_meta": {
+            "active_triage_issue_ids": ["review::open", "review::gone"],
+        },
+    }
+    state = {
+        "issues": {
+            "review::open": {"status": "open", "detector": "review"},
+            "review::closed": {"status": "closed", "detector": "review"},
+        }
+    }
+
+    assert stage_helpers_mod.unclustered_review_issues(plan, state) == ["review::open"]
+
+
 def test_inject_triage_stages_keeps_workflow_prefix_ahead_of_triage() -> None:
     plan = {
         "queue_order": [

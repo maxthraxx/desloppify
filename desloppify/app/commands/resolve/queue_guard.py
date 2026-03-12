@@ -13,7 +13,7 @@ from desloppify.engine._work_queue.plan_order import collapse_clusters
 from desloppify.engine._work_queue.core import QueueBuildOptions
 from desloppify.engine.planning.queue_policy import build_execution_queue
 
-from .plan_load import warn_plan_load_degraded_once
+from .plan_load import ResolvePlanAccess, load_resolve_plan_access
 
 _logger = logging.getLogger(__name__)
 
@@ -110,24 +110,20 @@ def _check_queue_order_guard(
     state: dict,
     patterns: list[str],
     status: str,
+    *,
+    plan_access: ResolvePlanAccess | None = None,
 ) -> bool:
     """Warn and block if resolving items not at the front of the plan queue."""
     if status != "fixed":
         return False
-    plan_status = resolve_plan_load_status()
-    if plan_status.degraded:
+    resolved_plan_access = plan_access or load_resolve_plan_access()
+    plan = resolved_plan_access.usable_plan(
+        behavior="Queue-order enforcement is disabled until plan loading succeeds.",
+    )
+    if plan is None:
         _logger.debug(
-            "queue order guard skipped due to degraded plan load (%s)",
-            plan_status.error_kind,
+            "queue order guard skipped because no usable living plan is available",
         )
-        warn_plan_load_degraded_once(
-            error_kind=plan_status.error_kind,
-            behavior="Queue-order enforcement is disabled until plan loading succeeds.",
-        )
-        return False
-
-    plan = plan_status.plan
-    if not isinstance(plan, dict):
         return False
     queue_order = plan.get("queue_order", [])
     if not queue_order:

@@ -16,7 +16,7 @@ from desloppify.intelligence.narrative.core import NarrativeContext
 from . import helpers as import_helpers_mod
 
 
-def print_import_results(
+def report_review_import_outcome(
     *,
     state: dict,
     lang_name: str,
@@ -28,7 +28,7 @@ def print_import_results(
     assessment_policy,
     scorecard_subjective_at_target_fn,
 ) -> None:
-    """Print import results, scores, and write query.json."""
+    """Render review import output and refresh query.json."""
     narrative = narrative_mod.compute_narrative(
         state,
         NarrativeContext(lang=lang_name, command="review"),
@@ -98,4 +98,4 @@ def print_import_results(
     )
 
 
-__all__ = ["print_import_results"]
+__all__ = ["report_review_import_outcome"]

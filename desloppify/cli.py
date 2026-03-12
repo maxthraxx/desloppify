@@ -20,7 +20,7 @@ from desloppify.base.discovery.source import set_exclusions
 from desloppify.base.exception_sets import CommandError
 from desloppify.base.output.fallbacks import log_best_effort_failure
 from desloppify.base.output.terminal import colorize
-from desloppify.base.discovery.paths import get_default_path, get_project_root
+from desloppify.base.discovery.paths import get_default_scan_path, get_project_root
 from desloppify.base.registry import detector_names, on_detector_registered
 from desloppify.base.runtime_state import runtime_scope
 from desloppify.languages import available_langs
@@ -145,10 +145,12 @@ def _resolve_default_path(args: argparse.Namespace) -> None:
         except (OSError, KeyError, ValueError, TypeError, AttributeError) as exc:
             log_best_effort_failure(logger, "resolve default review path from saved state", exc)
     lang = resolve_lang(args)
-    if lang:
-        args.path = str(runtime_root / lang.default_src)
-    else:
-        args.path = str(get_default_path())
+    args.path = str(
+        get_default_scan_path(
+            project_root=runtime_root,
+            default_src=lang.default_src if lang else None,
+        )
+    )
 
 
 def _load_shared_runtime(args: argparse.Namespace) -> None:

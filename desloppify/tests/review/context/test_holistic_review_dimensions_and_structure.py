@@ -780,3 +780,39 @@ class TestPackageOrganizationDimension:
 
         names = [b["name"] for b in batches]
         assert "package_organization" not in names
+
+    def test_mid_level_elegance_uses_workflow_seam_sources(self):
+        ctx = {
+            "architecture": {},
+            "coupling": {
+                "boundary_violations": [{"file": "app/orchestrator.py"}],
+                "module_level_io": [{"file": "app/handlers.py"}],
+            },
+            "conventions": {},
+            "errors": {"strategy_by_directory": {}},
+            "abstractions": {
+                "util_files": [],
+                "pass_through_wrappers": [{"file": "app/facade.py"}],
+                "one_impl_interfaces": [
+                    {"declared_in": ["app/protocols.py"], "implemented_in": []}
+                ],
+            },
+            "dependencies": {},
+            "testing": {},
+            "api_surface": {"sync_async_mix": ["app/api.py"]},
+            "ai_debt_signals": {},
+            "migration_signals": {},
+            "structure": {},
+        }
+        lang = _mock_lang()
+
+        batches = _build_investigation_batches(ctx, lang)
+
+        mid_batch = next(b for b in batches if b["name"] == "mid_level_elegance")
+        assert mid_batch["files_to_read"] == [
+            "app/orchestrator.py",
+            "app/handlers.py",
+            "app/facade.py",
+            "app/protocols.py",
+            "app/api.py",
+        ]

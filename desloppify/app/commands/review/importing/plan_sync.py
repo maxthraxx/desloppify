@@ -49,6 +49,16 @@ def _has_postflight_review_work(state: dict, *, policy) -> bool:
     return bool(policy.stale_ids or policy.under_target_ids)
 
 
+def _has_deferred_disposition_work(plan: dict) -> bool:
+    skipped = plan.get("skipped", {})
+    if not isinstance(skipped, dict):
+        return False
+    return any(
+        isinstance(entry, dict) and str(entry.get("kind", "temporary")) == "temporary"
+        for entry in skipped.values()
+    )
+
+
 def _sync_lifecycle_phase_after_import(plan: dict, state: dict, *, policy) -> bool:
     return sync_lifecycle_phase(
         plan,
@@ -68,7 +78,7 @@ def _sync_lifecycle_phase_after_import(plan: dict, state: dict, *, policy) -> bo
             isinstance(item_id, str) and item_id.startswith("triage::")
             for item_id in plan.get("queue_order", [])
         ),
-        has_deferred=False,
+        has_deferred=_has_deferred_disposition_work(plan),
     )[1]
 
 

@@ -21,6 +21,7 @@ from desloppify.engine._state.resolution import coerce_assessment_score
 from .apply import _resolve_all_patterns, _write_resolve_query_entry
 from .living_plan import update_living_plan_after_resolve
 from .messages import print_fixed_next_user_message, print_no_match_warning
+from .plan_load import load_resolve_plan_access
 from .queue_guard import _check_queue_order_guard
 from .render import (
     _print_next_command,
@@ -51,7 +52,7 @@ def _load_state_with_guards(
     args: argparse.Namespace,
     *,
     attestation: str | None,
-) -> tuple[str, dict] | None:
+) -> tuple[str, dict, object] | None:
     """Validate inputs, apply guardrails, and load state for resolve."""
     _validate_resolve_inputs(args, attestation)
     if not _validate_fixed_note(args):
@@ -59,9 +60,15 @@ def _load_state_with_guards(
 
     state_file = state_path(args)
     state = state_mod.load_state(state_file)
+    plan_access = load_resolve_plan_access()
 
     if not getattr(args, "force_resolve", False):
-        if _check_queue_order_guard(state, args.patterns, args.status):
+        if _check_queue_order_guard(
+            state,
+            args.patterns,
+            args.status,
+            plan_access=plan_access,
+        ):
             return None
 
     if args.status == "fixed":
@@ -71,7 +78,7 @@ def _load_state_with_guards(
             attest=getattr(args, "attest", "") or "",
         )
 
-    return state_file, state
+    return state_file, state, plan_access
 
 
 def _resolve_ids_with_snapshots(
@@ -79,6 +86,7 @@ def _resolve_ids_with_snapshots(
     args: argparse.Namespace,
     *,
     attestation: str | None,
+    plan_access,
 ) -> tuple[object, dict[str, float], list[str]]:
     """Apply resolve patterns and return pre/post context for rendering."""
     _enforce_batch_wontfix_confirmation(
@@ -94,7 +102,12 @@ def _resolve_ids_with_snapshots(
         for dim, payload in (state.get("subjective_assessments") or {}).items()
         if isinstance(dim, str)
     }
-    all_resolved = _resolve_all_patterns(state, args, attestation=attestation)
+    all_resolved = _resolve_all_patterns(
+        state,
+        args,
+        attestation=attestation,
+        plan_access=plan_access,
+    )
     return prev, prev_subjective_scores, all_resolved
 
 
@@ -104,11 +117,12 @@ def cmd_resolve(args: argparse.Namespace) -> None:
     loaded = _load_state_with_guards(args, attestation=attestation)
     if loaded is None:
         return
-    state_file, state = loaded
+    state_file, state, plan_access = loaded
     prev, prev_subjective_scores, all_resolved = _resolve_ids_with_snapshots(
         state,
         args,
         attestation=attestation,
+        plan_access=plan_access,
     )
     if not all_resolved:
         print_no_match_warning(args)

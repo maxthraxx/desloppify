@@ -44,7 +44,7 @@ from .flags import (
     validate_import_flag_combos,
 )
 from .plan_sync import sync_plan_after_import
-from .results import print_import_results
+from .results import report_review_import_outcome
 
 _SCORECARD_SUBJECTIVE_AT_TARGET = bind_scorecard_subjective_at_target(
     reporting_dimensions_mod=reporting_dimensions_mod,
@@ -220,8 +220,8 @@ def _guard_pending_import_scores_match(
     if matches:
         return
     expected_file = ""
-    if isinstance(pending_meta, dict):
-        expected_file = str(pending_meta.get("import_file", "")).strip()
+    if pending_meta is not None:
+        expected_file = pending_meta.import_file.strip()
     raise CommandError(
         "Refusing durable score import: the pending "
         "`workflow::import-scores` task is bound to a different review batch.\n"
@@ -348,7 +348,7 @@ def do_import(
         )
 
     display_state = state if not dry_run else working_state
-    print_import_results(
+    report_review_import_outcome(
         state=display_state,
         lang_name=lang.name,
         config=resolved_import_config.config,

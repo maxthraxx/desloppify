@@ -158,9 +158,45 @@ def _testing_api_files(
     return _collect_unique_files([critical, sync_async], max_files=max_files)
 
 
+def _workflow_seam_files(
+    ctx: HolisticContext,
+    *,
+    max_files: int | None = None,
+) -> list[str]:
+    """Files relevant to cross-module handoff and seam choreography."""
+    boundary_files = [
+        {"file": item.get("file", "")}
+        for item in ctx.coupling.get("boundary_violations", [])
+        if isinstance(item, dict)
+    ]
+    handoff_files = [
+        {"file": item.get("file", "")}
+        for item in ctx.coupling.get("module_level_io", [])
+        if isinstance(item, dict)
+    ]
+    wrapper_files = [
+        {"file": item.get("file", "")}
+        for item in ctx.abstractions.get("pass_through_wrappers", [])
+        if isinstance(item, dict)
+    ]
+    interface_files: list[dict[str, str]] = []
+    for item in ctx.abstractions.get("one_impl_interfaces", []):
+        if not isinstance(item, dict):
+            continue
+        for group in ("declared_in", "implemented_in"):
+            for filepath in item.get(group, []):
+                interface_files.append({"file": filepath})
+    sync_async = [{"file": filepath} for filepath in ctx.api_surface.get("sync_async_mix", [])]
+    return _collect_unique_files(
+        [boundary_files, handoff_files, wrapper_files, interface_files, sync_async],
+        max_files=max_files,
+    )
+
+
 __all__ = [
     "_abstractions_files",
     "_arch_coupling_files",
     "_conventions_files",
     "_testing_api_files",
+    "_workflow_seam_files",
 ]

@@ -173,10 +173,10 @@ def build_import_scores_item(plan: dict, state: dict) -> WorkQueueItem | None:
     """Build a synthetic work item for ``workflow::import-scores`` if queued."""
     if WORKFLOW_IMPORT_SCORES_ID not in plan.get("queue_order", []):
         return None
-    meta = pending_import_scores_meta(plan, state) or {}
-    import_file = str(meta.get("import_file", "")).strip() or "issues.json"
+    meta = pending_import_scores_meta(plan, state)
+    import_file = (meta.import_file if meta is not None else "").strip() or "issues.json"
     quoted_import_file = shlex.quote(import_file)
-    packet_sha = str(meta.get("packet_sha256", "")).strip()
+    packet_sha = meta.packet_sha256 if meta is not None else ""
     explanation = (
         "Review issues were imported but assessment scores were skipped "
         "(untrusted source). Re-import the same batch with attestation to update dimension scores."

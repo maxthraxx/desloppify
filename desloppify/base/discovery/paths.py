@@ -41,8 +41,28 @@ def get_default_path(
     project_root: Path | str | None = None,
     runtime: RuntimeContext | None = None,
 ) -> Path:
-    """Return default scan path."""
-    return get_project_root(project_root=project_root, runtime=runtime) / "src"
+    """Return the legacy ``src/`` fallback scan path.
+
+    Prefer ``get_default_scan_path()`` when the active language's
+    ``default_src`` should be honored.
+    """
+    return get_default_scan_path(
+        project_root=project_root,
+        runtime=runtime,
+        default_src="src",
+    )
+
+
+def get_default_scan_path(
+    *,
+    project_root: Path | str | None = None,
+    runtime: RuntimeContext | None = None,
+    default_src: str | os.PathLike[str] | None = None,
+) -> Path:
+    """Return the canonical default scan path for the active runtime."""
+    return get_project_root(project_root=project_root, runtime=runtime) / Path(
+        default_src or "src"
+    )
 
 
 def get_src_path(
@@ -134,6 +154,7 @@ __all__ = [
     "get_area",
     "get_project_root",
     "get_default_path",
+    "get_default_scan_path",
     "get_src_path",
     "read_code_snippet",
 ]

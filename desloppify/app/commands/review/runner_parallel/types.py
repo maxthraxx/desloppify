@@ -5,7 +5,14 @@ from __future__ import annotations
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any
+
+from ..batch.core_models import (
+    BatchDimensionJudgmentPayload,
+    BatchDimensionNotePayload,
+    BatchIssuePayload,
+    BatchQualityPayload,
+    BatchResultPayload,
+)
 
 BatchTask = Callable[[], int]
 
@@ -36,19 +43,19 @@ class BatchResult:
 
     batch_index: int
     assessments: dict[str, float]
-    dimension_notes: dict[str, dict[str, Any]]
-    dimension_judgment: dict[str, dict[str, Any]] = field(default_factory=dict)
-    issues: list[dict[str, Any]] = field(default_factory=list)
-    quality: dict[str, float] = field(default_factory=dict)
+    dimension_notes: dict[str, BatchDimensionNotePayload]
+    dimension_judgment: dict[str, BatchDimensionJudgmentPayload] = field(default_factory=dict)
+    issues: list[BatchIssuePayload] = field(default_factory=list)
+    quality: BatchQualityPayload = field(default_factory=dict)
 
-    def to_dict(self) -> dict[str, Any]:
-        payload: dict[str, Any] = {
+    def to_dict(self) -> BatchResultPayload:
+        payload: BatchResultPayload = {
             "assessments": self.assessments,
             "dimension_notes": self.dimension_notes,
             "issues": self.issues,
             "quality": self.quality,
+            "dimension_judgment": self.dimension_judgment,
         }
-        payload["dimension_judgment"] = self.dimension_judgment
         payload["batch_index"] = self.batch_index
         return payload
 

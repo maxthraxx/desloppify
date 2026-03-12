@@ -13,15 +13,16 @@ from desloppify.engine._work_queue.context import PlanLoadStatus
 def test_try_expand_cluster_warns_when_plan_load_is_degraded(monkeypatch) -> None:
     monkeypatch.setattr(
         apply_mod,
-        "resolve_plan_load_status",
-        lambda: PlanLoadStatus(
+        "load_resolve_plan_access",
+        lambda: plan_load_mod.ResolvePlanAccess(
             plan=None,
             degraded=True,
             error_kind="JSONDecodeError",
+            warning_state=plan_load_mod.DegradedPlanWarningState(),
         ),
     )
     warn = MagicMock()
-    monkeypatch.setattr(apply_mod, "warn_plan_load_degraded_once", warn)
+    monkeypatch.setattr(plan_load_mod, "warn_plan_load_degraded_once", warn)
 
     assert apply_mod._try_expand_cluster("cluster-a") is None
     warn.assert_called_once()
@@ -33,15 +34,16 @@ def test_try_expand_cluster_warns_when_plan_load_is_degraded(monkeypatch) -> Non
 def test_queue_order_guard_warns_when_plan_load_is_degraded(monkeypatch) -> None:
     monkeypatch.setattr(
         queue_guard_mod,
-        "resolve_plan_load_status",
-        lambda: PlanLoadStatus(
+        "load_resolve_plan_access",
+        lambda: plan_load_mod.ResolvePlanAccess(
             plan=None,
             degraded=True,
             error_kind="OSError",
+            warning_state=plan_load_mod.DegradedPlanWarningState(),
         ),
     )
     warn = MagicMock()
-    monkeypatch.setattr(queue_guard_mod, "warn_plan_load_degraded_once", warn)
+    monkeypatch.setattr(plan_load_mod, "warn_plan_load_degraded_once", warn)
 
     blocked = queue_guard_mod._check_queue_order_guard(
         state={"issues": {}},
@@ -53,6 +55,28 @@ def test_queue_order_guard_warns_when_plan_load_is_degraded(monkeypatch) -> None
     kwargs = warn.call_args.kwargs
     assert kwargs["error_kind"] == "OSError"
     assert "Queue-order enforcement is disabled" in kwargs["behavior"]
+
+
+def test_shared_plan_access_warns_once_across_resolve_helpers(capsys) -> None:
+    access = plan_load_mod.ResolvePlanAccess(
+        plan=None,
+        degraded=True,
+        error_kind="RuntimeError",
+        warning_state=plan_load_mod.DegradedPlanWarningState(),
+    )
+
+    assert apply_mod._try_expand_cluster("cluster-a", plan_access=access) is None
+    assert (
+        queue_guard_mod._check_queue_order_guard(
+            state={"issues": {}},
+            patterns=["review::a"],
+            status="fixed",
+            plan_access=access,
+            )
+            is False
+        )
+    err = capsys.readouterr().err
+    assert err.count("Warning: resolve is running in degraded mode") == 1
 
 
 def test_plan_load_warning_prints_once(capsys) -> None:

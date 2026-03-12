@@ -95,10 +95,10 @@ def _state_subjective_assessments(
     )
 
 
-def _state_lang_capabilities(
+def _ensure_state_lang_capabilities(
     state: state_mod.StateModel,
 ) -> dict[str, dict[str, object]]:
-    """Return normalized language capability map from state."""
+    """Return language capability map, creating storage when missing."""
     capabilities = state.get("lang_capabilities")
     if capabilities is None:
         normalized: dict[str, dict[str, object]] = {}
@@ -193,7 +193,7 @@ def _configure_lang_runtime(
         ),
     )
 
-    lang_capabilities = _state_lang_capabilities(state)
+    lang_capabilities = _ensure_state_lang_capabilities(state)
     lang_capabilities[runtime_lang.name] = {
         "fixers": sorted(runtime_lang.fixers.keys()),
         "typecheck_cmd": runtime_lang.typecheck_cmd,

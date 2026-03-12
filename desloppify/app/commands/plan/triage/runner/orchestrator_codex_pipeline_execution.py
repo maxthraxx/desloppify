@@ -145,6 +145,17 @@ class StageExecutionDependencies:
     ]
 
 
+@dataclass(frozen=True)
+class StageExecutionResult:
+    """Explicit outcome model for one stage-execution step."""
+
+    status: str
+    payload: dict[str, Any]
+    used_parallel: bool = False
+    output_file: Path | None = None
+    elapsed_seconds: int | None = None
+
+
 def default_stage_execution_dependencies() -> StageExecutionDependencies:
     """Construct the default stage execution dependency set."""
     return StageExecutionDependencies(
@@ -350,23 +361,27 @@ def _execute_parallel_stage(
     context: StageRunContext,
     stage: str,
     handler: StageHandler | None,
-) -> tuple[str, dict, bool]:
+) -> StageExecutionResult:
     """Execute optional parallel stage path."""
     if handler is None or handler.run_parallel is None:
-        return "ready", {}, False
+        return StageExecutionResult(status="ready", payload={})
 
     parallel_result = handler.run_parallel(context)
     if parallel_result.status == "dry_run":
-        return "dry_run", {"status": "dry_run"}, True
+        return StageExecutionResult(
+            status="dry_run",
+            payload={"status": "dry_run"},
+            used_parallel=True,
+        )
 
     if parallel_result.ok and parallel_result.merged_output:
         if handler.record_report is not None:
             handler.record_report(parallel_result.merged_output, context.args, context.services)
-            return "ready", {}, True
-        return "ready", {}, False
+            return StageExecutionResult(status="ready", payload={}, used_parallel=True)
+        return StageExecutionResult(status="ready", payload={})
 
     if parallel_result.ok:
-        return "ready", {}, False
+        return StageExecutionResult(status="ready", payload={})
 
     elapsed = int(time.monotonic() - context.stage_start)
     error_reason = parallel_result.reason or "parallel_execution_failed"
@@ -374,11 +389,16 @@ def _execute_parallel_stage(
     context.append_run_log(
         f"stage-failed stage={stage} elapsed={elapsed}s reason={error_reason}"
     )
-    return "failed", {
-        "status": "failed",
-        "elapsed_seconds": elapsed,
-        "error": error_reason,
-    }, True
+    return StageExecutionResult(
+        status="failed",
+        payload={
+            "status": "failed",
+            "elapsed_seconds": elapsed,
+            "error": error_reason,
+        },
+        used_parallel=True,
+        elapsed_seconds=elapsed,
+    )
 
 
 def _build_subprocess_prompt(
@@ -410,13 +430,16 @@ def _run_subprocess_stage(
     stage: str,
     prompt: str,
     dependencies: StageExecutionDependencies,
-) -> tuple[str, dict, Path | None, int | None]:
+) -> StageExecutionResult:
     """Run codex subprocess for one stage (or emit dry-run status)."""
     prompt_file = context.prompts_dir / f"{stage}.md"
     if context.dry_run:
         print(colorize(f"  Stage {stage}: prompt written to {prompt_file}", "cyan"))
         print(colorize("  [dry-run] Would execute codex subprocess.", "dim"))
-        return "dry_run", {"status": "dry_run"}, None, None
+        return StageExecutionResult(
+            status="dry_run",
+            payload={"status": "dry_run"},
+        )
 
     print(colorize(f"\n  Stage {stage}: launching codex subprocess...", "bold"))
     context.append_run_log(f"stage-subprocess-start stage={stage}")
@@ -438,7 +461,12 @@ def _run_subprocess_stage(
     )
 
     if stage_result.ok:
-        return "ready", {}, output_file, elapsed
+        return StageExecutionResult(
+            status="ready",
+            payload={},
+            output_file=output_file,
+            elapsed_seconds=elapsed,
+        )
 
     print(
         colorize(
@@ -453,11 +481,15 @@ def _run_subprocess_stage(
         "stage-failed "
         f"stage={stage} elapsed={elapsed}s code={stage_result.exit_code}"
     )
-    return "failed", {
-        "status": "failed",
-        "exit_code": stage_result.exit_code,
-        "elapsed_seconds": elapsed,
-    }, None, elapsed
+    return StageExecutionResult(
+        status="failed",
+        payload={
+            "status": "failed",
+            "exit_code": stage_result.exit_code,
+            "elapsed_seconds": elapsed,
+        },
+        elapsed_seconds=elapsed,
+    )
 
 
 def _record_stage_report_if_needed(
@@ -469,10 +501,10 @@ def _record_stage_report_if_needed(
     output_file: Path,
     elapsed: int,
     stages_data: Mapping[str, Any],
-) -> tuple[str, dict]:
+) -> StageExecutionResult:
     """Record subprocess output for stages that require orchestrator persistence."""
     if handler is None or handler.record_report is None:
-        return "ready", {}
+        return StageExecutionResult(status="ready", payload={})
 
     report = dependencies.read_stage_output(output_file)
     if not report:
@@ -480,11 +512,15 @@ def _record_stage_report_if_needed(
         context.append_run_log(
             f"stage-failed stage={stage} elapsed={elapsed}s reason=empty_stage_output"
         )
-        return "failed", {
-            "status": "failed",
-            "elapsed_seconds": elapsed,
-            "error": "empty_stage_output",
-        }
+        return StageExecutionResult(
+            status="failed",
+            payload={
+                "status": "failed",
+                "elapsed_seconds": elapsed,
+                "error": "empty_stage_output",
+            },
+            elapsed_seconds=elapsed,
+        )
 
     if stage == "reflect":
         report, repair_error = repair_reflect_report_if_needed(
@@ -511,20 +547,28 @@ def _record_stage_report_if_needed(
             context.append_run_log(
                 f"stage-failed stage={stage} elapsed={elapsed}s reason={repair_error}"
             )
-            return "failed", {
-                "status": "failed",
-                "elapsed_seconds": elapsed,
-                "error": repair_error,
-            }
+            return StageExecutionResult(
+                status="failed",
+                payload={
+                    "status": "failed",
+                    "elapsed_seconds": elapsed,
+                    "error": repair_error,
+                },
+                elapsed_seconds=elapsed,
+            )
         if not report:
             context.append_run_log(
                 f"stage-failed stage={stage} elapsed={elapsed}s reason=reflect_repair_no_report"
             )
-            return "failed", {
-                "status": "failed",
-                "elapsed_seconds": elapsed,
-                "error": "reflect_repair_no_report",
-            }
+            return StageExecutionResult(
+                status="failed",
+                payload={
+                    "status": "failed",
+                    "elapsed_seconds": elapsed,
+                    "error": "reflect_repair_no_report",
+                },
+                elapsed_seconds=elapsed,
+            )
 
     handler.record_report(report, context.args, context.services)
     plan_after_record = context.services.load_plan()
@@ -538,15 +582,19 @@ def _record_stage_report_if_needed(
         context.append_run_log(
             f"stage-record-failed stage={stage} elapsed={elapsed}s reason=stage_not_recorded"
         )
-        return "failed", {
-            "status": "failed",
-            "elapsed_seconds": elapsed,
-            "error": "stage_not_recorded",
-        }
+        return StageExecutionResult(
+            status="failed",
+            payload={
+                "status": "failed",
+                "elapsed_seconds": elapsed,
+                "error": "stage_not_recorded",
+            },
+            elapsed_seconds=elapsed,
+        )
     context.append_run_log(
         f"stage-recorded stage={stage} elapsed={elapsed}s mode=orchestrator"
     )
-    return "ready", {}
+    return StageExecutionResult(status="ready", payload={})
 
 
 def execute_stage(
@@ -554,8 +602,8 @@ def execute_stage(
     *,
     handlers: Mapping[str, StageHandler],
     dependencies: StageExecutionDependencies,
-) -> tuple[str, dict]:
-    """Execute one stage and return (status, stage_result)."""
+) -> StageExecutionResult:
+    """Execute one stage and return an explicit stage outcome."""
     stage = context.stage
     handler = handlers.get(stage)
     prompt_mode = handler.prompt_mode if handler is not None else "output_only"
@@ -576,21 +624,25 @@ def execute_stage(
                 "red",
             )
         )
-        return "failed", {
-            "status": "failed",
-            "elapsed_seconds": elapsed,
-            "error": preflight_reason,
-        }
+        return StageExecutionResult(
+            status="failed",
+            payload={
+                "status": "failed",
+                "elapsed_seconds": elapsed,
+                "error": preflight_reason,
+            },
+            elapsed_seconds=elapsed,
+        )
 
-    parallel_status, parallel_result, used_parallel = _execute_parallel_stage(
+    parallel_result = _execute_parallel_stage(
         context=context,
         stage=stage,
         handler=handler,
     )
-    if parallel_status != "ready":
-        return parallel_status, parallel_result
-    if used_parallel:
-        return "ready", {}
+    if parallel_result.status != "ready":
+        return parallel_result
+    if parallel_result.used_parallel:
+        return StageExecutionResult(status="ready", payload={})
 
     prompt, stages_data = _build_subprocess_prompt(
         context=context,
@@ -598,22 +650,27 @@ def execute_stage(
         prompt_mode=prompt_mode,
         dependencies=dependencies,
     )
-    subprocess_status, subprocess_result, output_file, elapsed = _run_subprocess_stage(
+    subprocess_result = _run_subprocess_stage(
         context=context,
         stage=stage,
         prompt=prompt,
         dependencies=dependencies,
     )
-    if subprocess_status != "ready":
-        return subprocess_status, subprocess_result
+    if subprocess_result.status != "ready":
+        return subprocess_result
 
+    output_file = subprocess_result.output_file
+    elapsed = subprocess_result.elapsed_seconds
     if output_file is None or elapsed is None:
-        return "failed", {
-            "status": "failed",
-            "error": "subprocess_output_missing",
-        }
+        return StageExecutionResult(
+            status="failed",
+            payload={
+                "status": "failed",
+                "error": "subprocess_output_missing",
+            },
+        )
 
-    record_status, record_result = _record_stage_report_if_needed(
+    record_result = _record_stage_report_if_needed(
         context=context,
         stage=stage,
         handler=handler,
@@ -622,14 +679,15 @@ def execute_stage(
         elapsed=elapsed,
         stages_data=stages_data,
     )
-    if record_status != "ready":
-        return record_status, record_result
+    if record_result.status != "ready":
+        return record_result
 
-    return "ready", {}
+    return StageExecutionResult(status="ready", payload={})
 
 
 __all__ = [
     "DEFAULT_STAGE_HANDLERS",
+    "StageExecutionResult",
     "StageExecutionDependencies",
     "StageHandler",
     "build_reflect_repair_prompt",

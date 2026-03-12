@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -26,12 +27,47 @@ _PENDING_IMPORT_SCORES_KEY = "pending_import_scores"
 _TRUSTED_ASSESSMENT_MODES = {"trusted_internal", "attested_external"}
 
 
-def _refresh_state(plan: PlanModel) -> dict[str, Any]:
+def _get_refresh_state(plan: PlanModel) -> dict[str, Any] | None:
+    refresh_state = plan.get("refresh_state")
+    return refresh_state if isinstance(refresh_state, dict) else None
+
+
+def _ensure_refresh_state(plan: PlanModel) -> dict[str, Any]:
     refresh_state = plan.get("refresh_state")
     if not isinstance(refresh_state, dict):
         refresh_state = {}
         plan["refresh_state"] = refresh_state
     return refresh_state
+
+
+@dataclass(frozen=True)
+class PendingImportScoresMeta:
+    """Normalized contract for the queued score-import workflow."""
+
+    timestamp: str = ""
+    import_file: str = ""
+    normalized_import_file: str = ""
+    packet_sha256: str = ""
+
+    @classmethod
+    def from_mapping(cls, raw: object) -> PendingImportScoresMeta | None:
+        if not isinstance(raw, dict):
+            return None
+        meta = cls(
+            timestamp=str(raw.get("timestamp", "")).strip(),
+            import_file=str(raw.get("import_file", "")).strip(),
+            normalized_import_file=str(raw.get("normalized_import_file", "")).strip(),
+            packet_sha256=str(raw.get("packet_sha256", "")).strip(),
+        )
+        return meta if any((meta.timestamp, meta.import_file, meta.packet_sha256)) else None
+
+    def to_dict(self) -> dict[str, str]:
+        return {
+            "timestamp": self.timestamp,
+            "import_file": self.import_file,
+            "normalized_import_file": self.normalized_import_file,
+            "packet_sha256": self.packet_sha256,
+        }
 
 
 def _normalize_match_path(raw_path: object) -> str | None:
@@ -62,7 +98,7 @@ def _build_pending_import_scores_meta(
     import_file: str | None,
     import_payload: dict[str, Any] | None,
     issues_only_audit: dict[str, Any] | None,
-) -> dict[str, Any]:
+) -> PendingImportScoresMeta:
     provenance = {}
     if isinstance(import_payload, dict):
         raw_provenance = import_payload.get("provenance")
@@ -78,24 +114,26 @@ def _build_pending_import_scores_meta(
     timestamp = ""
     if isinstance(issues_only_audit, dict):
         timestamp = str(issues_only_audit.get("timestamp", "")).strip()
-    return {
-        "timestamp": timestamp,
-        "import_file": recorded_file,
-        "normalized_import_file": _normalize_match_path(recorded_file),
-        "packet_sha256": str(provenance.get("packet_sha256", "")).strip(),
-    }
+    return PendingImportScoresMeta(
+        timestamp=timestamp,
+        import_file=recorded_file,
+        normalized_import_file=_normalize_match_path(recorded_file) or "",
+        packet_sha256=str(provenance.get("packet_sha256", "")).strip(),
+    )
 
 
 def pending_import_scores_meta(
     plan: PlanModel,
     state: StateModel,
-) -> dict[str, Any] | None:
-    """Return normalized pending score-import metadata, if any."""
-    ensure_plan_defaults(plan)
-    refresh_state = _refresh_state(plan)
-    meta = refresh_state.get(_PENDING_IMPORT_SCORES_KEY)
-    if isinstance(meta, dict) and meta:
-        return meta
+) -> PendingImportScoresMeta | None:
+    """Return queued score-import metadata without mutating the plan."""
+    refresh_state = _get_refresh_state(plan)
+    if refresh_state is not None:
+        meta = PendingImportScoresMeta.from_mapping(
+            refresh_state.get(_PENDING_IMPORT_SCORES_KEY)
+        )
+        if meta is not None:
+            return meta
     issues_only_audit = _latest_assessment_audit(state, modes={"issues_only"})
     if issues_only_audit is None:
         return None
@@ -107,7 +145,7 @@ def pending_import_scores_meta(
 
 
 def import_scores_meta_matches(
-    meta: dict[str, Any] | None,
+    meta: PendingImportScoresMeta | dict[str, Any] | None,
     *,
     import_file: str,
     import_payload: dict[str, Any],
@@ -117,23 +155,28 @@ def import_scores_meta_matches(
     Checks packet_sha256 first (strongest signal), falls back to normalized
     file path.  Returns a single human-readable reason on mismatch.
     """
-    if not isinstance(meta, dict) or not meta:
+    normalized_meta = (
+        meta
+        if isinstance(meta, PendingImportScoresMeta)
+        else PendingImportScoresMeta.from_mapping(meta)
+    )
+    if normalized_meta is None:
         return True, ""
 
     provenance = import_payload.get("provenance")
     provenance_dict = provenance if isinstance(provenance, dict) else {}
 
-    expected_hash = str(meta.get("packet_sha256", "")).strip()
+    expected_hash = normalized_meta.packet_sha256
     current_hash = str(provenance_dict.get("packet_sha256", "")).strip()
     if expected_hash and current_hash:
         if current_hash == expected_hash:
             return True, ""
         return False, f"expected packet_sha256 {expected_hash}, got {current_hash}"
 
-    expected_file = str(meta.get("normalized_import_file", "")).strip()
+    expected_file = normalized_meta.normalized_import_file
     current_file = _normalize_match_path(import_file) or ""
     if expected_file and current_file and current_file != expected_file:
-        return False, f"expected import file {meta.get('import_file')}, got {import_file}"
+        return False, f"expected import file {normalized_meta.import_file}, got {import_file}"
 
     return True, ""
 
@@ -142,25 +185,24 @@ def _clear_pending_import_scores(plan: PlanModel) -> None:
     order = plan["queue_order"]
     if WORKFLOW_IMPORT_SCORES_ID in order:
         order[:] = [item for item in order if item != WORKFLOW_IMPORT_SCORES_ID]
-    refresh_state = _refresh_state(plan)
-    refresh_state.pop(_PENDING_IMPORT_SCORES_KEY, None)
+    refresh_state = _get_refresh_state(plan)
+    if refresh_state is not None:
+        refresh_state.pop(_PENDING_IMPORT_SCORES_KEY, None)
 
 
 def _pending_compare_timestamp(
-    pending_meta: dict[str, Any] | None,
+    pending_meta: PendingImportScoresMeta | None,
     latest_issues_only: dict[str, Any],
 ) -> str:
-    if isinstance(pending_meta, dict):
-        pending_ts = str(pending_meta.get("timestamp", "")).strip()
-        if pending_ts:
-            return pending_ts
+    if pending_meta is not None and pending_meta.timestamp:
+        return pending_meta.timestamp
     return str(latest_issues_only.get("timestamp", "")).strip()
 
 
 def _pending_import_scores_stale(
     *,
     order: list[str],
-    pending_meta: dict[str, Any] | None,
+    pending_meta: PendingImportScoresMeta | None,
     latest_issues_only: dict[str, Any] | None,
     latest_trusted: dict[str, Any] | None,
 ) -> bool:
@@ -187,7 +229,7 @@ def _record_pending_import_scores(
         import_file=import_file,
         import_payload=import_payload,
         issues_only_audit=latest_issues_only,
-    )
+    ).to_dict()
 
 
 def _no_unscored(
@@ -291,8 +333,10 @@ def sync_import_scores_needed(
     """
     ensure_plan_defaults(plan)
     order: list[str] = plan["queue_order"]
-    refresh_state = _refresh_state(plan)
-    pending_meta = refresh_state.get(_PENDING_IMPORT_SCORES_KEY)
+    refresh_state = _ensure_refresh_state(plan)
+    pending_meta = PendingImportScoresMeta.from_mapping(
+        refresh_state.get(_PENDING_IMPORT_SCORES_KEY)
+    )
     latest_issues_only = _latest_assessment_audit(state, modes={"issues_only"})
     latest_trusted = _latest_assessment_audit(state, modes=_TRUSTED_ASSESSMENT_MODES)
 
@@ -413,6 +457,7 @@ def _rebaseline_plan_start_scores(
 
 
 __all__ = [
+    "PendingImportScoresMeta",
     "ScoreSnapshot",
     "import_scores_meta_matches",
     "pending_import_scores_meta",

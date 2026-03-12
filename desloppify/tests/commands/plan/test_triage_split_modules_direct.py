@@ -1042,7 +1042,7 @@ def test_execute_stage_records_output_only_reflect_report(monkeypatch, tmp_path:
         ),
     )
 
-    status, result = orchestrator_pipeline_execution_mod.execute_stage(
+    result = orchestrator_pipeline_execution_mod.execute_stage(
         _make_stage_context(
             tmp_path,
             stage="reflect",
@@ -1052,8 +1052,8 @@ def test_execute_stage_records_output_only_reflect_report(monkeypatch, tmp_path:
         dependencies=orchestrator_pipeline_mod._stage_execution_dependencies(),
     )
 
-    assert status == "ready"
-    assert result == {}
+    assert result.status == "ready"
+    assert result.payload == {}
     assert captured["report"] == "Reflect analysis report with enough detail."
 
 
@@ -1077,7 +1077,7 @@ def test_execute_stage_uses_self_record_mode_for_organize(monkeypatch, tmp_path:
     monkeypatch.setattr(orchestrator_pipeline_mod, "build_stage_prompt", fake_build_stage_prompt)
     monkeypatch.setattr(orchestrator_pipeline_mod, "run_triage_stage", fake_run_triage_stage)
 
-    status, result = orchestrator_pipeline_execution_mod.execute_stage(
+    result = orchestrator_pipeline_execution_mod.execute_stage(
         _make_stage_context(
             tmp_path,
             stage="organize",
@@ -1088,8 +1088,8 @@ def test_execute_stage_uses_self_record_mode_for_organize(monkeypatch, tmp_path:
         dependencies=orchestrator_pipeline_mod._stage_execution_dependencies(),
     )
 
-    assert status == "ready"
-    assert result == {}
+    assert result.status == "ready"
+    assert result.payload == {}
     assert captured["stage"] == "organize"
     assert captured["mode"] == "self_record"
     assert captured["cli_command"] == "/tmp/run_desloppify.sh"
@@ -1114,7 +1114,7 @@ def test_execute_stage_allows_organize_dry_run_without_persisted_reflect(
         ),
     )
 
-    status, result = orchestrator_pipeline_execution_mod.execute_stage(
+    result = orchestrator_pipeline_execution_mod.execute_stage(
         _make_stage_context(
             tmp_path,
             stage="organize",
@@ -1135,8 +1135,8 @@ def test_execute_stage_allows_organize_dry_run_without_persisted_reflect(
         dependencies=dependencies,
     )
 
-    assert status == "dry_run"
-    assert result == {"status": "dry_run"}
+    assert result.status == "dry_run"
+    assert result.payload == {"status": "dry_run"}
 
 
 def test_execute_stage_blocks_sense_check_when_enrich_is_not_confirmed(
@@ -1156,7 +1156,7 @@ def test_execute_stage_blocks_sense_check_when_enrich_is_not_confirmed(
     )
 
     log_lines: list[str] = []
-    status, result = orchestrator_pipeline_execution_mod.execute_stage(
+    result = orchestrator_pipeline_execution_mod.execute_stage(
         _make_stage_context(
             tmp_path,
             stage="sense-check",
@@ -1178,8 +1178,8 @@ def test_execute_stage_blocks_sense_check_when_enrich_is_not_confirmed(
         dependencies=orchestrator_pipeline_mod._stage_execution_dependencies(),
     )
 
-    assert status == "failed"
-    assert result["error"] == "enrich_not_confirmed"
+    assert result.status == "failed"
+    assert result.payload["error"] == "enrich_not_confirmed"
 
 
 def test_execute_stage_blocks_organize_when_reflect_accounting_is_invalid_in_real_run(
@@ -1201,7 +1201,7 @@ def test_execute_stage_blocks_organize_when_reflect_accounting_is_invalid_in_rea
         ),
     )
 
-    status, result = orchestrator_pipeline_execution_mod.execute_stage(
+    result = orchestrator_pipeline_execution_mod.execute_stage(
         _make_stage_context(
             tmp_path,
             stage="organize",
@@ -1222,8 +1222,8 @@ def test_execute_stage_blocks_organize_when_reflect_accounting_is_invalid_in_rea
         dependencies=dependencies,
     )
 
-    assert status == "failed"
-    assert result["error"].startswith("reflect_accounting_invalid")
+    assert result.status == "failed"
+    assert result.payload["error"].startswith("reflect_accounting_invalid")
 
 
 def test_repair_reflect_report_if_needed_repairs_missing_hashes(monkeypatch, tmp_path: Path) -> None:
@@ -1363,7 +1363,7 @@ def test_pipeline_execution_helpers_cover_leaf_paths(monkeypatch, tmp_path: Path
     context.output_dir.mkdir()
     context.logs_dir.mkdir()
 
-    status, result, handled = orchestrator_pipeline_execution_mod._execute_parallel_stage(
+    parallel_result = orchestrator_pipeline_execution_mod._execute_parallel_stage(
         context=context,
         stage="observe",
         handler=orchestrator_pipeline_execution_mod.StageHandler(
@@ -1374,7 +1374,9 @@ def test_pipeline_execution_helpers_cover_leaf_paths(monkeypatch, tmp_path: Path
             record_report=lambda report, _args, _services: report == "parallel report",
         ),
     )
-    assert (status, result, handled) == ("ready", {}, True)
+    assert parallel_result.status == "ready"
+    assert parallel_result.payload == {}
+    assert parallel_result.used_parallel is True
 
     prompt_text, stages_data = orchestrator_pipeline_execution_mod._build_subprocess_prompt(
         context=context,
@@ -1392,7 +1394,7 @@ def test_pipeline_execution_helpers_cover_leaf_paths(monkeypatch, tmp_path: Path
     assert stages_data == {"observe": {"report": "done"}}
     assert (context.prompts_dir / "observe.md").exists()
 
-    status, result, output_file, elapsed = orchestrator_pipeline_execution_mod._run_subprocess_stage(
+    subprocess_result = orchestrator_pipeline_execution_mod._run_subprocess_stage(
         context=context,
         stage="observe",
         prompt="prompt body",
@@ -1404,10 +1406,10 @@ def test_pipeline_execution_helpers_cover_leaf_paths(monkeypatch, tmp_path: Path
             validate_reflect_issue_accounting=lambda **_kwargs: (True, set(), [], []),
         ),
     )
-    assert status == "dry_run"
-    assert result == {"status": "dry_run"}
-    assert output_file is None
-    assert elapsed is None
+    assert subprocess_result.status == "dry_run"
+    assert subprocess_result.payload == {"status": "dry_run"}
+    assert subprocess_result.output_file is None
+    assert subprocess_result.elapsed_seconds is None
 
 
 def test_execute_stage_fails_when_handler_does_not_persist_stage(monkeypatch, tmp_path: Path) -> None:
@@ -1420,7 +1422,6 @@ def test_execute_stage_fails_when_handler_does_not_persist_stage(monkeypatch, tm
         "run_triage_stage",
         lambda **_kwargs: codex_runner_mod.TriageStageRunResult(exit_code=0),
     )
-    monkeypatch.setattr(orchestrator_pipeline_mod, "_read_stage_output", lambda _path: "x" * 120)
     monkeypatch.setitem(
         orchestrator_pipeline_mod._STAGE_HANDLERS,
         "reflect",
@@ -1429,7 +1430,7 @@ def test_execute_stage_fails_when_handler_does_not_persist_stage(monkeypatch, tm
 
     services = SimpleNamespace(load_plan=lambda: {"epic_triage_meta": {"triage_stages": {}}})
 
-    status, result = orchestrator_pipeline_execution_mod.execute_stage(
+    result = orchestrator_pipeline_execution_mod.execute_stage(
         _make_stage_context(
             tmp_path,
             stage="reflect",
@@ -1439,11 +1440,17 @@ def test_execute_stage_fails_when_handler_does_not_persist_stage(monkeypatch, tm
             prior_reports={"observe": "ok"},
         ),
         handlers=orchestrator_pipeline_mod._STAGE_HANDLERS,
-        dependencies=orchestrator_pipeline_mod._stage_execution_dependencies(),
+        dependencies=orchestrator_pipeline_execution_mod.StageExecutionDependencies(
+            build_stage_prompt=lambda *_a, **_k: "prompt",
+            run_triage_stage=lambda **_kwargs: codex_runner_mod.TriageStageRunResult(exit_code=0),
+            read_stage_output=lambda _path: "x" * 120,
+            analyze_reflect_issue_accounting=orchestrator_pipeline_mod._analyze_reflect_issue_accounting,
+            validate_reflect_issue_accounting=orchestrator_pipeline_mod._validate_reflect_issue_accounting,
+        ),
     )
 
-    assert status == "failed"
-    assert result["error"] == "stage_not_recorded"
+    assert result.status == "failed"
+    assert result.payload["error"] == "stage_not_recorded"
 
 
 def test_run_codex_pipeline_raises_on_stage_failure(monkeypatch, tmp_path: Path) -> None:

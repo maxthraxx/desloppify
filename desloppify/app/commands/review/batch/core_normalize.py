@@ -22,6 +22,7 @@ from desloppify.intelligence.review.importing.payload import (
 from .core_models import (
     BatchDimensionJudgmentPayload,
     BatchDimensionNotePayload,
+    DismissedConcernPayload,
     BatchIssuePayload,
     BatchQualityPayload,
     NormalizedBatchIssue,
@@ -232,9 +233,9 @@ def _build_normalized_issue(
     )
 
 
-def _build_dismissed_concern_payload(issue: ReviewIssuePayload) -> BatchIssuePayload:
+def _build_dismissed_concern_payload(issue: ReviewIssuePayload) -> DismissedConcernPayload:
     """Return a minimal dismissed-concern payload preserved for later import."""
-    payload: BatchIssuePayload = {  # type: ignore[assignment]
+    payload: DismissedConcernPayload = {
         "concern_verdict": "dismissed",
         "concern_fingerprint": str(issue.get("concern_fingerprint", "")).strip(),
     }

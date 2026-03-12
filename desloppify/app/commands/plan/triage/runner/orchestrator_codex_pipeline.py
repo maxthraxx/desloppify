@@ -28,56 +28,28 @@ from ..validation.core import (
 )
 from .codex_runner import run_triage_stage
 from .orchestrator_codex_pipeline_completion import (
-    all_stage_results_successful as all_stage_results_successful_impl,
-    build_completion_strategy as build_completion_strategy_impl,
-    complete_pipeline as complete_pipeline_impl,
-    is_full_stage_run as is_full_stage_run_impl,
-    print_not_finalized_message as print_not_finalized_message_impl,
-    validate_and_confirm_stage as validate_and_confirm_stage_impl,
+    all_stage_results_successful,
+    build_completion_strategy,
+    complete_pipeline,
+    is_full_stage_run,
+    print_not_finalized_message,
+    validate_and_confirm_stage,
 )
 from .orchestrator_codex_pipeline_context import (
     PipelineRunContext,
     StageRunContext,
-    load_prior_reports_from_plan as load_prior_reports_from_plan_ctx,
+    load_prior_reports_from_plan,
 )
 from .orchestrator_codex_pipeline_execution import (
     DEFAULT_STAGE_HANDLERS,
     StageExecutionDependencies,
+    StageExecutionResult,
     StageHandler,
     execute_stage as execute_stage_impl,
     read_stage_output as read_stage_output_impl,
 )
 from .orchestrator_common import STAGES, run_stamp
 from .stage_prompts import build_stage_prompt
-
-
-def _is_full_stage_run(stages_to_run: list[str]) -> bool:
-    """True when the pipeline was asked to run the full triage stage set."""
-    return is_full_stage_run_impl(stages_to_run)
-
-
-def _all_stage_results_successful(
-    *,
-    stages_to_run: list[str],
-    stage_results: dict[str, dict],
-) -> bool:
-    """True when each requested stage is confirmed or already confirmed."""
-    return all_stage_results_successful_impl(
-        stages_to_run=stages_to_run,
-        stage_results=stage_results,
-    )
-
-
-def _print_not_finalized_message(reason: str) -> None:
-    """Emit a consistent next-step message when auto-completion is skipped/blocked."""
-    print_not_finalized_message_impl(reason)
-
-
-def _load_prior_reports_from_plan(plan: dict) -> dict[str, str]:
-    """Seed prior stage reports from the existing live triage state."""
-    return load_prior_reports_from_plan_ctx(plan, STAGES)
-
-
 _STAGE_HANDLERS: dict[str, StageHandler] = DEFAULT_STAGE_HANDLERS
 
 
@@ -88,6 +60,34 @@ class StageSequenceResult:
     stage_results: dict[str, dict]
     prior_reports: dict[str, str]
     last_triage_input: dict | None
+
+
+def _is_full_stage_run(stages_to_run: list[str]) -> bool:
+    """Compatibility helper for tests; internal flow uses direct imports."""
+    return is_full_stage_run(stages_to_run)
+
+
+def _all_stage_results_successful(
+    *,
+    stages_to_run: list[str],
+    stage_results: dict[str, dict],
+) -> bool:
+    """Compatibility helper for tests; internal flow uses direct imports."""
+    return all_stage_results_successful(
+        stages_to_run=stages_to_run,
+        stage_results=stage_results,
+    )
+
+
+def _load_prior_reports_from_plan(plan: dict) -> dict[str, str]:
+    """Compatibility helper for tests; internal flow uses direct imports."""
+    return load_prior_reports_from_plan(plan, STAGES)
+
+
+def _read_stage_output(output_file: Path) -> str:
+    """Compatibility helper for tests; internal flow uses direct imports."""
+    return read_stage_output_impl(output_file)
+
 
 
 def _write_desloppify_cli_helper(run_dir: Path) -> Path:
@@ -102,44 +102,14 @@ def _write_desloppify_cli_helper(run_dir: Path) -> Path:
     safe_write_text(script_path, script)
     os.chmod(script_path, 0o700)
     return script_path
-
-
-def _read_stage_output(output_file: Path) -> str:
-    """Return stripped stage output text, or an empty string when unreadable."""
-    return read_stage_output_impl(output_file)
-
-
 def _stage_execution_dependencies() -> StageExecutionDependencies:
     """Resolve stage execution dependencies from module symbols for patchability."""
     return StageExecutionDependencies(
         build_stage_prompt=build_stage_prompt,
         run_triage_stage=run_triage_stage,
-        read_stage_output=_read_stage_output,
+        read_stage_output=read_stage_output_impl,
         analyze_reflect_issue_accounting=_analyze_reflect_issue_accounting,
         validate_reflect_issue_accounting=_validate_reflect_issue_accounting,
-    )
-
-def _validate_and_confirm_stage(
-    *,
-    stage: str,
-    args: argparse.Namespace,
-    services: TriageServices,
-    si: dict,
-    state,
-    repo_root: Path,
-    stage_start: float,
-    append_run_log,
-) -> tuple[bool, dict, str]:
-    """Run shared stage validation + confirmation flow."""
-    return validate_and_confirm_stage_impl(
-        stage=stage,
-        args=args,
-        services=services,
-        triage_input=si,
-        state=state,
-        repo_root=repo_root,
-        stage_start=stage_start,
-        append_run_log=append_run_log,
     )
 
 
@@ -167,7 +137,7 @@ def _run_stage_sequence(
     pipeline_context: PipelineRunContext,
     initial_plan: dict,
 ) -> StageSequenceResult:
-    prior_reports = _load_prior_reports_from_plan(initial_plan)
+    prior_reports = load_prior_reports_from_plan(initial_plan, STAGES)
     stage_results: dict[str, dict] = {}
     last_triage_input: dict | None = None
 
@@ -190,7 +160,7 @@ def _run_stage_sequence(
 
         si = pipeline_context.services.collect_triage_input(plan, pipeline_context.state)
         last_triage_input = si
-        exec_status, exec_result = execute_stage_impl(
+        execution_result = execute_stage_impl(
             StageRunContext(
                 stage=stage,
                 stage_start=stage_start,
@@ -211,22 +181,22 @@ def _run_stage_sequence(
             handlers=_STAGE_HANDLERS,
             dependencies=_stage_execution_dependencies(),
         )
-        if exec_status == "dry_run":
-            stage_results[stage] = exec_result
+        if execution_result.status == "dry_run":
+            stage_results[stage] = execution_result.payload
             continue
-        if exec_status == "failed":
-            stage_results[stage] = exec_result
+        if execution_result.status == "failed":
+            stage_results[stage] = execution_result.payload
             _fail_stage_and_write_summary(
                 pipeline_context=pipeline_context,
                 stage_results=stage_results,
                 message=f"triage stage failed: {stage}",
             )
 
-        confirmed, confirm_result, report = _validate_and_confirm_stage(
+        confirmed, confirm_result, report = validate_and_confirm_stage(
             stage=stage,
             args=pipeline_context.args,
             services=pipeline_context.services,
-            si=si,
+            triage_input=si,
             state=pipeline_context.state,
             repo_root=pipeline_context.repo_root,
             stage_start=stage_start,
@@ -270,18 +240,18 @@ def _finalize_pipeline_run(
     plan = pipeline_context.services.load_plan()
     meta = plan.get("epic_triage_meta", {})
     stages_data = meta.get("triage_stages", {})
-    strategy = build_completion_strategy_impl(stages_data)
+    strategy = build_completion_strategy(stages_data)
 
     should_auto_complete = (
-        _is_full_stage_run(pipeline_context.stages_to_run)
-        and _all_stage_results_successful(
+        is_full_stage_run(pipeline_context.stages_to_run)
+        and all_stage_results_successful(
             stages_to_run=pipeline_context.stages_to_run,
             stage_results=stage_results,
         )
     )
     total_elapsed = int(time.monotonic() - pipeline_start)
     if not should_auto_complete:
-        _print_not_finalized_message("partial stage run")
+        print_not_finalized_message("partial stage run")
         pipeline_context.append_run_log(
             f"run-finished elapsed={total_elapsed}s finalized=false reason=partial_stage_run"
         )
@@ -300,7 +270,7 @@ def _finalize_pipeline_run(
         plan,
         pipeline_context.state,
     )
-    completed = complete_pipeline_impl(
+    completed = complete_pipeline(
         args=pipeline_context.args,
         services=pipeline_context.services,
         plan=plan,
@@ -308,7 +278,7 @@ def _finalize_pipeline_run(
         triage_input=triage_input,
     )
     if not completed:
-        _print_not_finalized_message("completion command blocked")
+        print_not_finalized_message("completion command blocked")
         pipeline_context.append_run_log(
             f"run-finished elapsed={total_elapsed}s finalized=false reason=completion_blocked"
         )

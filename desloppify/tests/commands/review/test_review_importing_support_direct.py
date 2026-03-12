@@ -402,6 +402,51 @@ def test_sync_plan_after_import_reuses_plan_aware_policy(monkeypatch) -> None:
     assert seen["stale_policy"] is policy
 
 
+def test_sync_plan_after_import_preserves_scan_phase_for_temporary_skips(
+    monkeypatch,
+) -> None:
+    plan: dict = {
+        "queue_order": [],
+        "skipped": {
+            "review::deferred": {
+                "issue_id": "review::deferred",
+                "kind": "temporary",
+            }
+        },
+        "refresh_state": {"postflight_scan_completed_at_scan_count": 3},
+    }
+    saved: list[dict] = []
+
+    _patch_basic_plan_sync_runtime(monkeypatch, plan=plan)
+    monkeypatch.setattr(plan_sync_mod, "save_plan", lambda current_plan, _path=None: saved.append(dict(current_plan)))
+    monkeypatch.setattr(
+        plan_sync_mod,
+        "sync_plan_after_review_import",
+        lambda _plan, _state, policy=None: SimpleNamespace(
+            new_ids={"review::new"},
+            added_to_queue=["review::new"],
+            triage_injected=False,
+            stale_pruned_from_queue=[],
+            triage_injected_ids=[],
+            triage_deferred=False,
+        ),
+    )
+    monkeypatch.setattr(
+        plan_sync_mod,
+        "sync_subjective_dimensions",
+        lambda _plan, _state, policy=None, **_kw: _no_changes(injected=[], pruned=[]),
+    )
+
+    plan_sync_mod.sync_plan_after_import(
+        state={"issues": {"review::new": {"summary": "new review issue"}}},
+        diff={"new": 1, "reopened": 0},
+        assessment_mode="issues_only",
+    )
+
+    assert plan["refresh_state"]["lifecycle_phase"] == "scan"
+    assert saved
+
+
 def test_sync_plan_after_import_does_not_purge_subjective_ids(monkeypatch) -> None:
     plan: dict = {"queue_order": ["subjective::naming_quality", "review::existing"]}
     purge_calls: list[list[str]] = []
@@ -631,7 +676,7 @@ def test_refresh_scorecard_after_import_skips_subjective_only_state(monkeypatch)
     assert calls == []
 
 
-def test_print_import_results_writes_query_payload(monkeypatch) -> None:
+def test_report_review_import_outcome_writes_query_payload(monkeypatch) -> None:
     captured: list[dict] = []
     monkeypatch.setattr(results_mod.narrative_mod, "compute_narrative", lambda *_a, **_k: {"summary": "ok"})
     monkeypatch.setattr(results_mod.import_helpers_mod, "print_skipped_validation_details", lambda *_a, **_k: None)
@@ -649,7 +694,7 @@ def test_print_import_results_writes_query_payload(monkeypatch) -> None:
     monkeypatch.setattr(results_mod, "show_score_with_plan_context", lambda *_a, **_k: None)
     monkeypatch.setattr(results_mod, "write_query", lambda payload: captured.append(payload))
 
-    results_mod.print_import_results(
+    results_mod.report_review_import_outcome(
         state={"issues": {}},
         lang_name="python",
         config={},
@@ -669,7 +714,7 @@ def test_print_import_results_writes_query_payload(monkeypatch) -> None:
     assert payload["assessment_import"]["mode"] == "issues_only"
 
 
-def test_print_import_results_reports_provisional_warning(capsys, monkeypatch) -> None:
+def test_report_review_import_outcome_reports_provisional_warning(capsys, monkeypatch) -> None:
     monkeypatch.setattr(results_mod.narrative_mod, "compute_narrative", lambda *_a, **_k: {})
     monkeypatch.setattr(results_mod.import_helpers_mod, "print_skipped_validation_details", lambda *_a, **_k: None)
     monkeypatch.setattr(results_mod.import_helpers_mod, "print_assessments_summary", lambda *_a, **_k: None)
@@ -686,7 +731,7 @@ def test_print_import_results_reports_provisional_warning(capsys, monkeypatch) -
     monkeypatch.setattr(results_mod, "show_score_with_plan_context", lambda *_a, **_k: None)
     monkeypatch.setattr(results_mod, "write_query", lambda _payload: None)
 
-    results_mod.print_import_results(
+    results_mod.report_review_import_outcome(
         state={"issues": {}},
         lang_name="python",
         config={},
@@ -727,7 +772,7 @@ def test_plan_sync_source_preserves_scoped_sync_pipeline_contract() -> None:
 
 
 def test_results_source_preserves_query_and_narrative_contract() -> None:
-    src = inspect.getsource(results_mod.print_import_results)
+    src = inspect.getsource(results_mod.report_review_import_outcome)
     assert "narrative_mod.compute_narrative(" in src
     assert 'NarrativeContext(lang=lang_name, command="review")' in src
     assert 'print(colorize(f"\\n  {label} imported:", "bold"))' in src

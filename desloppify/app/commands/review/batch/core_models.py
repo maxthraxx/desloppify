@@ -3,19 +3,37 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import NotRequired, TypedDict, cast
-
-from desloppify.intelligence.review.importing.contracts_types import (
-    ReviewIssuePayload,
-)
+from typing import NotRequired, TypedDict
 
 
-# mypy struggles with `total=False` on TypedDict inheritance across modules.
-class BatchIssuePayload(ReviewIssuePayload, total=False):  # type: ignore[call-arg]  # Inheritance form is runtime-valid but rejected by current type checker.
+class NormalizedBatchIssuePayload(TypedDict):
     """Normalized issue payload passed across batch merge/import seams."""
+
+    dimension: str
+    identifier: str
+    summary: str
+    confidence: str
+    suggestion: str
+    related_files: list[str]
+    evidence: list[str]
 
     impact_scope: str
     fix_scope: str
+    reasoning: NotRequired[str]
+    evidence_lines: NotRequired[list[int]]
+
+
+class DismissedConcernPayload(TypedDict):
+    """Minimal concern payload preserved when a reviewer dismisses a signal."""
+
+    concern_verdict: str
+    concern_fingerprint: str
+    concern_type: NotRequired[str]
+    concern_file: NotRequired[str]
+    reasoning: NotRequired[str]
+
+
+BatchIssuePayload = NormalizedBatchIssuePayload | DismissedConcernPayload
 
 
 class BatchDimensionNotePayload(TypedDict, total=False):
@@ -54,6 +72,7 @@ class BatchResultPayload(TypedDict):
     dimension_notes: dict[str, BatchDimensionNotePayload]
     dimension_judgment: dict[str, BatchDimensionJudgmentPayload]
     quality: BatchQualityPayload
+    batch_index: NotRequired[int]
 
 
 @dataclass(frozen=True)
@@ -72,21 +91,18 @@ class NormalizedBatchIssue:
     reasoning: str = ""
     evidence_lines: list[int] | None = None
 
-    def to_payload(self) -> BatchIssuePayload:
-        payload = cast(
-            BatchIssuePayload,
-            {
-                "dimension": self.dimension,
-                "identifier": self.identifier,
-                "summary": self.summary,
-                "confidence": self.confidence,
-                "suggestion": self.suggestion,
-                "related_files": list(self.related_files),
-                "evidence": list(self.evidence),
-                "impact_scope": self.impact_scope,
-                "fix_scope": self.fix_scope,
-            },
-        )
+    def to_payload(self) -> NormalizedBatchIssuePayload:
+        payload: NormalizedBatchIssuePayload = {
+            "dimension": self.dimension,
+            "identifier": self.identifier,
+            "summary": self.summary,
+            "confidence": self.confidence,
+            "suggestion": self.suggestion,
+            "related_files": list(self.related_files),
+            "evidence": list(self.evidence),
+            "impact_scope": self.impact_scope,
+            "fix_scope": self.fix_scope,
+        }
         if self.reasoning:
             payload["reasoning"] = self.reasoning
         if self.evidence_lines:
@@ -100,5 +116,7 @@ __all__ = [
     "BatchIssuePayload",
     "BatchQualityPayload",
     "BatchResultPayload",
+    "DismissedConcernPayload",
     "NormalizedBatchIssue",
+    "NormalizedBatchIssuePayload",
 ]

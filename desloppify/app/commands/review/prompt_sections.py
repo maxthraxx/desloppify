@@ -3,10 +3,25 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TypedDict
 
 from desloppify.intelligence.review.feedback_contract import (
     max_batch_issues_for_dimension_count,
 )
+
+
+class PromptBatchPayload(TypedDict, total=False):
+    """Typed packet batch contract used by prompt rendering."""
+
+    name: str
+    dimensions: list[str]
+    why: str
+    files_to_read: list[str]
+    dimension_prompts: dict[str, dict[str, object]]
+    judgment_finding_counts: dict[str, object]
+    mechanical_finding_counts: dict[str, object]
+    concern_signals: list[dict[str, object]]
+    historical_issue_focus: dict[str, object]
 
 
 @dataclass(frozen=True)
@@ -37,7 +52,7 @@ def coerce_string_list(raw: object) -> tuple[str, ...]:
     return tuple(str(item) for item in raw if isinstance(item, str) and item)
 
 
-def build_batch_context(batch: dict[str, object], batch_index: int) -> PromptBatchContext:
+def build_batch_context(batch: PromptBatchPayload, batch_index: int) -> PromptBatchContext:
     dimensions = coerce_string_list(batch.get("dimensions", []))
     return PromptBatchContext(
         name=str(batch.get("name", f"Batch {batch_index + 1}")),
@@ -49,7 +64,7 @@ def build_batch_context(batch: dict[str, object], batch_index: int) -> PromptBat
     )
 
 
-def batch_dimension_prompts(batch: dict[str, object]) -> dict[str, dict[str, object]]:
+def batch_dimension_prompts(batch: PromptBatchPayload) -> dict[str, dict[str, object]]:
     raw_prompts = batch.get("dimension_prompts")
     if not isinstance(raw_prompts, dict):
         return {}
@@ -105,7 +120,7 @@ def render_scan_evidence_focus(dim_set: set[str]) -> str:
     )
 
 
-def render_historical_focus(batch: dict[str, object]) -> str:
+def render_historical_focus(batch: PromptBatchPayload) -> str:
     focus = batch.get("historical_issue_focus")
     if not isinstance(focus, dict):
         return ""
@@ -201,7 +216,7 @@ def _build_concern_summary(valid_signals: list[dict[str, object]]) -> list[str]:
     return lines
 
 
-def render_mechanical_concern_signals(batch: dict[str, object]) -> str:
+def render_mechanical_concern_signals(batch: PromptBatchPayload) -> str:
     """Render mechanically-generated concern hypotheses for this batch."""
     signals = batch.get("concern_signals")
     if not isinstance(signals, list) or not signals:
@@ -239,19 +254,27 @@ def render_mechanical_concern_signals(batch: dict[str, object]) -> str:
     return "\n".join(lines) + "\n\n"
 
 
-def render_findings_exploration_section(batch: dict[str, object]) -> str:
+def _coerce_finding_counts(raw: object) -> dict[str, int]:
+    if not isinstance(raw, dict):
+        return {}
+    counts: dict[str, int] = {}
+    for det, count in raw.items():
+        if not isinstance(det, str):
+            continue
+        try:
+            normalized = int(count)
+        except (TypeError, ValueError):
+            continue
+        if normalized > 0:
+            counts[det] = normalized
+    return counts
+
+
+def render_findings_exploration_section(batch: PromptBatchPayload) -> str:
     """Render CLI exploration commands for detector findings relevant to this batch."""
     all_counts: dict[str, int] = {}
     for key in ("judgment_finding_counts", "mechanical_finding_counts"):
-        raw = batch.get(key)
-        if isinstance(raw, dict):
-            for det, count in raw.items():
-                try:
-                    n = int(count)  # type: ignore[arg-type]
-                except (TypeError, ValueError):
-                    continue
-                if n > 0:
-                    all_counts[det] = n
+        all_counts.update(_coerce_finding_counts(batch.get(key)))
     if not all_counts:
         return ""
 
@@ -341,9 +364,9 @@ def render_dimension_focus(dim_set: set[str]) -> str:
 
 
 def explode_to_single_dimension(
-    batches: list[dict[str, object]],
+    batches: list[PromptBatchPayload],
     dimension_prompts: dict[str, dict[str, object]] | None = None,
-) -> list[dict[str, object]]:
+) -> list[PromptBatchPayload]:
     """Split multi-dimension batches into one batch per dimension.
 
     Preserves seed files and rationale — each exploded batch keeps the same
@@ -352,14 +375,14 @@ def explode_to_single_dimension(
     scoped to its single dimension.
     """
     prompts = dimension_prompts or {}
-    result: list[dict[str, object]] = []
+    result: list[PromptBatchPayload] = []
     for batch in batches:
         dims = batch.get("dimensions", [])
         if not isinstance(dims, list):
             result.append(batch)
             continue
         for dim in dims:
-            exploded: dict[str, object] = {**batch, "dimensions": [dim]}
+            exploded: PromptBatchPayload = {**batch, "dimensions": [dim]}
             dim_prompt = prompts.get(dim)
             if isinstance(dim_prompt, dict):
                 exploded["dimension_prompts"] = {str(dim): dim_prompt}
@@ -464,6 +487,7 @@ def join_non_empty_sections(*sections: str) -> str:
 
 __all__ = [
     "PromptBatchContext",
+    "PromptBatchPayload",
     "batch_dimension_prompts",
     "coerce_string_list",
     "build_batch_context",

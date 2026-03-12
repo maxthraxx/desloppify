@@ -765,6 +765,19 @@ class TestResolveDefaultPath:
 
         assert args.path.endswith("src")
 
+    def test_non_review_command_honors_language_default_src_exactly(
+        self, monkeypatch, tmp_path
+    ):
+        project_root = tmp_path / "proj"
+        project_root.mkdir()
+        monkeypatch.setattr(cli_mod, "get_project_root", lambda: project_root)
+        with patch("desloppify.cli.resolve_lang") as mock_lang:
+            mock_lang.return_value = SimpleNamespace(default_src=".")
+            args = SimpleNamespace(command="scan", path=None)
+            _resolve_default_path(args)
+
+        assert args.path == str(project_root.resolve())
+
 
 class TestResolveLang:
     def test_prefers_explicit_lang(self):

@@ -37,8 +37,8 @@ _UNDISPOSITIONED_TRIAGE_ISSUES_KEY = "undispositioned_issue_ids"
 _UNDISPOSITIONED_TRIAGE_COUNT_KEY = "undispositioned_issue_count"
 
 
-def _queue_order(plan: PlanModel) -> list[str]:
-    """Return normalized queue order list, seeding default if missing."""
+def _ensure_queue_order(plan: PlanModel) -> list[str]:
+    """Return queue order, creating the stored list when missing."""
     order = plan.get("queue_order")
     if isinstance(order, list):
         return order
@@ -47,8 +47,8 @@ def _queue_order(plan: PlanModel) -> list[str]:
     return normalized
 
 
-def _skipped_map(plan: PlanModel) -> dict[str, Any]:
-    """Return normalized skipped map, seeding default if missing."""
+def _ensure_skipped_map(plan: PlanModel) -> dict[str, Any]:
+    """Return skipped metadata, creating the stored map when missing."""
     skipped = plan.get("skipped")
     if isinstance(skipped, dict):
         return cast(dict[str, Any], skipped)
@@ -57,8 +57,8 @@ def _skipped_map(plan: PlanModel) -> dict[str, Any]:
     return normalized
 
 
-def _cluster_map(plan: PlanModel) -> dict[str, Cluster]:
-    """Return normalized cluster map, seeding default if missing."""
+def _ensure_cluster_map(plan: PlanModel) -> dict[str, Cluster]:
+    """Return cluster map, creating the stored map when missing."""
     clusters = plan.get("clusters")
     if isinstance(clusters, dict):
         return cast(dict[str, Cluster], clusters)
@@ -67,8 +67,8 @@ def _cluster_map(plan: PlanModel) -> dict[str, Cluster]:
     return normalized
 
 
-def _triage_meta(plan: PlanModel) -> dict[str, Any]:
-    """Return normalized triage metadata map, seeding default if missing."""
+def _ensure_triage_meta(plan: PlanModel) -> dict[str, Any]:
+    """Return triage metadata, creating the stored map when missing."""
     meta = plan.get("epic_triage_meta")
     if isinstance(meta, dict):
         return cast(dict[str, Any], meta)
@@ -77,8 +77,8 @@ def _triage_meta(plan: PlanModel) -> dict[str, Any]:
     return normalized
 
 
-def _execution_log(plan: PlanModel) -> list[dict[str, Any]]:
-    """Return normalized execution log list, seeding default if missing."""
+def _ensure_execution_log(plan: PlanModel) -> list[dict[str, Any]]:
+    """Return execution log, creating the stored list when missing."""
     log = plan.get("execution_log")
     if isinstance(log, list):
         return [entry for entry in log if isinstance(entry, dict)]
@@ -131,6 +131,17 @@ def _normalized_issue_id_list(raw_ids: object) -> list[str]:
     return [issue_id for issue_id in raw_ids if isinstance(issue_id, str)]
 
 
+def live_active_triage_issue_ids(
+    plan: PlanModel,
+    state: StateModel | None = None,
+) -> set[str]:
+    """Return frozen triage IDs that are still open review issues in state."""
+    frozen_ids = active_triage_issue_ids(plan, state)
+    if state is None or not frozen_ids:
+        return frozen_ids
+    return frozen_ids & open_review_ids(state)
+
+
 def active_triage_issue_ids(
     plan: PlanModel,
     state: StateModel | None = None,
@@ -139,7 +150,7 @@ def active_triage_issue_ids(
 
     Falls back to current open review IDs when no active set has been frozen yet.
     """
-    meta = _triage_meta(plan)
+    meta = _ensure_triage_meta(plan)
     active_ids = _normalized_issue_id_list(meta.get(_ACTIVE_TRIAGE_ISSUE_IDS_KEY))
     if active_ids:
         return set(active_ids)
@@ -153,7 +164,7 @@ def ensure_active_triage_issue_ids(
     state: StateModel,
 ) -> list[str]:
     """Freeze the current triage issue set for validation across stage reruns."""
-    meta = _triage_meta(plan)
+    meta = _ensure_triage_meta(plan)
     active_ids = sorted(_coverage_open_ids(plan, state))
     meta[_ACTIVE_TRIAGE_ISSUE_IDS_KEY] = active_ids
     meta.pop(_UNDISPOSITIONED_TRIAGE_ISSUES_KEY, None)
@@ -173,16 +184,20 @@ def undispositioned_triage_issue_ids(
     state: StateModel | None = None,
 ) -> list[str]:
     """Return frozen triage issues still lacking cluster/skip/dismiss coverage."""
-    target_ids = active_triage_issue_ids(plan, state)
+    target_ids = live_active_triage_issue_ids(plan, state)
     if not target_ids:
         return []
     covered_ids: set[str] = set()
-    for cluster in _cluster_map(plan).values():
+    for cluster in _ensure_cluster_map(plan).values():
         if cluster.get("auto"):
             continue
         covered_ids.update(cluster_issue_ids(cluster))
-    covered_ids.update(issue_id for issue_id in _skipped_map(plan) if isinstance(issue_id, str))
-    covered_ids.update(_normalized_issue_id_list(_triage_meta(plan).get("dismissed_ids")))
+    covered_ids.update(
+        issue_id for issue_id in _ensure_skipped_map(plan) if isinstance(issue_id, str)
+    )
+    covered_ids.update(
+        _normalized_issue_id_list(_ensure_triage_meta(plan).get("dismissed_ids"))
+    )
     return sorted(issue_id for issue_id in target_ids if issue_id not in covered_ids)
 
 
@@ -191,7 +206,7 @@ def sync_undispositioned_triage_meta(
     state: StateModel | None = None,
 ) -> list[str]:
     """Persist the current undispositioned triage issue set for recovery UX."""
-    meta = _triage_meta(plan)
+    meta = _ensure_triage_meta(plan)
     missing = undispositioned_triage_issue_ids(plan, state)
     if missing:
         meta[_UNDISPOSITIONED_TRIAGE_ISSUES_KEY] = missing
@@ -203,18 +218,18 @@ def sync_undispositioned_triage_meta(
 
 
 def has_triage_in_queue(plan: PlanModel) -> bool:
-    order = set(_queue_order(plan))
+    order = set(_ensure_queue_order(plan))
     return bool(order & TRIAGE_IDS)
 
 
 def _clear_triage_stage_skips(plan: PlanModel) -> None:
-    skipped = _skipped_map(plan)
+    skipped = _ensure_skipped_map(plan)
     for sid in TRIAGE_STAGE_IDS:
         skipped.pop(sid, None)
 
 
 def inject_triage_stages(plan: PlanModel) -> None:
-    order = _queue_order(plan)
+    order = _ensure_queue_order(plan)
     _clear_triage_stage_skips(plan)
     remaining = [issue_id for issue_id in order if issue_id not in TRIAGE_IDS]
     order[:] = [*remaining, *TRIAGE_STAGE_IDS]
@@ -354,7 +369,7 @@ def cluster_issue_ids(cluster: Cluster) -> list[str]:
 def plan_review_ids(plan: PlanModel) -> list[str]:
     """Return review/concerns IDs currently represented in queue_order."""
     return [
-        fid for fid in _queue_order(plan)
+        fid for fid in _ensure_queue_order(plan)
         if not fid.startswith("triage::")
         and not fid.startswith("workflow::")
         and (fid.startswith("review::") or fid.startswith("concerns::"))
@@ -370,7 +385,7 @@ def triage_coverage(
     When *open_review_ids* is provided, use it as the full set of review
     issues (from state) instead of falling back to queue_order.
     """
-    clusters = _cluster_map(plan)
+    clusters = _ensure_cluster_map(plan)
     all_cluster_ids: set[str] = set()
     for c in clusters.values():
         all_cluster_ids.update(cluster_issue_ids(c))
@@ -384,7 +399,7 @@ def triage_coverage(
 
 def manual_clusters_with_issues(plan: PlanModel) -> list[str]:
     return [
-        name for name, c in _cluster_map(plan).items()
+        name for name, c in _ensure_cluster_map(plan).items()
         if cluster_issue_ids(c) and not c.get("auto")
     ]
 
@@ -393,7 +408,9 @@ def _coverage_open_ids(
     plan: PlanModel,
     state: StateModel,
 ) -> set[str]:
-    active_ids = _normalized_issue_id_list(_triage_meta(plan).get(_ACTIVE_TRIAGE_ISSUE_IDS_KEY))
+    active_ids = _normalized_issue_id_list(
+        _ensure_triage_meta(plan).get(_ACTIVE_TRIAGE_ISSUE_IDS_KEY)
+    )
     if active_ids:
         return set(active_ids)
     has_completed_scan = bool(state.get("last_scan"))
@@ -412,7 +429,7 @@ def _sync_completion_meta(
     completion_note: str,
     coverage_open_ids: set[str],
 ) -> tuple[dict[str, Any], str]:
-    meta = _triage_meta(plan)
+    meta = _ensure_triage_meta(plan)
     if state.get("last_scan"):
         meta["issue_snapshot_hash"] = review_issue_snapshot_hash(state)
     elif not meta.get("issue_snapshot_hash"):
@@ -520,7 +537,7 @@ def apply_completion(
     ])
 
     existing_strategy = _normalize_summary_text(
-        _triage_meta(plan).get("strategy_summary", ""),
+        _ensure_triage_meta(plan).get("strategy_summary", ""),
     )
     meta, effective_strategy_summary = _sync_completion_meta(
         plan=plan,
@@ -557,7 +574,7 @@ def find_cluster_for(fid: str, clusters: dict[str, Cluster]) -> str | None:
 
 def count_log_activity_since(plan: PlanModel, since: str) -> dict[str, int]:
     counts: dict[str, int] = defaultdict(int)
-    for raw_entry in _execution_log(plan):
+    for raw_entry in _ensure_execution_log(plan):
         if "timestamp" not in raw_entry or "action" not in raw_entry:
             continue
         timestamp = raw_entry["timestamp"]
@@ -581,6 +598,7 @@ __all__ = [
     "has_open_review_issues",
     "has_triage_in_queue",
     "inject_triage_stages",
+    "live_active_triage_issue_ids",
     "manual_clusters_with_issues",
     "observe_dimension_breakdown",
     "open_review_ids_from_state",
