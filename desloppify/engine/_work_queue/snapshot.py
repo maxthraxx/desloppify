@@ -318,7 +318,21 @@ def _phase_for_snapshot(
 ) -> str:
     raw_phase = _raw_persisted_phase(plan)
 
+    ordered_postflight_phase = _ordered_postflight_phase(
+        postflight_assessment_items=postflight_assessment_items,
+        postflight_review_items=postflight_review_items,
+        postflight_workflow_items=postflight_workflow_items,
+        triage_items=triage_items,
+    )
+
     # ── Fine-grained persisted phase: trust it if items match ──
+    if raw_phase in {
+        PHASE_ASSESSMENT_POSTFLIGHT,
+        PHASE_REVIEW_POSTFLIGHT,
+        PHASE_WORKFLOW_POSTFLIGHT,
+        PHASE_TRIAGE_POSTFLIGHT,
+    } and ordered_postflight_phase is not None:
+        return ordered_postflight_phase
     if raw_phase in _FINE_GRAINED_ITEM_MAP:
         items_key = _FINE_GRAINED_ITEM_MAP[raw_phase]
         items = locals().get(items_key) if items_key else None
@@ -343,6 +357,25 @@ def _phase_for_snapshot(
         postflight_workflow_items=postflight_workflow_items,
         triage_items=triage_items,
     )
+
+
+def _ordered_postflight_phase(
+    *,
+    postflight_assessment_items: list[WorkQueueItem],
+    postflight_review_items: list[WorkQueueItem],
+    postflight_workflow_items: list[WorkQueueItem],
+    triage_items: list[WorkQueueItem],
+) -> str | None:
+    """Return the earliest active postflight phase in fixed sequence order."""
+    if postflight_assessment_items:
+        return PHASE_ASSESSMENT_POSTFLIGHT
+    if postflight_workflow_items:
+        return PHASE_WORKFLOW_POSTFLIGHT
+    if triage_items:
+        return PHASE_TRIAGE_POSTFLIGHT
+    if postflight_review_items:
+        return PHASE_REVIEW_POSTFLIGHT
+    return None
 
 
 def _legacy_phase_inference(
@@ -408,8 +441,6 @@ def _legacy_phase_inference(
         return PHASE_ASSESSMENT_POSTFLIGHT
     if postflight_workflow_items:
         return PHASE_WORKFLOW_POSTFLIGHT
-    if triage_items and review_backlog_present:
-        return PHASE_TRIAGE_POSTFLIGHT
     if undispositioned_review_backlog_present and postflight_review_items:
         return PHASE_REVIEW_POSTFLIGHT
     if explicit_queue_items:

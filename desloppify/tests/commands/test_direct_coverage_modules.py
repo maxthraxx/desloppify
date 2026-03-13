@@ -80,8 +80,7 @@ import desloppify.languages.rust.detectors._shared as rust_shared_mod
 import desloppify.languages.rust.move as rust_move_mod
 import desloppify.languages.rust.phases_smells as rust_phases_smells_mod
 import desloppify.languages.typescript.detectors.smells.detector_safety as ts_smell_detectors_safety
-import desloppify.languages.typescript.detectors.smells.helpers_blocks as ts_smell_blocks_mod
-import desloppify.languages.typescript.detectors.smells.helpers_line_state as ts_smell_line_state_mod
+import desloppify.languages.typescript.detectors.smells.helpers as ts_smell_helpers_mod
 import desloppify.languages.typescript.detectors.deps.runtime as ts_deps_runtime
 import desloppify.languages.typescript.extractors_components as ts_extractors_components
 from desloppify.engine._work_queue.models import QueueBuildOptions, QueueVisibility
@@ -432,15 +431,15 @@ def test_typescript_split_smell_helpers_have_direct_coverage():
         "  }",
         "}",
     ]
-    assert ts_smell_blocks_mod._track_brace_body(lines, 0) == 5
-    body = ts_smell_blocks_mod._extract_block_body("if (ok) { keep(); }", 8)
+    assert ts_smell_helpers_mod._track_brace_body(lines, 0) == 5
+    body = ts_smell_helpers_mod._extract_block_body("if (ok) { keep(); }", 8)
     assert body == " keep(); "
-    masked = ts_smell_blocks_mod._code_text('const x = "message"; // hi')
+    masked = ts_smell_helpers_mod._code_text('const x = "message"; // hi')
     assert "message" not in masked
 
-    assert ts_smell_line_state_mod._scan_template_content("x`${a}`", 1, 0)[1] is True
-    assert ts_smell_line_state_mod._scan_code_line("/* open comment") == (True, False, 0)
-    states = ts_smell_line_state_mod._build_ts_line_state(
+    assert ts_smell_helpers_mod._scan_template_content("x`${a}`", 1, 0)[1] is True
+    assert ts_smell_helpers_mod._scan_code_line("/* open comment") == (True, False, 0)
+    states = ts_smell_helpers_mod._build_ts_line_state(
         [
             "const a = 1;",
             "/* block",

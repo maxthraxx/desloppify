@@ -44,6 +44,7 @@ class ActionStep(TypedDict, total=False):
     title: Required[str]        # Short summary, 1 line
     detail: str                 # Long description, paragraphs OK
     issue_refs: list[str]       # Issue ID suffixes this step addresses
+    effort: str                 # "trivial" | "small" | "medium" | "large"
     done: bool                  # Completion tracking (default False)
 
 
@@ -68,6 +69,7 @@ class Cluster(TypedDict, total=False):
     dismissed: list[str]
     agent_safe: bool
     dependency_order: int
+    depends_on_clusters: list[str]
     action_steps: list[ActionStep]
     priority: int
     source_clusters: list[str]

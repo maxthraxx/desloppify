@@ -8,12 +8,12 @@ from types import SimpleNamespace
 
 import pytest
 
-import desloppify.app.commands.plan.override_io as override_io_mod
-import desloppify.app.commands.plan.override_misc as override_misc_mod
-import desloppify.app.commands.plan.override_resolve_cmd as override_resolve_cmd_mod
-import desloppify.app.commands.plan.override_resolve_helpers as resolve_helpers_mod
-import desloppify.app.commands.plan.override_resolve_workflow as resolve_workflow_mod
-import desloppify.app.commands.plan.override_skip as override_skip_mod
+import desloppify.app.commands.plan.override.io as override_io_mod
+import desloppify.app.commands.plan.override.misc as override_misc_mod
+import desloppify.app.commands.plan.override.resolve_cmd as override_resolve_cmd_mod
+import desloppify.app.commands.plan.override.resolve_helpers as resolve_helpers_mod
+import desloppify.app.commands.plan.override.resolve_workflow as resolve_workflow_mod
+import desloppify.app.commands.plan.override.skip as override_skip_mod
 import desloppify.app.commands.plan.reorder_handlers as reorder_handlers_mod
 from desloppify.base.exception_sets import CommandError
 
@@ -242,6 +242,77 @@ def test_resolve_workflow_patterns_scan_gate_blocks_without_new_scan(monkeypatch
     assert "no scan has run this cycle" in out
     assert "desloppify scan" in out
     assert any(action == "scan_gate_blocked" for action, _ in logs)
+
+
+def test_resolve_workflow_patterns_reconciles_when_create_plan_drains_queue(monkeypatch) -> None:
+    plan = {
+        "queue_order": [resolve_workflow_mod.WORKFLOW_CREATE_PLAN_ID],
+        "epic_triage_meta": {
+            "triage_stages": {},
+            "last_completed_at": "2026-03-09T00:00:00+00:00",
+        },
+        "scan_count_at_plan_start": 9,
+    }
+    seen: list[object] = []
+
+    monkeypatch.setattr(resolve_workflow_mod, "load_plan", lambda: plan)
+    monkeypatch.setattr(resolve_workflow_mod, "blocked_triage_stages", lambda _plan: {})
+    monkeypatch.setattr(resolve_workflow_mod, "save_plan", lambda *_a, **_k: seen.append("save"))
+    monkeypatch.setattr(resolve_workflow_mod, "state_path", lambda _args: Path("state.json"))
+    monkeypatch.setattr(
+        resolve_workflow_mod.state_mod,
+        "load_state",
+        lambda _path: {"scan_count": 10, "config": {"target_strict_score": 96}},
+    )
+    monkeypatch.setattr(
+        resolve_workflow_mod,
+        "append_log_entry",
+        lambda *_a, **_k: None,
+    )
+    monkeypatch.setattr(resolve_workflow_mod, "live_planned_queue_empty", lambda _plan: True)
+    monkeypatch.setattr(resolve_workflow_mod, "has_open_review_issues", lambda _state: True)
+    monkeypatch.setattr(
+        resolve_workflow_mod,
+        "ensure_active_triage_issue_ids",
+        lambda _plan, _state: seen.append(("active_triage", True)),
+    )
+    monkeypatch.setattr(
+        resolve_workflow_mod,
+        "inject_triage_stages",
+        lambda _plan: seen.append(("inject_triage", True)),
+    )
+    monkeypatch.setattr(
+        resolve_workflow_mod,
+        "set_lifecycle_phase",
+        lambda _plan, phase: seen.append(("phase", phase)) or True,
+    )
+    monkeypatch.setattr(
+        resolve_workflow_mod,
+        "target_strict_score_from_config",
+        lambda config: seen.append(("target", config)) or 96.0,
+    )
+    monkeypatch.setattr(
+        resolve_workflow_mod,
+        "reconcile_plan",
+        lambda _plan, _state, *, target_strict: seen.append(
+            ("reconcile", list(_plan.get("queue_order", [])), target_strict)
+        ),
+    )
+
+    args = argparse.Namespace(force_resolve=False, state=None, lang=None, path=".", exclude=None)
+    outcome = resolve_workflow_mod.resolve_workflow_patterns(
+        args,
+        synthetic_ids=[resolve_workflow_mod.WORKFLOW_CREATE_PLAN_ID],
+        real_patterns=[],
+        note="Detailed workflow completion note",
+    )
+
+    assert outcome.status == "handled"
+    assert ("active_triage", True) in seen
+    assert ("inject_triage", True) in seen
+    assert ("phase", resolve_workflow_mod.LIFECYCLE_PHASE_TRIAGE_POSTFLIGHT) in seen
+    assert ("target", {"target_strict_score": 96}) not in seen
+    assert not any(isinstance(item, tuple) and item[:1] == ("reconcile",) for item in seen)
 
 
 def test_cmd_plan_resolve_workflow_gate_integration_paths(monkeypatch, capsys) -> None:

@@ -7,9 +7,11 @@ import logging
 from pathlib import Path
 from typing import NamedTuple
 
+from desloppify.base.config import target_strict_score_from_config
 from desloppify.base.exception_sets import PLAN_LOAD_EXCEPTIONS
 from desloppify.base.output.terminal import colorize
 from desloppify.app.commands.resolve.plan_load import warn_plan_load_degraded_once
+from desloppify.engine._plan.sync import live_planned_queue_empty, reconcile_plan
 from desloppify.engine.plan_ops import (
     append_log_entry,
     auto_complete_steps,
@@ -32,6 +34,14 @@ class ClusterContext(NamedTuple):
     cluster_name: str | None
     cluster_completed: bool
     cluster_remaining: int
+
+
+def _reconcile_if_queue_drained(plan: dict, state: dict | None) -> None:
+    """Advance the living plan when a resolve drains the explicit live queue."""
+    if state is None or not live_planned_queue_empty(plan):
+        return
+    target_strict = target_strict_score_from_config(state.get("config"))
+    reconcile_plan(plan, state, target_strict=target_strict)
 
 
 def capture_cluster_context(plan: dict, resolved_ids: list[str]) -> ClusterContext:
@@ -97,6 +107,7 @@ def update_living_plan_after_resolve(
         elif args.status == "open":
             purge_uncommitted_ids(plan, all_resolved)
         clear_postflight_scan_completion(plan, issue_ids=all_resolved, state=state)
+        _reconcile_if_queue_drained(plan, state)
         save_plan(plan, plan_path)
         if purged:
             print(colorize(f"  Plan updated: {purged} item(s) removed from queue.", "dim"))

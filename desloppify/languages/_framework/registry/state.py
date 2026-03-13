@@ -14,6 +14,7 @@ __all__ = [
     "get",
     "all_items",
     "all_keys",
+    "register_lang_hooks",
     "register_hook",
     "get_hook",
     "clear_hooks",
@@ -62,6 +63,16 @@ def all_items() -> ItemsView[str, LangConfig]:
 def all_keys() -> list[str]:
     """Return all registered language names."""
     return list(_STATE.registry.keys())
+
+
+def register_lang_hooks(
+    lang_name: str,
+    *,
+    test_coverage: object | None = None,
+) -> None:
+    """Register optional detector hook modules for a language."""
+    if test_coverage is not None:
+        register_hook(lang_name, "test_coverage", test_coverage)
 
 
 def register_hook(lang_name: str, hook_name: str, hook: object) -> None:

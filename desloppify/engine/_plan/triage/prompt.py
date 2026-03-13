@@ -33,6 +33,7 @@ class TriageInput:
     triage_version: int                  # next version number
     resolved_issues: dict[str, dict]   # full issue objects for resolved IDs
     completed_clusters: list[dict]       # clusters completed since last triage
+    value_check_targets: list[str] | None
 
     def __init__(
         self,
@@ -48,6 +49,7 @@ class TriageInput:
         triage_version: int,
         resolved_issues: dict[str, dict],
         completed_clusters: list[dict],
+        value_check_targets: list[str] | None = None,
         open_issues: dict[str, dict] | None = None,
         mechanical_issues: dict[str, dict] | None = None,
     ) -> None:
@@ -77,6 +79,7 @@ class TriageInput:
         self.triage_version = triage_version
         self.resolved_issues = resolved_issues
         self.completed_clusters = completed_clusters
+        self.value_check_targets = value_check_targets
 
     @property
     def open_issues(self) -> dict[str, dict]:

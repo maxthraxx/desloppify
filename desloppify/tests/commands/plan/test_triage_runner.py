@@ -900,6 +900,47 @@ def test_sense_check_validation_ok(tmp_path: Path) -> None:
     assert ok
 
 
+def test_sense_check_validation_uses_frozen_value_targets(tmp_path: Path) -> None:
+    """Validation should accept decision-ledger targets captured before value-pass pruning."""
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "foo.ts").write_text("export {}")
+    plan = _plan_with_stages(
+        **{
+            "sense-check": {
+                "report": (
+                    "## Decision Ledger\n"
+                    "- kept-cluster -> keep\n"
+                    "- pruned-cluster -> skip\n"
+                    "- review::.::holistic::cross_module_architecture::private_framework_boundary_still_leaks -> skip\n\n"
+                    "Verified kept-cluster in src/foo.ts lines 1-10 and recorded why the pruned targets were removed during the value pass. "
+                    + "x" * 80
+                ),
+                "value_targets": [
+                    "kept-cluster",
+                    "pruned-cluster",
+                    "review::.::holistic::cross_module_architecture::private_framework_boundary_still_leaks",
+                ],
+            }
+        }
+    )
+    plan["clusters"] = {
+        "kept-cluster": {
+            "issue_ids": ["review::a::b"],
+            "description": "active",
+            "action_steps": [
+                {
+                    "title": "fix",
+                    "detail": "Update src/foo.ts to simplify the active path and remove duplication. " + "x" * 40,
+                    "effort": "small",
+                    "issue_refs": ["review::a::b"],
+                }
+            ],
+        }
+    }
+    ok, msg = validate_stage("sense-check", plan, {}, tmp_path)
+    assert ok, msg
+
+
 def test_sense_check_stage_in_pipeline_order() -> None:
     """sense-check must appear between enrich and commit in TRIAGE_STAGE_IDS."""
     from desloppify.engine._plan.constants import TRIAGE_STAGE_IDS

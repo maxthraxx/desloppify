@@ -15,6 +15,7 @@ import desloppify.app.commands.review.runner_packets as runner_packets_mod
 import desloppify.app.commands.review.runner_parallel as runner_parallel_mod
 import desloppify.app.commands.runner.codex_batch as runner_process_mod
 from desloppify.app.commands.review.batch.orchestrator import do_run_batches
+from desloppify.app.commands.review.batch.execution import CollectBatchResultsRequest
 from desloppify.base.exception_sets import CommandError
 
 runner_helpers_mod = SimpleNamespace(
@@ -67,10 +68,12 @@ class TestCmdReviewPrepareRunnerHelpers:
             return payload.get("assessments", {}), payload.get("issues", []), notes, {}, {}, {}
 
         batch_results, failures = runner_helpers_mod.collect_batch_results(
-            selected_indexes=[0],
-            failures=[0],
-            output_files={0: output_file},
-            allowed_dims={"logic_clarity"},
+            request=CollectBatchResultsRequest(
+                selected_indexes=[0],
+                failures=[0],
+                output_files={0: output_file},
+                allowed_dims={"logic_clarity"},
+            ),
             extract_payload_fn=lambda raw: json.loads(raw),
             normalize_result_fn=normalize_result,
         )
@@ -115,10 +118,12 @@ class TestCmdReviewPrepareRunnerHelpers:
             return None
 
         batch_results, failures = runner_helpers_mod.collect_batch_results(
-            selected_indexes=[0],
-            failures=[],
-            output_files={0: raw_path},
-            allowed_dims={"logic_clarity"},
+            request=CollectBatchResultsRequest(
+                selected_indexes=[0],
+                failures=[],
+                output_files={0: raw_path},
+                allowed_dims={"logic_clarity"},
+            ),
             extract_payload_fn=extract_payload,
             normalize_result_fn=lambda payload, _allowed: (  # noqa: ARG005
                 payload.get("assessments", {}),
@@ -479,6 +484,102 @@ class TestCmdReviewPrepareRunnerHelpers:
 
         assert exc_info.value.exit_code == 7
 
+    def test_do_run_batches_success_path_imports_merged_results(
+        self, empty_state, tmp_path
+    ):
+        packet = {
+            "command": "review",
+            "mode": "holistic",
+            "language": "typescript",
+            "dimensions": ["high_level_elegance"],
+            "investigation_batches": [
+                {
+                    "name": "Batch A",
+                    "dimensions": ["high_level_elegance"],
+                    "files_to_read": ["src/a.ts"],
+                    "why": "A",
+                }
+            ],
+        }
+        packet_path = tmp_path / "packet.json"
+        packet_path.write_text(json.dumps(packet))
+
+        args = MagicMock()
+        args.path = str(tmp_path)
+        args.dimensions = None
+        args.runner = "codex"
+        args.parallel = False
+        args.dry_run = False
+        args.packet = str(packet_path)
+        args.only_batches = None
+        args.scan_after_import = False
+        args.allow_partial = True
+        args.save_run_log = True
+        args.run_log_file = None
+
+        review_packet_dir = tmp_path / ".desloppify" / "review_packets"
+        runs_dir = tmp_path / ".desloppify" / "subagents" / "runs"
+
+        lang = MagicMock()
+        lang.name = "typescript"
+
+        with (
+            patch(
+                "desloppify.app.commands.review.runtime_paths.PROJECT_ROOT",
+                tmp_path,
+            ),
+            patch(
+                "desloppify.app.commands.review.runtime_paths.REVIEW_PACKET_DIR",
+                review_packet_dir,
+            ),
+            patch(
+                "desloppify.app.commands.review.runtime_paths.SUBAGENT_RUNS_DIR",
+                runs_dir,
+            ),
+            patch(
+                "desloppify.app.commands.review.batch.execution_phases.scored_dimensions_for_lang",
+                return_value=["high_level_elegance"],
+            ),
+            patch(
+                "desloppify.app.commands.review.batch.orchestrator.execute_batches",
+                return_value=[],
+            ),
+            patch(
+                "desloppify.app.commands.review.batch.orchestrator.collect_batch_results",
+                return_value=(
+                    [
+                        runner_parallel_mod.BatchResult(
+                            batch_index=1,
+                            assessments={"high_level_elegance": 84.0},
+                            dimension_notes={},
+                            issues=[],
+                            quality={},
+                        )
+                    ],
+                    [],
+                ),
+            ),
+            patch(
+                "desloppify.app.commands.review.batch.orchestrator._merge_batch_results",
+                return_value={
+                    "assessments": {"high_level_elegance": 84.0},
+                    "dimension_notes": {},
+                    "issues": [],
+                    "review_quality": {},
+                },
+            ),
+            patch(
+                "desloppify.app.commands.review.batch.orchestrator.run_followup_scan",
+            ) as run_followup_scan,
+            patch(
+                "desloppify.app.commands.review.batch.orchestrator._do_import",
+            ) as do_import,
+        ):
+            do_run_batches(args, empty_state, lang, "fake_sp", config={})
+
+        do_import.assert_called_once()
+        run_followup_scan.assert_not_called()
+
     def test_do_run_batches_keyboard_interrupt_writes_partial_summary(
         self, empty_state, tmp_path
     ):
@@ -552,4 +653,3 @@ class TestCmdReviewPrepareRunnerHelpers:
         run_log_path = Path(summary_payload["run_log"])
         run_log_text = run_log_path.read_text()
         assert "run-interrupted reason=keyboard_interrupt" in run_log_text
-

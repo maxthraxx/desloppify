@@ -4,6 +4,10 @@ from __future__ import annotations
 
 from typing import TypedDict, cast
 
+from desloppify.engine._state.schema_types_review import (
+    AssessmentImportAuditEntry,
+)
+
 
 class SubjectiveAssessmentPayload(TypedDict, total=False):
     score: float
@@ -17,19 +21,6 @@ class SubjectiveAssessmentPayload(TypedDict, total=False):
     placeholder: bool
     components: list[str]
     component_scores: dict[str, float]
-
-
-class AssessmentImportAuditEntry(TypedDict):
-    timestamp: str
-    mode: str
-    trusted: bool
-    reason: str
-    override_used: bool
-    attested_external: bool
-    provisional: bool
-    provisional_count: int
-    attest: str
-    import_file: str
 
 
 def subjective_assessment_store(

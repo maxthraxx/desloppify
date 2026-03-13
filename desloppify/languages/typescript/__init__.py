@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from desloppify.base.discovery.paths import get_area
-from desloppify.engine.hook_registry import register_lang_hooks
 from desloppify.languages._framework.base.phase_builders import (
     detector_phase_security,
     detector_phase_signature,
@@ -17,6 +16,7 @@ from desloppify.languages._framework.base.types import (
     LangSecurityResult,
 )
 from desloppify.languages._framework.registry.registration import register_full_plugin
+from desloppify.languages._framework.registry.state import register_lang_hooks
 from desloppify.languages.typescript import test_coverage as ts_test_coverage_hooks
 from desloppify.languages.typescript._fixers import get_ts_fixers
 import desloppify.languages.typescript.commands as ts_commands_mod

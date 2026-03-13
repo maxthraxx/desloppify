@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import enum
-import importlib
 import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from desloppify.base.exception_sets import PLAN_LOAD_EXCEPTIONS
+from desloppify.app.commands.helpers.dynamic_loaders import load_score_update_module
 from desloppify.base.output.terminal import colorize
 from desloppify.engine._plan.refresh_lifecycle import (
     COARSE_PHASE_MAP,
@@ -344,9 +344,7 @@ def print_execution_or_reveal(
         return
 
     # LIVE or PHASE_TRANSITION: show current scores
-    score_update_mod = importlib.import_module(
-        "desloppify.app.commands.helpers.score_update"
-    )
+    score_update_mod = load_score_update_module()
     score_update_mod.print_score_update(state, prev)
 
     if mode is ScoreDisplayMode.PHASE_TRANSITION:

@@ -47,12 +47,12 @@ def test_import_shared_extract_reviewed_files_deduplicates():
     assert reviewed == ["a.py", "b.py"]
 
 
-def test_import_shared_parse_payload_accepts_legacy_findings_alias():
-    parsed = parse_review_import_payload(
-        {"findings": [{"summary": "legacy payload"}]},
-        mode_name="Holistic",
-    )
-    assert parsed.issues == [{"summary": "legacy payload"}]
+def test_import_shared_parse_payload_requires_canonical_issues_key():
+    with pytest.raises(ValueError, match="must contain 'issues'"):
+        parse_review_import_payload(
+            {"findings": [{"summary": "legacy payload"}]},
+            mode_name="Holistic",
+        )
 
 
 def test_store_assessments_keeps_holistic_precedence():

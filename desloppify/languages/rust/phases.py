@@ -6,6 +6,8 @@ from collections.abc import Callable
 from pathlib import Path
 
 from desloppify.base.output.terminal import log
+from desloppify.engine._state.filtering import make_issue
+from desloppify.engine._state.schema_types_issues import Issue
 from desloppify.engine.detectors.base import ComplexitySignal
 from desloppify.engine.detectors.graph import detect_cycles
 from desloppify.engine.detectors.orphaned import (
@@ -50,8 +52,6 @@ from desloppify.languages.rust.tools import (
     parse_clippy_messages,
     run_rustdoc_result,
 )
-from desloppify.state import Issue
-from desloppify.state import make_issue
 
 RUST_CLIPPY_LABEL = "cargo clippy"
 RUST_CHECK_LABEL = "cargo check"

@@ -27,7 +27,10 @@ from desloppify.intelligence.review.context_signals.auth import gather_auth_cont
 from desloppify.intelligence.review.context_signals.migration import (
     classify_error_strategy,
 )
-from desloppify.intelligence.review.context_builder import build_review_context_inner
+from desloppify.intelligence.review.context_builder import (
+    ReviewContextBuildServices,
+    build_review_context_inner,
+)
 
 # ── Shared helpers ────────────────────────────────────────────────
 
@@ -101,18 +104,20 @@ def build_review_context(
             lang,
             state,
             ctx,
-            read_file_text_fn=read_file_text,
-            abs_path_fn=abs_path,
-            rel_fn=rel,
-            importer_count_fn=importer_count,
-            default_review_module_patterns_fn=default_review_module_patterns,
-            func_name_re=FUNC_NAME_RE,
-            class_name_re=CLASS_NAME_RE,
-            name_prefix_re=NAME_PREFIX_RE,
-            error_patterns=ERROR_PATTERNS,
-            gather_ai_debt_signals_fn=gather_ai_debt_signals,
-            gather_auth_context_fn=gather_auth_context,
-            classify_error_strategy_fn=classify_error_strategy,
+            ReviewContextBuildServices(
+                read_file_text=read_file_text,
+                abs_path=abs_path,
+                rel_path=rel,
+                importer_count=importer_count,
+                default_review_module_patterns=default_review_module_patterns,
+                gather_ai_debt_signals=gather_ai_debt_signals,
+                gather_auth_context=gather_auth_context,
+                classify_error_strategy=classify_error_strategy,
+                func_name_re=FUNC_NAME_RE,
+                class_name_re=CLASS_NAME_RE,
+                name_prefix_re=NAME_PREFIX_RE,
+                error_patterns=ERROR_PATTERNS,
+            ),
         )
     finally:
         if not already_cached:

@@ -38,11 +38,48 @@ from desloppify.engine._state import _recompute_stats
 from desloppify.base.registry import get_detector_meta
 
 
+def _latest_trusted_assessment_import_timestamp(state: StateModel) -> str:
+    """Return the newest trusted assessment-import timestamp, if present."""
+    for raw_entry in reversed(state.get("assessment_import_audit", []) or []):
+        if not isinstance(raw_entry, dict):
+            continue
+        if raw_entry.get("mode") not in {"trusted_internal", "attested_external"}:
+            continue
+        timestamp = str(raw_entry.get("timestamp", "")).strip()
+        if timestamp:
+            return timestamp
+    return ""
+
+
+def _preserve_fresh_assessment_on_reconcile(
+    payload: dict[str, Any],
+    *,
+    previous_last_scan: str,
+    latest_trusted_import_ts: str,
+) -> bool:
+    """Suppress immediate re-staling after a fresh trusted review import.
+
+    A scan that runs directly after a trusted review import is reconciling the
+    issue inventory up to the code state that was just reviewed. If the
+    assessment was imported after the previous scan, we should not immediately
+    invalidate it based on that older scan delta.
+    """
+    if previous_last_scan == "" or latest_trusted_import_ts == "":
+        return False
+    if latest_trusted_import_ts <= previous_last_scan:
+        return False
+    assessed_at = str(payload.get("assessed_at", "")).strip()
+    if assessed_at == "":
+        return False
+    return assessed_at >= latest_trusted_import_ts
+
+
 def _mark_stale_on_mechanical_change(
     state: StateModel,
     *,
     changed_detectors: set[str],
     now: str,
+    previous_last_scan: str,
 ) -> None:
     """Mark subjective assessments stale when mechanical issues change.
 
@@ -74,6 +111,7 @@ def _mark_stale_on_mechanical_change(
     if not affected_dims:
         return
 
+    latest_trusted_import_ts = _latest_trusted_assessment_import_timestamp(state)
     for dimension in sorted(affected_dims):
         if dimension not in assessments:
             continue
@@ -82,6 +120,12 @@ def _mark_stale_on_mechanical_change(
             continue
         # Don't overwrite if already stale
         if payload.get("needs_review_refresh"):
+            continue
+        if _preserve_fresh_assessment_on_reconcile(
+            payload,
+            previous_last_scan=previous_last_scan,
+            latest_trusted_import_ts=latest_trusted_import_ts,
+        ):
             continue
         payload["needs_review_refresh"] = True
         payload["refresh_reason"] = "mechanical_issues_changed"
@@ -117,6 +161,7 @@ def merge_scan(
             ensure_work_item_semantics(issue)
     resolved_options = options or MergeScanOptions()
 
+    previous_last_scan = str(state.get("last_scan", "") or "")
     now = utc_now()
     _record_scan_metadata(
         state,
@@ -178,7 +223,10 @@ def merge_scan(
     changed_detectors = upsert_changed | resolve_changed
     if changed_detectors:
         _mark_stale_on_mechanical_change(
-            state, changed_detectors=changed_detectors, now=now,
+            state,
+            changed_detectors=changed_detectors,
+            now=now,
+            previous_last_scan=previous_last_scan,
         )
 
     _recompute_stats(

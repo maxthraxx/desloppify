@@ -26,6 +26,7 @@ from desloppify.engine._plan.sync.triage import sync_triage_needed
 from desloppify.engine._plan.triage.snapshot import build_triage_snapshot
 from desloppify.engine._plan.sync.workflow import (
     ScoreSnapshot,
+    _subjective_review_current_for_cycle,
     sync_communicate_score_needed,
     sync_create_plan_needed,
 )
@@ -161,8 +162,12 @@ def reconcile_plan(plan: dict, state: dict, *, target_strict: float) -> Reconcil
     # scored and communicate-score hasn't fired yet this cycle.  The phase
     # cleanup safety net still prunes if this peek is wrong.
     will_inject_workflow = (
-        not policy.unscored_ids
-        and "previous_plan_start_scores" not in plan
+        "previous_plan_start_scores" not in plan
+        and _subjective_review_current_for_cycle(
+            plan,
+            state,
+            policy=policy,
+        )
     )
     if will_inject_workflow:
         result.subjective = QueueSyncResult()

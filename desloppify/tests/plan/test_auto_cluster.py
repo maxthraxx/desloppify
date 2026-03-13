@@ -252,6 +252,26 @@ def test_remove_from_cluster_clears_focus_when_cluster_becomes_non_actionable():
     assert plan["active_cluster"] is None
 
 
+def test_remove_from_cluster_also_clears_step_issue_refs():
+    plan = empty_plan()
+    ensure_plan_defaults(plan)
+    create_cluster(plan, "manual/cleanup")
+    add_to_cluster(plan, "manual/cleanup", ["u1", "u2"])
+    plan["clusters"]["manual/cleanup"]["action_steps"] = [
+        {"title": "Fix first issue", "issue_refs": ["u1"]},
+        {"title": "Fix both issues", "issue_refs": ["u1", "u2"]},
+        {"title": "Keep second issue", "issue_refs": ["u2"]},
+    ]
+
+    removed = remove_from_cluster(plan, "manual/cleanup", ["u1"])
+
+    assert removed == 1
+    assert plan["clusters"]["manual/cleanup"]["issue_ids"] == ["u2"]
+    assert plan["clusters"]["manual/cleanup"]["action_steps"][0]["issue_refs"] == []
+    assert plan["clusters"]["manual/cleanup"]["action_steps"][1]["issue_refs"] == ["u2"]
+    assert plan["clusters"]["manual/cleanup"]["action_steps"][2]["issue_refs"] == ["u2"]
+
+
 def test_auto_cluster_deletes_stale():
     plan = empty_plan()
     state = _state_with(

@@ -4,11 +4,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from desloppify.engine._plan.cluster_membership import cluster_issue_ids
 from desloppify.engine._plan.constants import TRIAGE_IDS, is_synthetic_id
 from desloppify.engine._plan.policy.stale import open_review_ids
 from desloppify.engine._plan.schema import Cluster, PlanModel
 from desloppify.engine._plan.triage.playbook import TriageProgress, compute_triage_progress
 from desloppify.engine._state.schema import StateModel
+
+
+_cluster_issue_ids = cluster_issue_ids
 
 
 def _normalized_issue_id_list(raw_ids: object) -> list[str]:
@@ -25,32 +29,6 @@ def _normalized_issue_id_list(raw_ids: object) -> list[str]:
         seen.add(issue_id)
         normalized.append(issue_id)
     return normalized
-
-
-def _cluster_issue_ids(cluster: Cluster) -> list[str]:
-    ordered: list[str] = []
-    seen: set[str] = set()
-
-    def _append(raw_ids: object) -> None:
-        if not isinstance(raw_ids, list):
-            return
-        for raw_id in raw_ids:
-            if not isinstance(raw_id, str):
-                continue
-            issue_id = raw_id.strip()
-            if not issue_id or issue_id in seen:
-                continue
-            seen.add(issue_id)
-            ordered.append(issue_id)
-
-    _append(cluster.get("issue_ids"))
-    steps = cluster.get("action_steps")
-    if steps is not None:
-        for step in steps:
-            if not isinstance(step, dict):
-                continue
-            _append(step.get("issue_refs"))
-    return ordered
 
 
 def plan_review_ids(plan: PlanModel) -> list[str]:
@@ -146,14 +124,14 @@ def manual_clusters_with_issues(plan: PlanModel) -> list[str]:
     return [
         name
         for name, cluster in plan.get("clusters", {}).items()
-        if _cluster_issue_ids(cluster) and not cluster.get("auto")
+        if cluster_issue_ids(cluster) and not cluster.get("auto")
     ]
 
 
 def find_cluster_for(issue_id: str, clusters: dict[str, Cluster]) -> str | None:
     """Return the owning cluster name for an issue ID, if any."""
     for name, cluster in clusters.items():
-        if issue_id in _cluster_issue_ids(cluster):
+        if issue_id in cluster_issue_ids(cluster):
             return name
     return None
 

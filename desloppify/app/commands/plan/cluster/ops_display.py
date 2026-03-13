@@ -9,7 +9,7 @@ from desloppify.app.commands.plan.shared.cluster_membership import cluster_issue
 from desloppify.base.output.terminal import colorize
 from desloppify.engine.plan_state import load_plan
 
-from .cluster_steps import print_step
+from .steps import print_step
 
 
 def _print_cluster_member(idx: int, fid: str, issue: dict | None) -> None:

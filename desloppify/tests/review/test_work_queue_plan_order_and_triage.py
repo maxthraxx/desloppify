@@ -257,6 +257,39 @@ def test_legacy_force_visible_triage_stage_is_ignored_during_execute():
     assert ids == ["smells::src/a.py::x"]
 
 
+def test_stale_triage_surfaces_observe_instead_of_empty_queue():
+    """When new review findings exist after triage, next should surface triage recovery."""
+    from desloppify.engine._plan.schema import empty_plan
+
+    review_issue = _issue(
+        "review::.::holistic::design_coherence::needs_triage",
+        detector="review",
+        tier=4,
+        confidence="high",
+        detail={"dimension": "design_coherence", "holistic": True},
+    )
+    state = _state([review_issue])
+    state["scan_count"] = 7
+
+    plan = empty_plan()
+    plan["queue_order"] = [review_issue["id"]]
+    plan["refresh_state"] = {
+        "lifecycle_phase": "review_postflight",
+        "postflight_scan_completed_at_scan_count": 7,
+    }
+    plan["epic_triage_meta"] = {
+        "triaged_ids": ["review::.::holistic::older::already_triaged"],
+        "triage_stages": {
+            "observe": {"confirmed_at": "2026-03-13T14:00:00+00:00"},
+            "reflect": {"confirmed_at": "2026-03-13T14:01:00+00:00"},
+        },
+    }
+
+    queue = build_work_queue(state, count=None, include_subjective=True, plan=plan)
+    ids = [item["id"] for item in queue["items"]]
+    assert ids[0] == "triage::observe"
+
+
 def test_postflight_synthetic_queue_keeps_objective_backlog_suppressed():
     """Synthetic-only postflight work must not reactivate implicit execute mode."""
     from desloppify.engine._plan.schema import empty_plan
@@ -762,3 +795,49 @@ def test_triage_stages_sort_after_workflow_in_natural_ranking():
     wf_key = item_sort_key(workflow_item)
     tr_key = item_sort_key(triage_item)
     assert wf_key < tr_key, "workflow actions should sort before triage stages"
+
+
+def test_fresh_under_target_postflight_review_preempts_persisted_workflow() -> None:
+    """Fresh below-target postflight review surfaces before queued workflow items."""
+    state = _state(
+        [],
+        dimension_scores={
+            "Naming quality": {
+                "score": 82.0,
+                "strict": 82.0,
+                "failing": 0,
+                "checks": 1,
+                "detectors": {
+                    "subjective_assessment": {
+                        "dimension_key": "naming_quality",
+                        "placeholder": False,
+                    },
+                },
+            },
+        },
+    )
+    state["scan_count"] = 19
+    state["subjective_assessments"] = {
+        "naming_quality": {
+            "score": 82.0,
+            "placeholder": False,
+        }
+    }
+    plan = {
+        "queue_order": ["workflow::communicate-score", "workflow::create-plan"],
+        "queue_skipped": {},
+        "refresh_state": {
+            "postflight_scan_completed_at_scan_count": 19,
+            "lifecycle_phase": "workflow_postflight",
+        },
+    }
+
+    queue = build_work_queue(state, count=None, include_subjective=True, plan=plan)
+    assert [item["id"] for item in queue["items"]] == ["subjective::naming_quality"]
+
+    plan["refresh_state"]["subjective_review_completed_at_scan_count"] = 19
+    queue = build_work_queue(state, count=None, include_subjective=True, plan=plan)
+    assert [item["id"] for item in queue["items"]] == [
+        "workflow::communicate-score",
+        "workflow::create-plan",
+    ]

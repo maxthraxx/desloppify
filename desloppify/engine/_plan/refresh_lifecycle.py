@@ -9,6 +9,7 @@ from desloppify.engine._plan.schema import PlanModel, ensure_plan_defaults
 from desloppify.engine._state.issue_semantics import counts_toward_objective_backlog
 
 _POSTFLIGHT_SCAN_KEY = "postflight_scan_completed_at_scan_count"
+_SUBJECTIVE_REVIEW_KEY = "subjective_review_completed_at_scan_count"
 _LIFECYCLE_PHASE_KEY = "lifecycle_phase"
 
 LIFECYCLE_PHASE_REVIEW_INITIAL = "review_initial"
@@ -145,6 +146,39 @@ def mark_postflight_scan_completed(
     return True
 
 
+def subjective_review_completed_for_scan(
+    plan: PlanModel,
+    *,
+    scan_count: int | None,
+) -> bool:
+    """Return True when postflight subjective review finished for *scan_count*."""
+    refresh_state = plan.get("refresh_state")
+    if not isinstance(refresh_state, dict):
+        return False
+    try:
+        normalized_scan_count = int(scan_count or 0)
+    except (TypeError, ValueError):
+        normalized_scan_count = 0
+    return refresh_state.get(_SUBJECTIVE_REVIEW_KEY) == normalized_scan_count
+
+
+def mark_subjective_review_completed(
+    plan: PlanModel,
+    *,
+    scan_count: int | None,
+) -> bool:
+    """Record that subjective review completed for the current postflight scan."""
+    refresh_state = _refresh_state(plan)
+    try:
+        normalized_scan_count = int(scan_count or 0)
+    except (TypeError, ValueError):
+        normalized_scan_count = 0
+    if refresh_state.get(_SUBJECTIVE_REVIEW_KEY) == normalized_scan_count:
+        return False
+    refresh_state[_SUBJECTIVE_REVIEW_KEY] = normalized_scan_count
+    return True
+
+
 def clear_postflight_scan_completion(
     plan: PlanModel,
     *,
@@ -178,7 +212,9 @@ __all__ = [
     "LIFECYCLE_PHASE_WORKFLOW",
     "LIFECYCLE_PHASE_WORKFLOW_POSTFLIGHT",
     "mark_postflight_scan_completed",
+    "mark_subjective_review_completed",
     "postflight_scan_pending",
+    "subjective_review_completed_for_scan",
     "set_lifecycle_phase",
     "VALID_LIFECYCLE_PHASES",
 ]

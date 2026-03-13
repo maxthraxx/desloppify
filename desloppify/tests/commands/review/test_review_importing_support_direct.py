@@ -9,6 +9,7 @@ import pytest
 
 import desloppify.app.commands.review.importing.cmd as import_cmd_mod
 import desloppify.app.commands.review.importing.flags as flags_mod
+import desloppify.app.commands.review.importing.output as import_output_mod
 import desloppify.app.commands.review.importing.plan_sync as plan_sync_mod
 import desloppify.app.commands.review.importing.results as results_mod
 import desloppify.engine._plan.constants as plan_constants_mod
@@ -119,6 +120,34 @@ def test_sync_plan_after_import_no_living_plan(monkeypatch) -> None:
     )
 
 
+def test_sync_plan_after_import_marks_subjective_review_complete_for_current_scan(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plan = {
+        "queue_order": [],
+        "refresh_state": {"postflight_scan_completed_at_scan_count": 7},
+    }
+    _patch_basic_plan_sync_runtime(monkeypatch, plan=plan)
+
+    state = {
+        "scan_count": 7,
+        "subjective_assessments": {
+            "naming_quality": {"score": 82.0},
+        },
+    }
+    outcome = plan_sync_mod.sync_plan_after_import(
+        state=state,
+        diff={"new": 0, "reopened": 0, "auto_resolved": 0},
+        assessment_mode="trusted_internal",
+        request=_sync_request(
+            import_payload={"assessments": {"Naming Quality": 82}},
+        ),
+    )
+
+    assert outcome.status == "synced"
+    assert plan["refresh_state"]["subjective_review_completed_at_scan_count"] == 7
+
+
 def test_print_review_import_sync_reports_new_ids_and_triage_commands(capsys) -> None:
     state = {
         "issues": {
@@ -137,6 +166,7 @@ def test_print_review_import_sync_reports_new_ids_and_triage_commands(capsys) ->
         result,
         workflow_injected=False,
         triage_injected=True,
+        outcome=plan_sync_mod.PlanImportSyncOutcome(status="synced"),
     )
 
     out = capsys.readouterr().out
@@ -145,6 +175,23 @@ def test_print_review_import_sync_reports_new_ids_and_triage_commands(capsys) ->
     assert "stale review work item(s) removed from queue" in out
     assert plan_sync_mod.TRIAGE_CMD_RUN_STAGES_CODEX in out
     assert plan_sync_mod.TRIAGE_CMD_RUN_STAGES_CLAUDE in out
+
+
+def test_print_open_review_summary_avoids_duplicate_count_phrase(capsys) -> None:
+    next_command = import_output_mod.print_open_review_summary(
+        {
+            "issues": {
+                "review::alpha": {"status": "open", "detector": "review"},
+                "review::beta": {"status": "open", "detector": "review"},
+            }
+        },
+        colorize_fn=lambda text, _tone: text,
+    )
+
+    out = capsys.readouterr().out
+    assert "2 review work items open total" in out
+    assert "(2 review work items open total)" not in out
+    assert next_command == "desloppify show review --status open"
 
 
 def test_sync_plan_after_import_scopes_living_plan_to_state_file(monkeypatch, tmp_path) -> None:
@@ -182,13 +229,14 @@ def test_sync_plan_after_import_handles_plan_exceptions(monkeypatch, capsys) -> 
     )
     monkeypatch.setattr(plan_sync_mod, "PLAN_LOAD_EXCEPTIONS", (OSError,))
 
-    plan_sync_mod.sync_plan_after_import(
+    outcome = plan_sync_mod.sync_plan_after_import(
         state={},
         diff={"new": 1, "reopened": 0},
         assessment_mode="issues_only",
     )
     out = capsys.readouterr().out
-    assert "skipped plan sync after review import" in out
+    assert "Plan sync degraded" in out
+    assert outcome.status == "degraded"
 
 
 def test_sync_plan_after_import_runs_review_sync_for_auto_resolved_deltas(monkeypatch) -> None:
@@ -296,6 +344,7 @@ def test_sync_plan_after_import_logs_triage_provenance(monkeypatch) -> None:
     assert detail["triage_injected_ids"] == ["triage::observe", "triage::reflect"]
     assert detail["triage_deferred"] is False
     assert detail["stale_pruned_from_queue"] == []
+    assert detail["sync_status"] == "synced"
 
 
 def test_sync_plan_after_import_keeps_workflow_before_triage(monkeypatch) -> None:
@@ -778,19 +827,20 @@ def test_plan_sync_source_preserves_scoped_sync_pipeline_contract() -> None:
     assert "plan_path = None" in src
     assert "plan_path_for_state(Path(state_file))" in src
     assert "if not has_living_plan(plan_path):" in src
+    assert 'return PlanImportSyncOutcome(status="skipped")' in src
     assert "plan = load_plan(plan_path)" in src
     assert 'trusted = assessment_mode in {"trusted_internal", "attested_external"}' in src
-    assert "import_result = _sync_review_delta(plan, state, sync_inputs)" in src
-    assert "import_scores_result = sync_import_scores_needed(" in src
-    assert "clear_score_communicated_sentinel(plan)" in src
     assert "sync_inputs = _build_import_sync_inputs(diff, import_payload)" in src
-    assert "result = ReconcileResult()" in src
     assert "was_boundary_ready = live_planned_queue_empty(plan)" in src
-    assert "if was_boundary_ready and (" in src
-    assert "_prune_covered_subjective_ids_from_plan" in src
+    assert "transition = _apply_import_plan_transitions(" in src
+    assert "import_result = transition.import_result" in src
+    assert "covered_pruned = transition.covered_pruned" in src
+    assert "import_scores_result = transition.import_scores_result" in src
+    assert "result = transition.reconcile_result" in src
     assert "_append_review_import_sync_log(" in src
     assert "save_plan(plan, plan_path)" in src
     assert "_print_review_import_sync(" in src
+    assert 'return PlanImportSyncOutcome(status="degraded", message=message)' in src
 
 
 def test_results_source_preserves_query_and_narrative_contract() -> None:

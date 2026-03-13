@@ -54,11 +54,13 @@ def test_get_lang_hook_retries_after_import_failure(monkeypatch) -> None:
 
     monkeypatch.setattr(registry_mod.importlib, "import_module", _fake_import_module)
 
+    # First attempt fails (transient import error), hook returns None.
     assert get_lang_hook("retrylang", "test_coverage") is None
+    # Second attempt succeeds via lazy bootstrap.
     assert get_lang_hook("retrylang", "test_coverage") is sentinel
 
 
-def test_get_lang_hook_bootstraps_module_register_entrypoint(monkeypatch) -> None:
+def test_register_lang_hooks_supports_module_register_entrypoint(monkeypatch) -> None:
     clear_lang_hooks_for_tests()
     sentinel = object()
     real_import_module = importlib.import_module
@@ -77,5 +79,5 @@ def test_get_lang_hook_bootstraps_module_register_entrypoint(monkeypatch) -> Non
 
     monkeypatch.setattr(registry_mod.importlib, "import_module", _fake_import_module)
 
+    # Lazy bootstrap should call register() which registers the hook.
     assert get_lang_hook("bootstraplang", "test_coverage") is sentinel
-

@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from desloppify.app.commands.plan import cluster_update as cluster_update_mod
+from desloppify.app.commands.plan.cluster import update as cluster_update_mod
 
 from desloppify.app.commands.plan.triage.validation.core import (
     _cluster_file_overlaps,

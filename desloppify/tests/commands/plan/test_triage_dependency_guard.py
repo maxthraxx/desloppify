@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import argparse
 
-import desloppify.app.commands.plan.override_resolve_cmd as override_mod
-import desloppify.app.commands.plan.override_resolve_workflow as override_workflow_mod
-from desloppify.app.commands.plan.override_resolve_helpers import blocked_triage_stages as _blocked_triage_stages
+import desloppify.app.commands.plan.override.resolve_cmd as override_mod
+import desloppify.app.commands.plan.override.resolve_workflow as override_workflow_mod
+from desloppify.app.commands.plan.override.resolve_helpers import blocked_triage_stages as _blocked_triage_stages
 from desloppify.engine._plan.schema import empty_plan
 from desloppify.engine._plan.constants import TRIAGE_STAGE_IDS
 
@@ -117,6 +117,7 @@ def test_plan_resolve_allows_unblocked_triage_stage(monkeypatch, capsys):
     plan = _plan_with_triage_stages("observe")  # observe confirmed
 
     monkeypatch.setattr(override_workflow_mod, "load_plan", lambda *a, **kw: plan)
+    monkeypatch.setattr(override_workflow_mod, "live_planned_queue_empty", lambda _plan: False)
 
     saved_plans = []
     monkeypatch.setattr(override_workflow_mod, "save_plan", lambda p, *a, **kw: saved_plans.append(p))
@@ -134,6 +135,7 @@ def test_plan_resolve_force_resolve_overrides_block(monkeypatch, capsys):
     plan = _plan_with_triage_stages()  # nothing confirmed
 
     monkeypatch.setattr(override_workflow_mod, "load_plan", lambda *a, **kw: plan)
+    monkeypatch.setattr(override_workflow_mod, "live_planned_queue_empty", lambda _plan: False)
 
     saved_plans = []
     monkeypatch.setattr(override_workflow_mod, "save_plan", lambda p, *a, **kw: saved_plans.append(p))
@@ -152,6 +154,7 @@ def test_plan_resolve_observe_is_never_blocked(monkeypatch, capsys):
     plan = _plan_with_triage_stages()  # nothing confirmed
 
     monkeypatch.setattr(override_workflow_mod, "load_plan", lambda *a, **kw: plan)
+    monkeypatch.setattr(override_workflow_mod, "live_planned_queue_empty", lambda _plan: False)
 
     saved_plans = []
     monkeypatch.setattr(override_workflow_mod, "save_plan", lambda p, *a, **kw: saved_plans.append(p))

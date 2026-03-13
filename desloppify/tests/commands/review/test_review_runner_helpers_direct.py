@@ -8,6 +8,7 @@ from pathlib import Path
 
 import desloppify.app.commands.review.batch.prompt_template as prompt_template_mod
 import desloppify.app.commands.review.runner_parallel as runner_helpers_mod
+from desloppify.app.commands.review.batch.execution import CollectBatchResultsRequest
 
 
 def test_execute_batches_parallel_emits_heartbeat_event() -> None:
@@ -75,10 +76,12 @@ def test_collect_batch_results_recovers_from_log_stdout_payload(tmp_path: Path) 
     )
 
     batch_results, failures = runner_helpers_mod.collect_batch_results(
-        selected_indexes=[0],
-        failures=[0],
-        output_files={0: raw_path},
-        allowed_dims={"logic_clarity"},
+        request=CollectBatchResultsRequest(
+            selected_indexes=[0],
+            failures=[0],
+            output_files={0: raw_path},
+            allowed_dims={"logic_clarity"},
+        ),
         extract_payload_fn=lambda raw: json.loads(raw),
         normalize_result_fn=lambda parsed, _allowed: (
             parsed.get("assessments", {}),
@@ -102,10 +105,12 @@ def test_collect_batch_results_marks_failure_on_normalize_error(tmp_path: Path) 
     raw_path.write_text(json.dumps({"assessments": {"logic_clarity": 50.0}, "issues": []}))
 
     batch_results, failures = runner_helpers_mod.collect_batch_results(
-        selected_indexes=[0],
-        failures=[],
-        output_files={0: raw_path},
-        allowed_dims={"logic_clarity"},
+        request=CollectBatchResultsRequest(
+            selected_indexes=[0],
+            failures=[],
+            output_files={0: raw_path},
+            allowed_dims={"logic_clarity"},
+        ),
         extract_payload_fn=lambda raw: json.loads(raw),
         normalize_result_fn=lambda _parsed, _allowed: (_ for _ in ()).throw(
             ValueError("normalize failed")

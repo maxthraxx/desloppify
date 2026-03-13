@@ -71,6 +71,86 @@ def test_update_living_plan_after_resolve_fixed_flow(monkeypatch, capsys) -> Non
     assert "add" in calls and "clear" in calls and "save" in calls
 
 
+def test_update_living_plan_after_resolve_reconciles_when_queue_drains(monkeypatch) -> None:
+    plan = {
+        "queue_order": ["workflow::create-plan"],
+        "overrides": {},
+        "clusters": {},
+    }
+    state = {"config": {"target_strict_score": 97}}
+    seen: list[object] = []
+
+    monkeypatch.setattr(living_plan_mod, "has_living_plan", lambda _p=None: True)
+    monkeypatch.setattr(living_plan_mod, "load_plan", lambda _p=None: plan)
+
+    def _purge(_plan, _ids):
+        _plan["queue_order"] = []
+        return 1
+
+    monkeypatch.setattr(living_plan_mod, "purge_ids", _purge)
+    monkeypatch.setattr(living_plan_mod, "auto_complete_steps", lambda _plan: [])
+    monkeypatch.setattr(living_plan_mod, "append_log_entry", lambda *_a, **_k: None)
+    monkeypatch.setattr(living_plan_mod, "add_uncommitted_issues", lambda *_a, **_k: None)
+    monkeypatch.setattr(living_plan_mod, "clear_postflight_scan_completion", lambda *_a, **_k: None)
+    monkeypatch.setattr(living_plan_mod, "save_plan", lambda _plan, _p=None: None)
+    monkeypatch.setattr(living_plan_mod, "live_planned_queue_empty", lambda _plan: True)
+    monkeypatch.setattr(
+        living_plan_mod,
+        "target_strict_score_from_config",
+        lambda config: seen.append(("target", config)) or 97.0,
+    )
+    monkeypatch.setattr(
+        living_plan_mod,
+        "reconcile_plan",
+        lambda _plan, _state, *, target_strict: seen.append(
+            ("reconcile", target_strict, _state)
+        ),
+    )
+
+    living_plan_mod.update_living_plan_after_resolve(
+        args=_args(status="fixed", note="done"),
+        all_resolved=["workflow::create-plan"],
+        attestation="attest",
+        state=state,
+    )
+
+    assert ("target", state["config"]) in seen
+    assert ("reconcile", 97.0, state) in seen
+
+
+def test_update_living_plan_after_resolve_skips_reconcile_without_state(monkeypatch) -> None:
+    plan = {
+        "queue_order": ["a"],
+        "overrides": {},
+        "clusters": {},
+    }
+    seen: list[str] = []
+
+    monkeypatch.setattr(living_plan_mod, "has_living_plan", lambda _p=None: True)
+    monkeypatch.setattr(living_plan_mod, "load_plan", lambda _p=None: plan)
+    monkeypatch.setattr(living_plan_mod, "purge_ids", lambda _plan, _ids: 1)
+    monkeypatch.setattr(living_plan_mod, "auto_complete_steps", lambda _plan: [])
+    monkeypatch.setattr(living_plan_mod, "append_log_entry", lambda *_a, **_k: None)
+    monkeypatch.setattr(living_plan_mod, "add_uncommitted_issues", lambda *_a, **_k: None)
+    monkeypatch.setattr(living_plan_mod, "clear_postflight_scan_completion", lambda *_a, **_k: None)
+    monkeypatch.setattr(living_plan_mod, "save_plan", lambda _plan, _p=None: None)
+    monkeypatch.setattr(living_plan_mod, "live_planned_queue_empty", lambda _plan: True)
+    monkeypatch.setattr(
+        living_plan_mod,
+        "reconcile_plan",
+        lambda *_a, **_k: seen.append("reconcile"),
+    )
+
+    living_plan_mod.update_living_plan_after_resolve(
+        args=_args(status="fixed", note="done"),
+        all_resolved=["a"],
+        attestation="attest",
+        state=None,
+    )
+
+    assert seen == []
+
+
 def test_update_living_plan_after_resolve_handles_plan_exceptions(monkeypatch, capsys) -> None:
     monkeypatch.setattr(living_plan_mod, "has_living_plan", lambda _p=None: True)
     monkeypatch.setattr(

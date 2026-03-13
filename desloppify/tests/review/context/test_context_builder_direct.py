@@ -6,7 +6,10 @@ import re
 from types import SimpleNamespace
 
 from desloppify.intelligence.review._context.models import ReviewContext
-from desloppify.intelligence.review.context_builder import build_review_context_inner
+from desloppify.intelligence.review.context_builder import (
+    ReviewContextBuildServices,
+    build_review_context_inner,
+)
 
 
 class _ZoneMap:
@@ -51,21 +54,23 @@ def test_build_review_context_inner_populates_sections() -> None:
         lang,
         state,
         ReviewContext(),
-        read_file_text_fn=lambda path: content_by_path.get(path),
-        abs_path_fn=lambda path: path,
-        rel_fn=lambda path: path,
-        importer_count_fn=lambda entry: entry.get("importers", 0),
-        default_review_module_patterns_fn=lambda content: ["service"] if "def" in content else [],
-        func_name_re=re.compile(r"def\s+([A-Za-z_]\w*)"),
-        class_name_re=re.compile(r"class\s+([A-Za-z_]\w*)"),
-        name_prefix_re=re.compile(r"([a-z]+)"),
-        error_patterns={
-            "has_try": re.compile(r"\btry\b"),
-            "has_raise": re.compile(r"\braise\b"),
-        },
-        gather_ai_debt_signals_fn=lambda file_contents, rel_fn: {"files": sorted(file_contents)},
-        gather_auth_context_fn=lambda file_contents, rel_fn: {"auth_files": len(file_contents)},
-        classify_error_strategy_fn=lambda content: "raises" if "raise" in content else "returns",
+        ReviewContextBuildServices(
+            read_file_text=lambda path: content_by_path.get(path),
+            abs_path=lambda path: path,
+            rel_path=lambda path: path,
+            importer_count=lambda entry: entry.get("importers", 0),
+            default_review_module_patterns=lambda content: ["service"] if "def" in content else [],
+            gather_ai_debt_signals=lambda file_contents, rel_fn: {"files": sorted(file_contents)},
+            gather_auth_context=lambda file_contents, rel_fn: {"auth_files": len(file_contents)},
+            classify_error_strategy=lambda content: "raises" if "raise" in content else "returns",
+            func_name_re=re.compile(r"def\s+([A-Za-z_]\w*)"),
+            class_name_re=re.compile(r"class\s+([A-Za-z_]\w*)"),
+            name_prefix_re=re.compile(r"([a-z]+)"),
+            error_patterns={
+                "has_try": re.compile(r"\btry\b"),
+                "has_raise": re.compile(r"\braise\b"),
+            },
+        ),
     )
 
     assert ctx.naming_vocabulary["total_names"] == 3
@@ -94,20 +99,24 @@ def test_build_review_context_inner_falls_back_to_default_module_patterns() -> N
         lang,
         {"issues": {}},
         ReviewContext(),
-        read_file_text_fn=lambda _path: "def run_task():\n    return 1\n",
-        abs_path_fn=lambda path: path,
-        rel_fn=lambda path: path,
-        importer_count_fn=lambda _entry: 0,
-        default_review_module_patterns_fn=lambda _content: ["fallback_pattern", "fallback_pattern"],
-        func_name_re=re.compile(r"def\s+([A-Za-z_]\w*)"),
-        class_name_re=re.compile(r"class\s+([A-Za-z_]\w*)"),
-        name_prefix_re=re.compile(r"([a-z]+)"),
-        error_patterns={},
-        gather_ai_debt_signals_fn=lambda _file_contents, rel_fn: {},
-        gather_auth_context_fn=lambda _file_contents, rel_fn: {},
-        classify_error_strategy_fn=lambda _content: "",
+        ReviewContextBuildServices(
+            read_file_text=lambda _path: "def run_task():\n    return 1\n",
+            abs_path=lambda path: path,
+            rel_path=lambda path: path,
+            importer_count=lambda _entry: 0,
+            default_review_module_patterns=lambda _content: [
+                "fallback_pattern",
+                "fallback_pattern",
+            ],
+            gather_ai_debt_signals=lambda _file_contents, rel_fn: {},
+            gather_auth_context=lambda _file_contents, rel_fn: {},
+            classify_error_strategy=lambda _content: "",
+            func_name_re=re.compile(r"def\s+([A-Za-z_]\w*)"),
+            class_name_re=re.compile(r"class\s+([A-Za-z_]\w*)"),
+            name_prefix_re=re.compile(r"([a-z]+)"),
+            error_patterns={},
+        ),
     )
 
     assert ctx.module_patterns == {}
     assert ctx.codebase_stats["avg_file_loc"] == 2
-

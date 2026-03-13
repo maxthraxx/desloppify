@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from desloppify.base.discovery.source import find_py_files
-from desloppify.engine.hook_registry import register_lang_hooks
 from desloppify.engine.policy.zones import COMMON_ZONE_RULES, Zone, ZoneRule
 from desloppify.languages._framework.base.phase_builders import (
     detector_phase_security,
@@ -14,6 +13,7 @@ from desloppify.languages._framework.base.phase_builders import (
     shared_subjective_duplicates_tail,
 )
 from desloppify.languages._framework.registry.registration import register_full_plugin
+from desloppify.languages._framework.registry.state import register_lang_hooks
 from desloppify.languages._framework.base.shared_phases import phase_private_imports
 from desloppify.languages._framework.base.types import (
     DetectorCoverageStatus,

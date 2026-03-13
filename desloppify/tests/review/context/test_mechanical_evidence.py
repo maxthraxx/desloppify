@@ -495,6 +495,36 @@ class TestMechanicalStaleness:
         dc = state["subjective_assessments"]["design_coherence"]
         assert "needs_review_refresh" not in dc
 
+    def test_fresh_trusted_import_survives_immediate_reconcile_scan(self):
+        from desloppify.engine._state.merge import merge_scan
+        from desloppify.engine._state.schema import empty_state
+
+        state = empty_state()
+        state["last_scan"] = "2026-03-13T13:09:25+00:00"
+        state["assessment_import_audit"] = [
+            {
+                "mode": "trusted_internal",
+                "timestamp": "2026-03-13T15:14:29+00:00",
+            }
+        ]
+        state["subjective_assessments"] = {
+            "design_coherence": {
+                "score": 79.0,
+                "assessed_at": "2026-03-13T15:14:29+00:00",
+                "source": "holistic",
+            },
+        }
+
+        new_issues = [
+            _issue(id="s1", detector="structural", file="big.py", detail={"loc": 500}),
+        ]
+        merge_scan(state, new_issues)
+
+        dc = state["subjective_assessments"]["design_coherence"]
+        assert "needs_review_refresh" not in dc
+        assert "refresh_reason" not in dc
+        assert "stale_since" not in dc
+
     def test_already_stale_not_overwritten(self):
         from desloppify.engine._state.merge import merge_scan
         from desloppify.engine._state.schema import empty_state

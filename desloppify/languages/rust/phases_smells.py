@@ -5,12 +5,12 @@ from __future__ import annotations
 from pathlib import Path
 
 from desloppify.base.output.terminal import log
+from desloppify.engine._state.schema_types_issues import Issue
 from desloppify.engine.policy.zones import adjust_potential
 from desloppify.languages._framework.base.smell_contracts import normalize_smell_entries
 from desloppify.languages._framework.base.types import LangRuntimeContract
 from desloppify.languages._framework.issue_factories import make_smell_issues
 from desloppify.languages.rust.detectors.smells import detect_smells
-from desloppify.state import Issue
 
 
 def phase_smells(path: Path, lang: LangRuntimeContract) -> tuple[list[Issue], dict[str, int]]:

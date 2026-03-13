@@ -29,12 +29,15 @@ from desloppify.engine._plan.constants import (
     confirmed_triage_stage_names,
     recorded_unconfirmed_triage_stage_names,
 )
+from desloppify.engine._plan.triage.snapshot import build_triage_snapshot
 from desloppify.engine._plan.refresh_lifecycle import (
+    LIFECYCLE_PHASE_REVIEW_INITIAL,
     LIFECYCLE_PHASE_TRIAGE,
     LIFECYCLE_PHASE_TRIAGE_POSTFLIGHT,
     LIFECYCLE_PHASE_WORKFLOW,
     LIFECYCLE_PHASE_WORKFLOW_POSTFLIGHT,
     current_lifecycle_phase,
+    subjective_review_completed_for_scan,
 )
 from desloppify.engine.plan_triage import (
     TRIAGE_IDS,
@@ -131,6 +134,16 @@ def build_triage_stage_items(plan: dict, state: dict) -> list[WorkQueueItem]:
         if sid in present_ids
     }
     present_names.update(recorded_unconfirmed)
+    triage_snapshot = build_triage_snapshot(plan, state)
+    recovery_needed = (
+        not present_names
+        and bool(triage_snapshot.live_open_ids)
+        and triage_snapshot.triage_has_run
+        and triage_snapshot.is_triage_stale
+    )
+    if recovery_needed:
+        present_names = {name for name, _sid in TRIAGE_STAGE_SPECS}
+        confirmed = set()
     if not present_names:
         return []
 
@@ -228,6 +241,20 @@ def build_subjective_items(
         if latest_trusted_audit_ts:
             break
     current_phase = current_lifecycle_phase(plan) if isinstance(plan, dict) else None
+    current_scan_count = int(state.get("scan_count", 0) or 0)
+    postflight_scan_completed_this_scan = False
+    if isinstance(plan, dict):
+        refresh_state = plan.get("refresh_state")
+        if isinstance(refresh_state, dict):
+            postflight_scan_completed_this_scan = (
+                refresh_state.get("postflight_scan_completed_at_scan_count")
+                == current_scan_count
+            )
+    review_completed_this_scan = (
+        subjective_review_completed_for_scan(plan, scan_count=current_scan_count)
+        if isinstance(plan, dict)
+        else False
+    )
 
     def _suppressed_same_cycle_refresh(dimension_key: str, *, stale: bool) -> bool:
         if not stale or latest_trusted_audit_ts == "":
@@ -281,15 +308,23 @@ def build_subjective_items(
             or (strict_val <= 0.0 and int(entry.get("failing", 0)) == 0)
         )
         is_stale = bool(entry.get("stale"))
-        if not is_unassessed and not is_stale:
+        is_below_target = strict_val < threshold
+        needs_review = (
+            is_unassessed
+            or is_stale
+            or (
+                is_below_target
+                and postflight_scan_completed_this_scan
+                and current_phase != LIFECYCLE_PHASE_REVIEW_INITIAL
+                and not review_completed_this_scan
+            )
+        )
+        if not needs_review:
             continue
         if _suppressed_same_cycle_refresh(dim_key, stale=is_stale):
             continue
-        if strict_val >= threshold:
+        if not is_below_target and not is_unassessed:
             continue
-        # Live subjective work is limited to never-reviewed or explicitly
-        # stale dimensions. Fresh under-target scores remain advisory data,
-        # not active queue items.
         # If review issues already exist for this dimension, triage/fix them
         # before suggesting another review refresh pass.
         if open_review > 0:

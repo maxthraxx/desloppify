@@ -35,6 +35,7 @@ from desloppify.engine._plan.policy.project import (
 )
 from desloppify.engine._plan.schema import (
     ActionStep,
+    EpicTriageMeta,
     EPIC_PREFIX,
     PLAN_VERSION,
     VALID_EPIC_DIRECTIONS,
@@ -57,6 +58,7 @@ __all__ = [
     "Cluster",
     "CommitRecord",
     "EPIC_PREFIX",
+    "EpicTriageMeta",
     "ExecutionLogEntry",
     "ItemOverride",
     "PLAN_FILE",

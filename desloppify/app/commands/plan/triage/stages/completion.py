@@ -10,7 +10,6 @@ from desloppify.base.output.user_message import print_user_message
 from .records import record_confirm_existing_completion
 from .rendering import _print_complete_summary
 from ..validation.completion_policy import (
-    _completion_clusters_valid,
     _completion_strategy_valid,
     _confirm_existing_stages_valid,
     _confirm_note_valid,
@@ -20,6 +19,7 @@ from ..validation.completion_policy import (
     _require_prior_strategy_for_confirm,
     _resolve_completion_strategy,
     _resolve_confirm_existing_strategy,
+    evaluate_completion_readiness,
 )
 from ..validation.completion_stages import (
     _auto_confirm_enrich_for_complete,
@@ -203,7 +203,12 @@ def _cmd_triage_complete(
     ):
         return
 
-    if not _completion_clusters_valid(plan, state):
+    readiness = evaluate_completion_readiness(
+        plan,
+        state,
+        require_confirmed_stages=False,
+    )
+    if not readiness.ok:
         _record_incomplete_recovery(
             plan=plan,
             state=state,
@@ -212,7 +217,8 @@ def _cmd_triage_complete(
         )
         return
 
-    organized, total, _clusters = triage_coverage(plan, open_review_ids=review_ids)
+    organized = readiness.organized
+    total = readiness.total
     if total > 0 and organized == 0:
         _print_completion_coverage_warning(organized=organized, total=total)
         return

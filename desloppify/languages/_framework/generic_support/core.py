@@ -135,7 +135,7 @@ def generic_lang(
 
     # Register language-specific test coverage hooks if provided.
     if opts.test_coverage_module is not None:
-        from desloppify.engine.hook_registry import register_lang_hooks
+        from desloppify.languages._framework.registry.state import register_lang_hooks
 
         register_lang_hooks(name, test_coverage=opts.test_coverage_module)
 

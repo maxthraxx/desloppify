@@ -67,9 +67,22 @@ def test_completion_policy_helpers_cover_success_and_fail_paths(monkeypatch, cap
         lambda _plan, _state=None: ["c1"],
     )
     monkeypatch.setattr(completion_policy_mod, "active_triage_issue_scope", lambda _plan, _state=None: None)
+    monkeypatch.setattr(
+        completion_policy_mod,
+        "open_review_ids_from_state",
+        lambda _state: {"review::a.py::id1"},
+    )
+    monkeypatch.setattr(completion_policy_mod, "triage_coverage", lambda _plan, open_review_ids: (1, 1, []))
     monkeypatch.setattr(completion_policy_mod, "unenriched_clusters", lambda _plan, _state=None: [])
     monkeypatch.setattr(completion_policy_mod, "unclustered_review_issues", lambda _plan, _state: [])
     assert completion_policy_mod._completion_clusters_valid({"clusters": {}}, state={}) is True
+    readiness = completion_policy_mod.evaluate_completion_readiness(
+        {"clusters": {}},
+        state={},
+    )
+    assert readiness.ok is True
+    assert readiness.organized == 1
+    assert readiness.total == 1
 
     assert completion_policy_mod._resolve_completion_strategy("keep", meta={}) == "keep"
     assert completion_policy_mod._resolve_completion_strategy(None, meta={}) is None
@@ -116,6 +129,26 @@ def test_completion_policy_helpers_cover_success_and_fail_paths(monkeypatch, cap
 
     out = capsys.readouterr().out
     assert "Strategy too short" in out
+
+
+def test_runner_validate_completion_uses_shared_completion_boundary(monkeypatch, tmp_path: Path) -> None:
+    import desloppify.app.commands.plan.triage.runner.stage_validation as stage_validation_mod
+
+    monkeypatch.setattr(
+        stage_validation_mod,
+        "evaluate_completion_readiness",
+        lambda _plan, _state, require_confirmed_stages=False: completion_policy_mod.CompletionReadiness(
+            ok=True,
+            message="Advisory: shared boundary hit",
+            organized=2,
+            total=2,
+        ),
+    )
+
+    ok, message = stage_validation_mod.validate_completion({}, {}, tmp_path)
+
+    assert ok is True
+    assert message == "Advisory: shared boundary hit"
 
 
 def test_completion_stage_helpers_include_gate_and_auto_confirm_defaults(monkeypatch, capsys) -> None:

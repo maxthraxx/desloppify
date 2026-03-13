@@ -23,11 +23,11 @@ from desloppify.engine.plan_state import (
 )
 from desloppify.engine.plan_ops import append_log_entry
 
-from .override_resolve_helpers import (
+from .resolve_helpers import (
     check_cluster_guard,
     split_synthetic_patterns,
 )
-from .override_resolve_workflow import resolve_workflow_patterns
+from .resolve_workflow import resolve_workflow_patterns
 
 logger = logging.getLogger(__name__)
 

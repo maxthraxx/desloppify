@@ -308,8 +308,7 @@ def print_open_review_summary(state: StateModel, *, colorize_fn) -> str:
         return "desloppify scan"
     print(
         colorize_fn(
-            f"\n  {len(open_review)} review work item{'s' if len(open_review) != 1 else ''} open total "
-            f"({len(open_review)} review work item{'s' if len(open_review) != 1 else ''} open total)",
+            f"\n  {len(open_review)} review work item{'s' if len(open_review) != 1 else ''} open total",
             "bold",
         )
     )

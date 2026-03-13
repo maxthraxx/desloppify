@@ -33,6 +33,11 @@ from .execution_results import (
     merge_and_write_results,
 )
 from .execution_summary import build_run_summary_writer
+from .execution import (
+    CollectBatchResultsRequest,
+    LoadOrPreparePacketRequest,
+    PrepareRunArtifactsRequest,
+)
 from .scope import (
     normalize_dimension_list,
     print_preflight_dimension_scope_notice,
@@ -42,6 +47,7 @@ from .scope import (
 )
 
 if TYPE_CHECKING:
+    from ..runtime.policy import BatchRunPolicy
     from .execution import BatchRunDeps
 
 
@@ -96,18 +102,40 @@ class ExecutedBatchRunContext:
     failure_set: set[int]
 
 
-def _resolve_runtime_policy(args) -> tuple[bool, int, float, float, int, float, float, float]:
-    policy = resolve_batch_run_policy(args)
-    return (
-        policy.run_parallel,
-        policy.max_parallel_batches,
-        policy.heartbeat_seconds,
-        policy.batch_timeout_seconds,
-        policy.batch_max_retries,
-        policy.batch_retry_backoff_seconds,
-        policy.stall_warning_seconds,
-        policy.stall_kill_seconds,
-    )
+@dataclass(frozen=True)
+class PreparedPacketScope:
+    """Packet and selection state shared from prepare into execution."""
+
+    packet: dict[str, Any]
+    immutable_packet_path: Path
+    prompt_packet_path: Path
+    scan_path: str
+    packet_dimensions: list[str]
+    scored_dimensions: list[str]
+    batches: list[dict[str, Any]]
+    selected_indexes: list[int]
+
+
+@dataclass(frozen=True)
+class PreparedRunArtifacts:
+    """Runtime artifacts and callbacks created for one batch run."""
+
+    run_dir: Path
+    logs_dir: Path
+    prompt_files: dict[int, Path]
+    output_files: dict[int, Path]
+    log_files: dict[int, Path]
+    run_log_path: Path
+    append_run_log: Any
+    batch_positions: dict[int, int]
+    batch_status: dict[str, dict[str, object]]
+    report_progress: Any
+    record_issue: Any
+    write_run_summary: Any
+
+
+def _resolve_runtime_policy(args) -> BatchRunPolicy:
+    return resolve_batch_run_policy(args)
 
 
 def _prepare_packet_scope(
@@ -118,13 +146,15 @@ def _prepare_packet_scope(
     config: dict[str, Any],
     deps: BatchRunDeps,
     stamp: str,
-) -> tuple[dict[str, Any], Path, Path, str, list[str], list[str], list[dict[str, Any]], list[int]]:
+) -> PreparedPacketScope:
     packet, immutable_packet_path, prompt_packet_path = deps.load_or_prepare_packet_fn(
-        args,
-        state=state,
-        lang=lang,
-        config=config,
-        stamp=stamp,
+        LoadOrPreparePacketRequest(
+            args=args,
+            state=state,
+            lang=lang,
+            config=config,
+            stamp=stamp,
+        )
     )
     scan_path = str(getattr(args, "path", ".") or ".")
     packet_dimensions = normalize_dimension_list(packet.get("dimensions", []))
@@ -147,15 +177,15 @@ def _prepare_packet_scope(
         dimension_prompts=raw_dim_prompts if isinstance(raw_dim_prompts, dict) else None,
     )
     selected_indexes = deps.selected_batch_indexes_fn(args, batch_count=len(batches))
-    return (
-        packet,
-        immutable_packet_path,
-        prompt_packet_path,
-        scan_path,
-        packet_dimensions,
-        scored_dimensions,
-        batches,
-        selected_indexes,
+    return PreparedPacketScope(
+        packet=packet,
+        immutable_packet_path=immutable_packet_path,
+        prompt_packet_path=prompt_packet_path,
+        scan_path=scan_path,
+        packet_dimensions=packet_dimensions,
+        scored_dimensions=scored_dimensions,
+        batches=batches,
+        selected_indexes=selected_indexes,
     )
 
 
@@ -202,27 +232,16 @@ def _prepare_run_runtime(
     batch_retry_backoff_seconds: float,
     stall_warning_seconds: float,
     stall_kill_seconds: float,
-) -> tuple[
-    Path,
-    Path,
-    dict[int, Path],
-    dict[int, Path],
-    dict[int, Path],
-    Path,
-    Any,
-    dict[int, int],
-    dict[str, dict[str, object]],
-    Any,
-    Any,
-    Any,
-]:
+) -> PreparedRunArtifacts:
     run_dir, logs_dir, prompt_files, output_files, log_files = deps.prepare_run_artifacts_fn(
-        stamp=stamp,
-        selected_indexes=selected_indexes,
-        batches=batches,
-        packet_path=prompt_packet_path,
-        run_root=subagent_runs_dir,
-        repo_root=project_root,
+        PrepareRunArtifactsRequest(
+            stamp=stamp,
+            selected_indexes=selected_indexes,
+            batches=batches,
+            packet_path=prompt_packet_path,
+            run_root=subagent_runs_dir,
+            repo_root=project_root,
+        )
     )
     run_log_path = resolve_run_log_path(
         getattr(args, "run_log_file", None),
@@ -302,19 +321,19 @@ def _prepare_run_runtime(
         colorize_fn=deps.colorize_fn,
         append_run_log=append_run_log,
     )
-    return (
-        run_dir,
-        logs_dir,
-        prompt_files,
-        output_files,
-        log_files,
-        run_log_path,
-        append_run_log,
-        batch_positions,
-        batch_status,
-        report_progress,
-        record_issue,
-        write_run_summary,
+    return PreparedRunArtifacts(
+        run_dir=run_dir,
+        logs_dir=logs_dir,
+        prompt_files=prompt_files,
+        output_files=output_files,
+        log_files=log_files,
+        run_log_path=run_log_path,
+        append_run_log=append_run_log,
+        batch_positions=batch_positions,
+        batch_status=batch_status,
+        report_progress=report_progress,
+        record_issue=record_issue,
+        write_run_summary=write_run_summary,
     )
 
 
@@ -333,28 +352,10 @@ def prepare_batch_run(
     validate_runner(runner, colorize_fn=deps.colorize_fn)
     allow_partial = bool(getattr(args, "allow_partial", False))
 
-    (
-        run_parallel,
-        max_parallel_batches,
-        heartbeat_seconds,
-        batch_timeout_seconds,
-        batch_max_retries,
-        batch_retry_backoff_seconds,
-        stall_warning_seconds,
-        stall_kill_seconds,
-    ) = _resolve_runtime_policy(args)
+    policy = _resolve_runtime_policy(args)
 
     stamp = deps.run_stamp_fn()
-    (
-        packet,
-        immutable_packet_path,
-        prompt_packet_path,
-        scan_path,
-        packet_dimensions,
-        scored_dimensions,
-        batches,
-        selected_indexes,
-    ) = _prepare_packet_scope(
+    packet_scope = _prepare_packet_scope(
         args=args,
         state=state,
         lang=lang,
@@ -362,70 +363,57 @@ def prepare_batch_run(
         deps=deps,
         stamp=stamp,
     )
-    total_batches = len(selected_indexes)
+    total_batches = len(packet_scope.selected_indexes)
     _print_runtime_expectation(
         deps=deps,
         total_batches=total_batches,
-        run_parallel=run_parallel,
-        max_parallel_batches=max_parallel_batches,
-        batch_timeout_seconds=batch_timeout_seconds,
+        run_parallel=policy.run_parallel,
+        max_parallel_batches=policy.max_parallel_batches,
+        batch_timeout_seconds=policy.batch_timeout_seconds,
     )
-    (
-        run_dir,
-        logs_dir,
-        prompt_files,
-        output_files,
-        log_files,
-        run_log_path,
-        append_run_log,
-        batch_positions,
-        batch_status,
-        report_progress,
-        record_issue,
-        write_run_summary,
-    ) = _prepare_run_runtime(
+    runtime_artifacts = _prepare_run_runtime(
         args=args,
         deps=deps,
         stamp=stamp,
-        selected_indexes=selected_indexes,
-        batches=batches,
-        prompt_packet_path=prompt_packet_path,
-        immutable_packet_path=immutable_packet_path,
+        selected_indexes=packet_scope.selected_indexes,
+        batches=packet_scope.batches,
+        prompt_packet_path=packet_scope.prompt_packet_path,
+        immutable_packet_path=packet_scope.immutable_packet_path,
         project_root=project_root,
         subagent_runs_dir=subagent_runs_dir,
         runner=runner,
         allow_partial=allow_partial,
-        run_parallel=run_parallel,
-        max_parallel_batches=max_parallel_batches,
-        heartbeat_seconds=heartbeat_seconds,
-        batch_timeout_seconds=batch_timeout_seconds,
-        batch_max_retries=batch_max_retries,
-        batch_retry_backoff_seconds=batch_retry_backoff_seconds,
-        stall_warning_seconds=stall_warning_seconds,
-        stall_kill_seconds=stall_kill_seconds,
+        run_parallel=policy.run_parallel,
+        max_parallel_batches=policy.max_parallel_batches,
+        heartbeat_seconds=policy.heartbeat_seconds,
+        batch_timeout_seconds=policy.batch_timeout_seconds,
+        batch_max_retries=policy.batch_max_retries,
+        batch_retry_backoff_seconds=policy.batch_retry_backoff_seconds,
+        stall_warning_seconds=policy.stall_warning_seconds,
+        stall_kill_seconds=policy.stall_kill_seconds,
     )
     if maybe_handle_dry_run(
         args=args,
         stamp=stamp,
-        selected_indexes=selected_indexes,
-        run_dir=run_dir,
-        logs_dir=logs_dir,
-        immutable_packet_path=immutable_packet_path,
-        prompt_packet_path=prompt_packet_path,
-        prompt_files=prompt_files,
-        output_files=output_files,
+        selected_indexes=packet_scope.selected_indexes,
+        run_dir=runtime_artifacts.run_dir,
+        logs_dir=runtime_artifacts.logs_dir,
+        immutable_packet_path=packet_scope.immutable_packet_path,
+        prompt_packet_path=packet_scope.prompt_packet_path,
+        prompt_files=runtime_artifacts.prompt_files,
+        output_files=runtime_artifacts.output_files,
         safe_write_text_fn=deps.safe_write_text_fn,
         colorize_fn=deps.colorize_fn,
-        append_run_log=append_run_log,
+        append_run_log=runtime_artifacts.append_run_log,
     ):
         return None
 
-    if run_parallel:
+    if policy.run_parallel:
         print(
             deps.colorize_fn(
                 "  Parallel runner config: "
-                f"max-workers={min(total_batches, max_parallel_batches)}, "
-                f"heartbeat={heartbeat_seconds:.1f}s",
+                f"max-workers={min(total_batches, policy.max_parallel_batches)}, "
+                f"heartbeat={policy.heartbeat_seconds:.1f}s",
                 "dim",
             )
         )
@@ -436,37 +424,37 @@ def prepare_batch_run(
         config=config,
         runner=runner,
         allow_partial=allow_partial,
-        run_parallel=run_parallel,
-        max_parallel_batches=max_parallel_batches,
-        heartbeat_seconds=heartbeat_seconds,
-        batch_timeout_seconds=batch_timeout_seconds,
-        batch_max_retries=batch_max_retries,
-        batch_retry_backoff_seconds=batch_retry_backoff_seconds,
-        stall_warning_seconds=stall_warning_seconds,
-        stall_kill_seconds=stall_kill_seconds,
+        run_parallel=policy.run_parallel,
+        max_parallel_batches=policy.max_parallel_batches,
+        heartbeat_seconds=policy.heartbeat_seconds,
+        batch_timeout_seconds=policy.batch_timeout_seconds,
+        batch_max_retries=policy.batch_max_retries,
+        batch_retry_backoff_seconds=policy.batch_retry_backoff_seconds,
+        stall_warning_seconds=policy.stall_warning_seconds,
+        stall_kill_seconds=policy.stall_kill_seconds,
         state=state,
         lang=lang,
-        packet=packet,
-        immutable_packet_path=immutable_packet_path,
-        prompt_packet_path=prompt_packet_path,
-        scan_path=scan_path,
-        packet_dimensions=packet_dimensions,
-        scored_dimensions=scored_dimensions,
-        batches=batches,
-        selected_indexes=selected_indexes,
+        packet=packet_scope.packet,
+        immutable_packet_path=packet_scope.immutable_packet_path,
+        prompt_packet_path=packet_scope.prompt_packet_path,
+        scan_path=packet_scope.scan_path,
+        packet_dimensions=packet_scope.packet_dimensions,
+        scored_dimensions=packet_scope.scored_dimensions,
+        batches=packet_scope.batches,
+        selected_indexes=packet_scope.selected_indexes,
         project_root=project_root,
-        run_dir=run_dir,
-        logs_dir=logs_dir,
-        prompt_files=prompt_files,
-        output_files=output_files,
-        log_files=log_files,
-        run_log_path=run_log_path,
-        append_run_log=append_run_log,
-        batch_positions=batch_positions,
-        batch_status=batch_status,
-        report_progress=report_progress,
-        record_issue=record_issue,
-        write_run_summary=write_run_summary,
+        run_dir=runtime_artifacts.run_dir,
+        logs_dir=runtime_artifacts.logs_dir,
+        prompt_files=runtime_artifacts.prompt_files,
+        output_files=runtime_artifacts.output_files,
+        log_files=runtime_artifacts.log_files,
+        run_log_path=runtime_artifacts.run_log_path,
+        append_run_log=runtime_artifacts.append_run_log,
+        batch_positions=runtime_artifacts.batch_positions,
+        batch_status=runtime_artifacts.batch_status,
+        report_progress=runtime_artifacts.report_progress,
+        record_issue=runtime_artifacts.record_issue,
+        write_run_summary=runtime_artifacts.write_run_summary,
     )
 
 
@@ -509,10 +497,17 @@ def execute_batch_run(*, prepared: PreparedBatchRunContext, deps: BatchRunDeps) 
 
     batch_results, successful_indexes, failures, failure_set = collect_and_reconcile_results(
         collect_batch_results_fn=deps.collect_batch_results_fn,
-        selected_indexes=selected_indexes,
+        request=CollectBatchResultsRequest(
+            selected_indexes=selected_indexes,
+            failures=execution_failures,
+            output_files=prepared.output_files,
+            allowed_dims={
+                str(dim)
+                for dim in prepared.packet.get("dimensions", [])
+                if isinstance(dim, str)
+            },
+        ),
         execution_failures=execution_failures,
-        output_files=prepared.output_files,
-        packet=prepared.packet,
         batch_positions=prepared.batch_positions,
         batch_status=prepared.batch_status,
         colorize_fn=deps.colorize_fn,
@@ -608,7 +603,9 @@ def merge_and_import_batch_run(
 
 __all__ = [
     "ExecutedBatchRunContext",
+    "PreparedPacketScope",
     "PreparedBatchRunContext",
+    "PreparedRunArtifacts",
     "_prepare_packet_scope",
     "_prepare_run_runtime",
     "_print_runtime_expectation",

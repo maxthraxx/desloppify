@@ -49,6 +49,7 @@ from .orchestrator_codex_pipeline_execution import (
 )
 from .orchestrator_common import STAGES, run_stamp
 from .stage_prompts import build_stage_prompt
+from ..stages.helpers import value_check_targets
 _STAGE_HANDLERS: dict[str, StageHandler] = DEFAULT_STAGE_HANDLERS
 _analyze_reflect_issue_accounting = analyze_reflect_issue_accounting
 _validate_reflect_issue_accounting = validate_reflect_accounting
@@ -160,6 +161,13 @@ def _run_stage_sequence(
         pipeline_context.append_run_log(f"stage-start stage={stage}")
 
         si = pipeline_context.services.collect_triage_input(plan, pipeline_context.state)
+        if stage == "sense-check":
+            si.value_check_targets = value_check_targets(plan, pipeline_context.state)
+            setattr(
+                pipeline_context.args,
+                "sense_check_value_targets",
+                list(si.value_check_targets),
+            )
         last_triage_input = si
         execution_result = execute_stage_impl(
             StageRunContext(

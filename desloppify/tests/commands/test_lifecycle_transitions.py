@@ -115,7 +115,7 @@ def _queue_ids(state: dict, plan: dict) -> list[str]:
     return [item["id"] for item in result["items"]]
 
 
-def _spoof_reviews_complete(state: dict, *, score: float = 95.0) -> None:
+def _spoof_reviews_complete(state: dict, *, score: float = 100.0) -> None:
     """Mutate state in place: replace all placeholder dims with scored ones."""
     for key in DIM_KEYS:
         display, dim_entry, assessment = _scored_dim_entries(key, score)
@@ -306,9 +306,14 @@ class TestTriageInjectedOnScan:
         assert len(triage_ids) == len(TRIAGE_STAGE_IDS), ids
 
         # After triage completes for the live review issue set, the findings surface.
-        plan.setdefault("epic_triage_meta", {})["triaged_ids"] = sorted(
+        triage_meta = plan.setdefault("epic_triage_meta", {})
+        triage_meta["triaged_ids"] = sorted(
             fid for fid in state["work_items"] if state["work_items"][fid].get("detector") == "review"
         )
+        triage_meta["triage_stages"] = {
+            stage_id.removeprefix("triage::"): {"confirmed_at": "2026-03-13T00:00:00+00:00"}
+            for stage_id in TRIAGE_STAGE_IDS
+        }
         purge_ids(plan, TRIAGE_STAGE_IDS)
         ids = _queue_ids(state, plan)
         review_ids = [fid for fid in ids if fid.startswith("review")]
@@ -387,9 +392,14 @@ class TestFullLifecycleGoldenPath:
         )
 
         # ── Complete triage → review findings finally become executable ──
-        plan.setdefault("epic_triage_meta", {})["triaged_ids"] = sorted(
+        triage_meta = plan.setdefault("epic_triage_meta", {})
+        triage_meta["triaged_ids"] = sorted(
             fid for fid in state["work_items"] if state["work_items"][fid].get("detector") == "review"
         )
+        triage_meta["triage_stages"] = {
+            stage_id.removeprefix("triage::"): {"confirmed_at": "2026-03-13T00:00:00+00:00"}
+            for stage_id in TRIAGE_STAGE_IDS
+        }
         purge_ids(plan, list(TRIAGE_STAGE_IDS))
         ids = _queue_ids(state, plan)
         assert not any(fid.startswith("triage::") for fid in ids), f"Post-triage: {ids}"

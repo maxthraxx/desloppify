@@ -16,8 +16,25 @@ from desloppify.base.exception_sets import CommandError
 from desloppify.base.output.terminal import colorize
 from desloppify.app.commands.resolve.plan_load import warn_plan_load_degraded_once
 from desloppify.engine._work_queue.context import resolve_plan_load_status
+from desloppify.engine._plan.constants import WORKFLOW_RUN_SCAN_ID
+from desloppify.engine.planning.queue_policy import build_execution_queue
+from desloppify.engine._work_queue.core import QueueBuildOptions
 
 _logger = logging.getLogger(__name__)
+
+
+def _only_run_scan_workflow_remaining(state: dict, plan: dict) -> bool:
+    result = build_execution_queue(
+        state,
+        options=QueueBuildOptions(
+            status="open",
+            count=None,
+            plan=plan,
+            include_skipped=False,
+        ),
+    )
+    items = result.get("items", [])
+    return len(items) == 1 and items[0].get("id") == WORKFLOW_RUN_SCAN_ID
 
 
 def scan_queue_preflight(args: object) -> None:
@@ -79,6 +96,13 @@ def scan_queue_preflight(args: object) -> None:
         return
     if mode is ScoreDisplayMode.LIVE:
         return  # Queue fully clear or no active cycle — scan allowed
+    if (
+        mode is ScoreDisplayMode.PHASE_TRANSITION
+        and breakdown.queue_total == 1
+        and breakdown.workflow == 1
+        and _only_run_scan_workflow_remaining(state, plan)
+    ):
+        return
 
     remaining = breakdown.queue_total
     # GATE — block both FROZEN (objective work) and PHASE_TRANSITION

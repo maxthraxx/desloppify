@@ -23,6 +23,7 @@ from .types import (
     BatchResult,
     BatchTask,
 )
+from ..batch.execution import CollectBatchResultsRequest
 from ..runner_process_impl.io import extract_payload_from_log
 
 logger = logging.getLogger(__name__)
@@ -96,16 +97,16 @@ def execute_batches(
 
 def collect_batch_results(
     *,
-    selected_indexes: list[int],
-    failures: list[int],
-    output_files: dict[int, Path],
-    allowed_dims: set[str],
+    request: CollectBatchResultsRequest,
     extract_payload_fn,
     normalize_result_fn,
 ) -> tuple[list[BatchResult], list[int]]:
     """Parse and normalize batch outputs, preserving prior failures."""
+    selected_indexes = request.selected_indexes
+    output_files = request.output_files
+    allowed_dims = request.allowed_dims
     batch_results: list[BatchResult] = []
-    failure_set = set(failures)
+    failure_set = set(request.failures)
     for idx in selected_indexes:
         had_execution_failure = idx in failure_set
         raw_path = output_files[idx]

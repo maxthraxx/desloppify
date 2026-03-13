@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from desloppify.base.discovery.paths import get_area
-from desloppify.engine.hook_registry import register_lang_hooks
 from desloppify.engine.policy.zones import COMMON_ZONE_RULES, Zone, ZoneRule
 from desloppify.languages._framework.base.phase_builders import (
     detector_phase_security,
@@ -13,6 +12,7 @@ from desloppify.languages._framework.base.phase_builders import (
 )
 from desloppify.languages._framework.base.types import DetectorPhase, LangConfig
 from desloppify.languages._framework.registry.registration import register_full_plugin
+from desloppify.languages._framework.registry.state import register_lang_hooks
 from desloppify.languages._framework.treesitter.phases import all_treesitter_phases
 from desloppify.languages.dart import test_coverage as dart_test_coverage_hooks
 from desloppify.languages.dart.commands import get_detect_commands

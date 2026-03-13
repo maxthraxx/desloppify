@@ -9,12 +9,12 @@ from types import SimpleNamespace
 import pytest
 
 import desloppify.app.commands.plan.cluster.dispatch as cluster_dispatch_mod
-import desloppify.app.commands.plan.cluster_ops_display as cluster_display_mod
-import desloppify.app.commands.plan.cluster_ops_manage as cluster_manage_mod
-import desloppify.app.commands.plan.cluster_ops_reorder as cluster_reorder_mod
-import desloppify.app.commands.plan.cluster_steps as cluster_steps_mod
-import desloppify.app.commands.plan.cluster_update as cluster_update_mod
-import desloppify.app.commands.plan.cluster_update_flow as cluster_update_flow_mod
+import desloppify.app.commands.plan.cluster.ops_display as cluster_display_mod
+import desloppify.app.commands.plan.cluster.ops_manage as cluster_manage_mod
+import desloppify.app.commands.plan.cluster.ops_reorder as cluster_reorder_mod
+import desloppify.app.commands.plan.cluster.steps as cluster_steps_mod
+import desloppify.app.commands.plan.cluster.update as cluster_update_mod
+import desloppify.app.commands.plan.cluster.update_flow as cluster_update_flow_mod
 from desloppify.base.exception_sets import CommandError
 
 

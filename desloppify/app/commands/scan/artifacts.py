@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import importlib
 import logging
 import os
 from pathlib import Path
 
+from desloppify.app.commands.helpers.dynamic_loaders import load_optional_scorecard_module
 from desloppify.app.commands.scan.contracts import ScanQueryPayload
 from desloppify.app.commands.scan.workflow import (
     ScanMergeResult,
@@ -92,13 +92,12 @@ def build_scan_query_payload(
 
 
 def _load_scorecard_helpers():
-    """Load scorecard helper callables lazily via importlib.
+    """Load scorecard helper callables lazily through the approved loader seam.
 
     Deferred: scorecard depends on PIL (optional dependency).
     """
-    try:
-        scorecard_module = importlib.import_module("desloppify.app.output.scorecard")
-    except ImportError:
+    scorecard_module = load_optional_scorecard_module()
+    if scorecard_module is None:
         return None, None
     generate = getattr(scorecard_module, "generate_scorecard", None)
     badge_config = getattr(scorecard_module, "get_badge_config", None)

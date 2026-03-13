@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 
 import desloppify.app.commands.plan.triage.command as triage_mod
 from desloppify.app.commands.plan.triage import helpers as triage_helpers
+import desloppify.app.commands.plan.triage.workflow as triage_workflow_mod
 from desloppify.app.commands.plan.triage.services import TriageServices
 from desloppify.engine._plan.schema import empty_plan
 from desloppify.engine._plan.constants import TRIAGE_IDS, TRIAGE_STAGE_IDS
@@ -48,6 +50,11 @@ def _fake_args(**overrides) -> argparse.Namespace:
         "note": None,
         "start": False,
         "dry_run": False,
+        "run_stages": False,
+        "runner": "codex",
+        "report_file": None,
+        "only_stages": None,
+        "stage_prompt": None,
     }
     defaults.update(overrides)
     return argparse.Namespace(**defaults)
@@ -190,3 +197,50 @@ class TestAutoStartTriage:
         assert "triage::enrich" not in plan["skipped"]
         assert "triage::sense-check" not in plan["skipped"]
         assert "review::z.py::x9" in plan["skipped"]
+
+    def test_cmd_plan_triage_run_stages_reads_report_file_before_runner_dispatch(
+        self,
+        monkeypatch,
+        tmp_path: Path,
+        capsys,
+    ) -> None:
+        plan = empty_plan()
+        state = _state_with_issues("r1", "r2", "r3")
+        _patch_triage(monkeypatch, plan, state)
+        monkeypatch.setattr(triage_mod, "require_issue_inventory", lambda _state: True)
+
+        report_file = tmp_path / "sense-check.txt"
+        report_file.write_text(
+            "This report came from a file and should be loaded before staged runner dispatch.",
+            encoding="utf-8",
+        )
+
+        seen: dict[str, object] = {}
+
+        def fake_run_codex_pipeline(args, *, stages_to_run, services):
+            seen["report"] = args.report
+            seen["report_file"] = args.report_file
+            seen["stages_to_run"] = stages_to_run
+            seen["services"] = services
+            run_dir = tmp_path / ".desloppify" / "triage_runs" / "fake-run"
+            run_dir.mkdir(parents=True, exist_ok=True)
+            (run_dir / "run_summary.json").write_text("{}", encoding="utf-8")
+            print(f"runner wrote: {run_dir}")
+
+        monkeypatch.setattr(triage_workflow_mod, "run_codex_pipeline", fake_run_codex_pipeline)
+
+        args = _fake_args(
+            run_stages=True,
+            runner="codex",
+            report=None,
+            report_file=str(report_file),
+            only_stages="observe",
+        )
+        triage_mod.cmd_plan_triage(args)
+
+        out = capsys.readouterr().out
+        assert seen["report"] == report_file.read_text(encoding="utf-8")
+        assert seen["report_file"] == str(report_file)
+        assert seen["stages_to_run"] == ["observe"]
+        assert seen["services"] is not None
+        assert "runner wrote:" in out

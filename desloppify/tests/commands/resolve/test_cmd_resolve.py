@@ -161,7 +161,7 @@ class TestCmdResolve:
             "last_scan": "2025-01-01",
         }
         monkeypatch.setattr(resolve_mod, "load_state", lambda sp: fake_state)
-        monkeypatch.setattr(state_persistence_mod.state_compat, "save_state", lambda state, sp: None)
+        monkeypatch.setattr(state_persistence_mod, "save_state", lambda state, sp: None)
         monkeypatch.setattr(
             state_mod,
             "resolve_issues",
@@ -204,7 +204,7 @@ class TestCmdResolve:
             "last_scan": "2025-01-01",
         }
         monkeypatch.setattr(resolve_mod, "load_state", lambda sp: fake_state)
-        monkeypatch.setattr(state_persistence_mod.state_compat, "save_state", lambda state, sp: None)
+        monkeypatch.setattr(state_persistence_mod, "save_state", lambda state, sp: None)
         monkeypatch.setattr(
             state_mod,
             "resolve_issues",
@@ -246,7 +246,7 @@ class TestCmdResolve:
             "last_scan": "2025-01-01",
         }
         monkeypatch.setattr(resolve_mod, "load_state", lambda sp: fake_state)
-        monkeypatch.setattr(state_persistence_mod.state_compat, "save_state", lambda state, sp: None)
+        monkeypatch.setattr(state_persistence_mod, "save_state", lambda state, sp: None)
         monkeypatch.setattr(
             state_mod,
             "resolve_issues",
@@ -292,7 +292,7 @@ class TestCmdResolve:
             lambda state, pattern, status, note, **kwargs: ["f1"],
         )
         monkeypatch.setattr(
-            state_persistence_mod.state_compat,
+            state_persistence_mod,
             "save_state",
             lambda state, sp: (_ for _ in ()).throw(OSError("disk full")),
         )
@@ -379,7 +379,7 @@ class TestCmdSuppress:
             state_path=Path("/tmp/fake.json"),
         )
         monkeypatch.setattr(
-            state_persistence_mod.state_compat,
+            state_persistence_mod,
             "save_state",
             lambda state, sp: (_ for _ in ()).throw(OSError("readonly")),
         )
@@ -441,7 +441,7 @@ class TestResolveHelperModules:
         saved: dict[str, object] = {}
 
         monkeypatch.setattr(
-            state_persistence_mod.state_compat,
+            state_persistence_mod,
             "save_state",
             lambda state, state_file: saved.update(state=state, state_file=state_file),
         )
@@ -463,7 +463,7 @@ class TestResolveHelperModules:
         assert saved["config"] is config
 
         monkeypatch.setattr(
-            state_persistence_mod.state_compat,
+            state_persistence_mod,
             "save_state",
             lambda *_args: (_ for _ in ()).throw(OSError("readonly")),
         )

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from desloppify.intelligence.review._context.models import HolisticContext
+from desloppify.intelligence.review.context_signals.auth import is_auth_runtime_path
 
 from .prepare_batches_core import _collect_unique_files, _representative_files_for_directory
 
@@ -50,6 +51,8 @@ def _authorization_files(
         for rpath, info in sorted(route_auth_coverage.items()):
             if not isinstance(rpath, str) or not isinstance(info, dict):
                 continue
+            if not is_auth_runtime_path(rpath):
+                continue
             without_auth = _to_int(info.get("without_auth", 0))
             with_auth = _to_int(info.get("with_auth", 0))
             if without_auth > 0:
@@ -80,6 +83,8 @@ def _authorization_files(
             sibling_module_counts[module] = sibling_module_counts.get(module, 0) + 1
 
     for rpath in auth_ctx.get("service_role_usage", []):
+        if not isinstance(rpath, str) or not is_auth_runtime_path(rpath):
+            continue
         auth_files.append({"file": rpath})
     rls_coverage = auth_ctx.get("rls_coverage", {})
     rls_files = rls_coverage.get("files", {})
@@ -87,6 +92,8 @@ def _authorization_files(
         for file_paths in rls_files.values():
             if isinstance(file_paths, list):
                 for filepath in file_paths:
+                    if not isinstance(filepath, str) or not is_auth_runtime_path(filepath):
+                        continue
                     auth_files.append({"file": filepath})
     return _collect_unique_files([auth_files], max_files=max_files)
 

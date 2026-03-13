@@ -3,16 +3,14 @@
 from __future__ import annotations
 
 from desloppify.base.subjective_dimension_catalog import DISPLAY_NAMES
-from desloppify.base.subjective_dimensions import default_dimension_keys
+from desloppify.base.subjective_dimensions import (
+    default_dimension_keys,
+    dimension_display_name,
+    dimension_weight,
+)
 from desloppify.base.text_utils import is_numeric
 from desloppify.engine._scoring.policy.core import SUBJECTIVE_CHECKS
 from desloppify.engine._state.issue_semantics import is_triage_finding
-from desloppify.intelligence.review.dimensions.metadata import (
-    dimension_display_name as metadata_dimension_display_name,
-)
-from desloppify.intelligence.review.dimensions.metadata import (
-    dimension_weight as metadata_dimension_weight,
-)
 
 
 def _display_fallback(dim_name: str) -> str:
@@ -42,11 +40,11 @@ def _primary_lang_from_issues(issues: dict) -> str | None:
 
 
 def _dimension_display_name(dim_name: str, *, lang_name: str | None) -> str:
-    return str(metadata_dimension_display_name(dim_name, lang_name=lang_name))
+    return str(dimension_display_name(dim_name, lang_name=lang_name))
 
 
 def _dimension_weight(dim_name: str, *, lang_name: str | None) -> float:
-    return float(metadata_dimension_weight(dim_name, lang_name=lang_name))
+    return float(dimension_weight(dim_name, lang_name=lang_name))
 
 
 def _compute_dimension_score(

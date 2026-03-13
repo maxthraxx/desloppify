@@ -103,6 +103,17 @@ def test_gather_auth_context_ignores_non_source_guidance_files():
     assert result == {}
 
 
+def test_gather_auth_context_ignores_runtime_extensions_in_guidance_paths() -> None:
+    file_contents = {
+        "guidance/auth_examples.py": "@app.get('/docs')\ndef route():\n    request.user\n",
+        "prompts/security_prompt.ts": "const k = service_role; createClient(url, k)",
+        "src/routes/admin.py": "@app.get('/admin')\ndef route():\n    return 1\n",
+    }
+    result = signal_auth_mod.gather_auth_context(file_contents, rel_fn=lambda p: p)
+    assert list(result["route_auth_coverage"]) == ["src/routes/admin.py"]
+    assert "service_role_usage" not in result
+
+
 def test_gather_auth_context_counts_public_route_markers_separately():
     file_contents = {
         "api.py": (

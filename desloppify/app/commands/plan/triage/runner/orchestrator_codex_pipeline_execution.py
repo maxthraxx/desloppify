@@ -85,6 +85,7 @@ def _record_sense_check_report(
         stage="sense-check",
         report=report,
         state=getattr(args, "state", None),
+        value_targets=getattr(args, "sense_check_value_targets", None),
     )
     cmd_stage_sense_check(record_args, services=services)
 

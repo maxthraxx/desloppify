@@ -129,6 +129,53 @@ def test_reconcile_plan_second_call_is_noop() -> None:
     assert result2.workflow_injected_ids == []
 
 
+def test_reconcile_plan_holds_workflow_until_current_scan_subjective_review_completes() -> None:
+    """Postflight review must run before communicate-score/create-plan."""
+    state = {
+        "issues": {"unused::a": _issue("unused::a")},
+        "scan_count": 19,
+        "dimension_scores": {
+            "Naming quality": {
+                "score": 82.0,
+                "strict": 82.0,
+                "failing": 0,
+                "checks": 1,
+                "detectors": {
+                    "subjective_assessment": {"dimension_key": "naming_quality"},
+                },
+            }
+        },
+        "subjective_assessments": {
+            "naming_quality": {"score": 82.0, "placeholder": False}
+        },
+    }
+    plan = empty_plan()
+    plan["refresh_state"] = {"postflight_scan_completed_at_scan_count": 19}
+
+    result = reconcile_plan(plan, state, target_strict=95.0)
+
+    assert "subjective::naming_quality" in plan["queue_order"]
+    assert WORKFLOW_COMMUNICATE_SCORE_ID not in plan["queue_order"]
+    assert WORKFLOW_CREATE_PLAN_ID not in plan["queue_order"]
+    assert result.workflow_injected_ids == []
+
+    plan["queue_order"] = [
+        issue_id
+        for issue_id in plan["queue_order"]
+        if issue_id != "subjective::naming_quality"
+    ]
+    plan["refresh_state"]["subjective_review_completed_at_scan_count"] = 19
+
+    result = reconcile_plan(plan, state, target_strict=95.0)
+
+    assert WORKFLOW_COMMUNICATE_SCORE_ID in plan["queue_order"]
+    assert WORKFLOW_CREATE_PLAN_ID in plan["queue_order"]
+    assert result.workflow_injected_ids == [
+        WORKFLOW_COMMUNICATE_SCORE_ID,
+        WORKFLOW_CREATE_PLAN_ID,
+    ]
+
+
 # ---------------------------------------------------------------------------
 # Mid-cycle auto-clustering guard
 # ---------------------------------------------------------------------------

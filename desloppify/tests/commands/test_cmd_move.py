@@ -284,7 +284,7 @@ class TestLoadLangMoveModule:
             raise AssertionError(f"unexpected import request: {module_name}")
 
         monkeypatch.setattr(
-            "desloppify.app.commands.move.language.importlib.import_module",
+            "desloppify.app.commands.helpers.dynamic_loaders.importlib.import_module",
             _fake_import,
         )
         assert load_lang_move_module("python") is scaffold
@@ -300,7 +300,7 @@ class TestLoadLangMoveModule:
             raise AssertionError(f"unexpected import request: {module_name}")
 
         monkeypatch.setattr(
-            "desloppify.app.commands.move.language.importlib.import_module",
+            "desloppify.app.commands.helpers.dynamic_loaders.importlib.import_module",
             _fake_import,
         )
 

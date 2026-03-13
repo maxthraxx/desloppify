@@ -14,7 +14,7 @@ from desloppify.app.commands.helpers.attestation import (
 )
 from desloppify.app.commands.helpers.command_runtime import command_runtime
 from desloppify.app.commands.helpers.state import require_issue_inventory
-from desloppify.app.commands.plan.override_io import (
+from .io import (
     _plan_file_for_state,
     save_plan_state_transactional,
 )

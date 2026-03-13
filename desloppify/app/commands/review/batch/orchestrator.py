@@ -149,8 +149,13 @@ def _build_batch_run_deps(*, policy, project_root: Path) -> review_batches_mod.B
             parse_fn=parse_batch_selection,
             colorize_fn=colorize,
         ),
-        prepare_run_artifacts_fn=partial(
-            prepare_run_artifacts,
+        prepare_run_artifacts_fn=lambda request: prepare_run_artifacts(
+            stamp=request.stamp,
+            selected_indexes=request.selected_indexes,
+            batches=request.batches,
+            packet_path=request.packet_path,
+            run_root=request.run_root,
+            repo_root=request.repo_root,
             build_prompt_fn=partial(render_batch_prompt, policy_block=policy_block),
             safe_write_text_fn=safe_write_text,
             colorize_fn=colorize,
@@ -169,11 +174,8 @@ def _build_batch_run_deps(*, policy, project_root: Path) -> review_batches_mod.B
             progress_fn=kwargs.get("progress_fn"),
             error_log_fn=kwargs.get("error_log_fn"),
         ),
-        collect_batch_results_fn=lambda **kwargs: collect_batch_results(
-            selected_indexes=kwargs["selected_indexes"],
-            failures=kwargs["failures"],
-            output_files=kwargs["output_files"],
-            allowed_dims=kwargs["allowed_dims"],
+        collect_batch_results_fn=lambda request: collect_batch_results(
+            request=request,
             extract_payload_fn=lambda raw: extract_json_payload(raw, log_fn=log),
             normalize_result_fn=lambda payload, dims: normalize_batch_result(
                 payload,
@@ -272,14 +274,14 @@ def _merge_batch_results(batch_results: list[object]) -> dict[str, object]:
 
 
 def _load_or_prepare_packet(
-    args,
-    *,
-    state: dict,
-    lang,
-    config: dict,
-    stamp: str,
+    request: review_batches_mod.LoadOrPreparePacketRequest,
 ) -> tuple[dict, Path, Path]:
     """Load packet override or prepare a fresh packet snapshot."""
+    args = request.args
+    state = request.state
+    lang = request.lang
+    config = request.config
+    stamp = request.stamp
     packet_override = getattr(args, "packet", None)
     if packet_override:
         packet_path = Path(packet_override)
@@ -498,10 +500,12 @@ def do_import_run(
         raise CommandError(hint, exit_code=1)
 
     batch_results, failures = collect_batch_results(
-        selected_indexes=selected_indexes,
-        failures=[],
-        output_files=output_files,
-        allowed_dims=allowed_dims,
+        request=review_batches_mod.CollectBatchResultsRequest(
+            selected_indexes=selected_indexes,
+            failures=[],
+            output_files=output_files,
+            allowed_dims=allowed_dims,
+        ),
         extract_payload_fn=lambda raw: extract_json_payload(raw, log_fn=log),
         normalize_result_fn=lambda payload, dims: normalize_batch_result(
             payload,

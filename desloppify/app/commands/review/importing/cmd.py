@@ -47,6 +47,7 @@ from .output import (
     print_assessment_policy_notice,
     print_import_load_errors,
 )
+from ..state_payloads import append_assessment_import_audit
 from .policy import assessment_policy_model_from_payload
 from .parse import (
     ImportPayloadLoadError,
@@ -154,8 +155,8 @@ def _append_assessment_import_audit(
         return
     provenance = import_payload.get("provenance")
     provenance_dict = provenance if isinstance(provenance, dict) else {}
-    audit = working_state.setdefault("assessment_import_audit", [])
-    audit.append(
+    append_assessment_import_audit(
+        working_state,
         {
             "timestamp": utc_now(),
             "mode": assessment_policy.mode,

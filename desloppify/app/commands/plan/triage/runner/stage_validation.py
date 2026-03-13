@@ -15,6 +15,7 @@ from ..stages.evidence_parsing import (
     validate_report_references_clusters,
 )
 from ..validation.enrich_quality import evaluate_enrich_quality
+from ..validation.completion_policy import evaluate_completion_readiness
 from ..validation.enrich_checks import (
     _cluster_file_overlaps,
     _clusters_with_directory_scatter,
@@ -233,6 +234,8 @@ def _validate_sense_check_stage(
     state: dict,
     repo_root: Path,
     stages: dict,
+    *,
+    triage_input: TriageInput | None = None,
 ) -> tuple[bool, str]:
     """Validate recorded sense-check-stage content (includes value decisions)."""
     if "sense-check" not in stages:
@@ -263,7 +266,16 @@ def _validate_sense_check_stage(
     if blocking_cf:
         return False, blocking_cf[0].message
     # Decision Ledger validation (value subagent output)
-    targets = value_check_targets(plan, state)
+    frozen_targets = None
+    if isinstance(stages.get("sense-check"), dict):
+        recorded_targets = stages["sense-check"].get("value_targets")
+        if isinstance(recorded_targets, list):
+            frozen_targets = [target for target in recorded_targets if isinstance(target, str)]
+    if frozen_targets is None and triage_input is not None:
+        triage_targets = getattr(triage_input, "value_check_targets", None)
+        if isinstance(triage_targets, list):
+            frozen_targets = [target for target in triage_targets if isinstance(target, str)]
+    targets = frozen_targets if frozen_targets is not None else value_check_targets(plan, state)
     if targets:
         parsed = parse_value_check_decision_ledger(report)
         if not parsed.entries:
@@ -298,46 +310,18 @@ def validate_stage(
         "reflect": lambda: _validate_reflect_stage(stages),
         "organize": lambda: _validate_organize_stage(plan, state, stages),
         "enrich": lambda: _validate_enrich_stage(plan, state, repo_root, stages),
-        "sense-check": lambda: _validate_sense_check_stage(plan, state, repo_root, stages),
+        "sense-check": lambda: _validate_sense_check_stage(
+            plan,
+            state,
+            repo_root,
+            stages,
+            triage_input=triage_input,
+        ),
     }
     validator = validators.get(stage)
     if validator is None:
         return False, f"Unknown stage: {stage}"
     return validator()
-
-
-def _validate_required_stages(stages: dict) -> tuple[bool, str]:
-    """Validate that all required triage stages are present and confirmed."""
-    for required in ("observe", "reflect", "organize", "enrich", "sense-check"):
-        if required not in stages:
-            return False, f"Stage {required} not recorded."
-        if not stages[required].get("confirmed_at"):
-            return False, f"Stage {required} not confirmed."
-    return True, ""
-
-
-def _validate_cluster_dependency_cycles(clusters: dict) -> tuple[bool, str]:
-    """Reject self-referential cluster dependencies."""
-    for name, cluster in clusters.items():
-        deps = cluster.get("depends_on_clusters", [])
-        if name in deps:
-            return False, f"Cluster {name} depends on itself."
-    return True, ""
-
-
-def _find_all_trivial_clusters(clusters: dict) -> list[str]:
-    """Return manual clusters whose action steps are all marked trivial."""
-    trivial_clusters: list[str] = []
-    for name, cluster in clusters.items():
-        if cluster.get("auto") or not cluster_issue_ids(cluster):
-            continue
-        steps = cluster.get("action_steps") or []
-        if steps and all(
-            isinstance(step, dict) and step.get("effort") == "trivial"
-            for step in steps
-        ):
-            trivial_clusters.append(name)
-    return trivial_clusters
 
 
 def validate_completion(
@@ -346,40 +330,13 @@ def validate_completion(
     repo_root: Path,
 ) -> tuple[bool, str]:
     """Validate plan is ready for triage completion. Returns (ok, error_msg)."""
-    meta = plan.get("epic_triage_meta", {})
-    stages = meta.get("triage_stages", {})
-
-    ok, message = _validate_required_stages(stages)
-    if not ok:
-        return ok, message
-
-    triage_scope = active_triage_issue_scope(plan, state)
-    open_review_ids = open_review_ids_from_state(state) if triage_scope is None else triage_scope
-    manual = scoped_manual_clusters_with_issues(plan, state)
-    if not open_review_ids and not manual:
-        return True, ""
-    if not manual:
-        return False, "No manual clusters with issues."
-
-    gaps = unenriched_clusters(plan, state)
-    if gaps:
-        return False, f"{len(gaps)} cluster(s) still need enrichment."
-
-    unclustered = unclustered_review_issues(plan, state)
-    if unclustered:
-        return False, f"{len(unclustered)} review issue(s) not in any cluster."
-
-    clusters = triage_scoped_plan(plan, state).get("clusters", {})
-    ok, message = _validate_cluster_dependency_cycles(clusters)
-    if not ok:
-        return ok, message
-
-    all_trivial_clusters = _find_all_trivial_clusters(clusters)
-    if all_trivial_clusters:
-        names = ", ".join(sorted(all_trivial_clusters))
-        return True, f"Advisory: all action steps are marked trivial in cluster(s): {names}"
-
-    return True, ""
+    _ = repo_root
+    readiness = evaluate_completion_readiness(
+        plan,
+        state,
+        require_confirmed_stages=True,
+    )
+    return readiness.ok, readiness.message
 
 
 def build_auto_attestation(

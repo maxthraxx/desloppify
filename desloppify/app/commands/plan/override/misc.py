@@ -8,7 +8,7 @@ from pathlib import Path
 from desloppify.app.commands.helpers.command_runtime import command_runtime
 from desloppify.app.commands.helpers.state import require_issue_inventory, state_path
 from desloppify.app.commands.plan.shared.patterns import resolve_ids_from_patterns
-from desloppify.app.commands.plan.override_io import (
+from .io import (
     _plan_file_for_state,
     save_plan_state_transactional,
 )

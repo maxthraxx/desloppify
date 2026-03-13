@@ -53,7 +53,7 @@ from desloppify.engine._state.noise import (
 )
 from desloppify.engine._work_queue.issues import mark_stale_holistic
 from desloppify.engine.planning.scan import PlanScanOptions, generate_issues as generate_plan_issues
-from desloppify.intelligence.review.dimensions.metadata import (
+from desloppify.base.subjective_dimensions import (
     resettable_default_dimensions,
 )
 from desloppify.languages.framework import (

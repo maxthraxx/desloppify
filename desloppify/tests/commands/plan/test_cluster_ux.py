@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 
 import desloppify.app.commands.plan.cluster.dispatch as cluster_mod
-import desloppify.app.commands.plan.cluster_update as cluster_update_mod
+import desloppify.app.commands.plan.cluster.update as cluster_update_mod
 from desloppify.engine._plan.schema import empty_plan
 
 # ---------------------------------------------------------------------------

@@ -10,6 +10,7 @@ from pathlib import Path
 from desloppify.base.output.terminal import colorize
 
 from .records import record_sense_check_stage, resolve_reusable_report
+from .helpers import value_check_targets
 from ..validation.enrich_quality import evaluate_enrich_quality
 from ..validation.enrich_checks import (
     _steps_missing_issue_refs,
@@ -205,11 +206,18 @@ def run_stage_sense_check(
         )
 
     stages = meta.setdefault("triage_stages", {})
+    frozen_value_targets = getattr(args, "value_targets", None)
+    if not isinstance(frozen_value_targets, list):
+        if existing_stage and isinstance(existing_stage.get("value_targets"), list):
+            frozen_value_targets = list(existing_stage["value_targets"])
+        else:
+            frozen_value_targets = value_check_targets(plan, state)
     cleared = resolved_deps.record_sense_check_stage(
         stages,
         report=report,
         existing_stage=existing_stage,
         is_reuse=is_reuse,
+        value_targets=frozen_value_targets,
     )
 
     resolved_services.save_plan(plan)

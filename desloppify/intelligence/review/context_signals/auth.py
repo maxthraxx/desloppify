@@ -65,6 +65,27 @@ _AUTH_SOURCE_EXTENSIONS = frozenset(
         ".tsx",
     }
 )
+_NON_RUNTIME_AUTH_SEGMENTS = frozenset(
+    {
+        "doc",
+        "docs",
+        "example",
+        "examples",
+        "guide",
+        "guidance",
+        "prompt",
+        "prompts",
+        "template",
+        "templates",
+    }
+)
+_NON_RUNTIME_AUTH_BASENAMES = (
+    "agents",
+    "prompt",
+    "prompts",
+    "query",
+    "readme",
+)
 # Table name pattern: matches unquoted, "double-quoted", `backtick`, or [bracket] names,
 # optionally preceded by a schema qualifier (e.g. public.users, "auth"."profiles").
 _SQL_IDENT = r'(?:"[^"]+"|`[^`]+`|\[[^\]]+\]|\w+)'
@@ -276,10 +297,29 @@ def _segment_has_auth_enforcement(segment: str) -> bool:
     return bool(_NEGATED_AUTH_BRANCH_RE.search(segment) and _AUTH_DENIAL_RE.search(segment))
 
 
+def is_auth_runtime_path(filepath: str) -> bool:
+    """Return True when a path looks like executable auth-bearing source."""
+    lower = filepath.lower().replace("\\", "/")
+    if not any(lower.endswith(ext) for ext in _AUTH_SOURCE_EXTENSIONS):
+        return False
+    parts = [part for part in lower.split("/") if part]
+    if any(part in _NON_RUNTIME_AUTH_SEGMENTS for part in parts[:-1]):
+        return False
+    basename = parts[-1] if parts else lower
+    stem, _, _ext = basename.partition(".")
+    if stem in _NON_RUNTIME_AUTH_BASENAMES:
+        return False
+    return True
+
+
 def _is_auth_source_file(filepath: str) -> bool:
-    """Return True when a file path should be scanned for executable auth signals."""
-    lower = filepath.lower()
-    return any(lower.endswith(ext) for ext in _AUTH_SOURCE_EXTENSIONS)
+    """Backward-compatible wrapper for auth runtime-path filtering."""
+    return is_auth_runtime_path(filepath)
 
 
-__all__ = ["AuthorizationSignals", "RouteAuthCoverage", "gather_auth_context"]
+__all__ = [
+    "AuthorizationSignals",
+    "RouteAuthCoverage",
+    "gather_auth_context",
+    "is_auth_runtime_path",
+]

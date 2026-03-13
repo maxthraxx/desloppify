@@ -146,11 +146,14 @@ def test_collect_and_reconcile_results_marks_failure_modes(tmp_path: Path) -> No
     output_files = {0: out0, 1: tmp_path / "out1.json", 2: tmp_path / "out2.json"}
     batch_status: dict[str, dict[str, object]] = {}
     batch_results, successful, failures, failure_set = results_mod.collect_and_reconcile_results(
-        collect_batch_results_fn=lambda **_kwargs: ([{"ok": True}], [1, 2]),
-        selected_indexes=[0, 1, 2],
+        collect_batch_results_fn=lambda _request: ([{"ok": True}], [1, 2]),
+        request=orchestrator_mod.review_batches_mod.CollectBatchResultsRequest(
+            selected_indexes=[0, 1, 2],
+            failures=[1],
+            output_files=output_files,
+            allowed_dims={"design_coherence"},
+        ),
         execution_failures=[1],
-        output_files=output_files,
-        packet={"dimensions": ["design_coherence"]},
         batch_positions={0: 1, 1: 2, 2: 3},
         batch_status=batch_status,
     )
@@ -390,7 +393,7 @@ def test_do_import_run_recollects_batches_from_selected_indexes(tmp_path: Path, 
     )
 
     assert len(collect_calls) == 1
-    assert collect_calls[0]["selected_indexes"] == [0, 1]
+    assert collect_calls[0]["request"].selected_indexes == [0, 1]
 
 
 def test_try_load_prepared_packet_accepts_matching_contract(tmp_path: Path, monkeypatch) -> None:

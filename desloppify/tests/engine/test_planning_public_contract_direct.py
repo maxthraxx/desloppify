@@ -17,7 +17,7 @@ def test_runtime_modules_use_canonical_state_and_plan_surfaces() -> None:
             ["from desloppify.state_io import StateModel, save_state"],
             ["from desloppify.state import"],
         ),
-        "app/commands/plan/override_io.py": (
+        "app/commands/plan/override/io.py": (
             ["from desloppify.state_io import StateModel, get_state_file, save_state"],
             ["from desloppify import state as state_mod"],
         ),

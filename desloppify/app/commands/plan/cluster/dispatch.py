@@ -20,15 +20,15 @@ from desloppify.engine.plan_ops import (
 from desloppify.app.commands.plan.shared.patterns import resolve_ids_from_patterns
 from desloppify.base.output.terminal import colorize
 
-from ..cluster_ops_display import _cmd_cluster_list
-from ..cluster_ops_display import _cmd_cluster_show
-from ..cluster_ops_manage import _cmd_cluster_create
-from ..cluster_ops_manage import _cmd_cluster_delete
-from ..cluster_ops_manage import _cmd_cluster_export
-from ..cluster_ops_manage import _cmd_cluster_import
-from ..cluster_ops_manage import _cmd_cluster_merge
-from ..cluster_ops_reorder import _cmd_cluster_reorder
-from ..cluster_update import cmd_cluster_update as _cmd_cluster_update_impl
+from .ops_display import _cmd_cluster_list
+from .ops_display import _cmd_cluster_show
+from .ops_manage import _cmd_cluster_create
+from .ops_manage import _cmd_cluster_delete
+from .ops_manage import _cmd_cluster_export
+from .ops_manage import _cmd_cluster_import
+from .ops_manage import _cmd_cluster_merge
+from .ops_reorder import _cmd_cluster_reorder
+from .update import cmd_cluster_update as _cmd_cluster_update_impl
 
 _HEX8_RE = re.compile(r"^[0-9a-f]{8}$")
 _HINT_TONE = "dim"

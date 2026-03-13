@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any, Literal, TypeAlias, TypedDict
 
+from desloppify.engine.plan_state import ActionStep
+
 QueueItemKind: TypeAlias = Literal[
     "issue",
     "cluster",
@@ -19,7 +21,7 @@ class PlanClusterRef(TypedDict, total=False):
     name: str
     description: str | None
     total_items: int
-    action_steps: list[dict[str, Any]]
+    action_steps: list[ActionStep]
 
 
 class QueueItemBase(TypedDict):
@@ -189,7 +191,7 @@ class SerializedQueueItem(TypedDict, total=False):
     members_sample_limit: int
     autofix_hint: str
     execution_policy: str
-    action_steps: list[dict[str, Any]]
+    action_steps: list[ActionStep]
 
 
 WorkQueueItem: TypeAlias = (

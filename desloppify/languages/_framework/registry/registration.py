@@ -6,8 +6,6 @@ import inspect
 from pathlib import Path
 from typing import TypeVar
 
-from desloppify.engine.hook_registry import register_lang_hooks
-
 from . import state
 from ..base.types import LangConfig
 from .resolution import make_lang_config
@@ -53,7 +51,7 @@ def register_full_plugin(
     test_coverage: object,
 ) -> None:
     """Register a full language plugin with uniform hooks + duplicate guard."""
-    register_lang_hooks(name, test_coverage=test_coverage)
+    state.register_lang_hooks(name, test_coverage=test_coverage)
     if state.is_registered(name):
         return
     register_lang_class(name, config_cls)

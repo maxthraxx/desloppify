@@ -8,7 +8,12 @@ from typing import Literal
 
 from desloppify import state as state_mod
 from desloppify.app.commands.helpers.state import state_path
-from desloppify.app.commands.plan.override_resolve_helpers import blocked_triage_stages
+from desloppify.app.commands.plan.triage.review_coverage import (
+    ensure_active_triage_issue_ids,
+    has_open_review_issues,
+)
+from desloppify.base.config import target_strict_score_from_config
+from .resolve_helpers import blocked_triage_stages
 from desloppify.app.commands.plan.triage.stage_queue import (
     has_triage_in_queue,
     inject_triage_stages,
@@ -28,6 +33,11 @@ from desloppify.engine._plan.constants import (
     WORKFLOW_SCORE_CHECKPOINT_ID,
     confirmed_triage_stage_names,
 )
+from desloppify.engine._plan.refresh_lifecycle import (
+    LIFECYCLE_PHASE_TRIAGE_POSTFLIGHT,
+    set_lifecycle_phase,
+)
+from desloppify.engine._plan.sync import live_planned_queue_empty, reconcile_plan
 from desloppify.engine.plan_triage import (
     triage_manual_stage_command,
     triage_runner_commands,
@@ -326,6 +336,31 @@ def _finalize_workflow_resolution(
         print(colorize(f"  Resolved: {synthetic_id}", "green"))
 
 
+def _reconcile_if_queue_drained(
+    args: argparse.Namespace,
+    plan: dict,
+    *,
+    synthetic_ids: list[str],
+) -> None:
+    """Advance postflight when resolving a workflow item drains the live queue."""
+    if not live_planned_queue_empty(plan):
+        return
+    resolved_state_path = state_path(args)
+    state_data = state_mod.load_state(resolved_state_path)
+    if WORKFLOW_CREATE_PLAN_ID in synthetic_ids and has_open_review_issues(state_data):
+        ensure_active_triage_issue_ids(plan, state_data)
+        inject_triage_stages(plan)
+        set_lifecycle_phase(plan, LIFECYCLE_PHASE_TRIAGE_POSTFLIGHT)
+        save_plan(plan)
+        return
+    reconcile_plan(
+        plan,
+        state_data,
+        target_strict=target_strict_score_from_config(state_data.get("config")),
+    )
+    save_plan(plan)
+
+
 def resolve_workflow_patterns(
     args: argparse.Namespace,
     *,
@@ -385,6 +420,7 @@ def resolve_workflow_patterns(
         synthetic_ids=synthetic_ids,
         note=note,
     )
+    _reconcile_if_queue_drained(args, plan, synthetic_ids=synthetic_ids)
 
     if not real_patterns:
         return WorkflowResolveOutcome(status="handled", remaining_patterns=[])

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import get_type_hints
+
 import desloppify.app.commands.plan.triage.plan_state_access as plan_state_access_mod
 from desloppify.app.commands.plan.triage.plan_state_access import (
     ensure_cluster_map,
@@ -11,6 +13,8 @@ from desloppify.app.commands.plan.triage.plan_state_access import (
     ensure_triage_meta,
     normalized_issue_id_list,
 )
+from desloppify.engine._work_queue.types import PlanClusterRef, SerializedQueueItem
+from desloppify.engine.plan_state import ActionStep, Cluster
 
 
 def test_plan_state_access_initializes_missing_collections() -> None:
@@ -71,3 +75,15 @@ def test_plan_state_access_exports_expected_helpers() -> None:
     assert "ensure_triage_meta" in plan_state_access_mod.__all__
     assert "ensure_execution_log" in plan_state_access_mod.__all__
     assert "normalized_issue_id_list" in plan_state_access_mod.__all__
+
+
+def test_plan_schema_and_queue_types_cover_runtime_cluster_payloads() -> None:
+    action_step_hints = get_type_hints(ActionStep)
+    cluster_hints = get_type_hints(Cluster)
+    plan_cluster_hints = get_type_hints(PlanClusterRef)
+    serialized_queue_hints = get_type_hints(SerializedQueueItem)
+
+    assert "effort" in action_step_hints
+    assert "depends_on_clusters" in cluster_hints
+    assert "action_steps" in plan_cluster_hints
+    assert "action_steps" in serialized_queue_hints

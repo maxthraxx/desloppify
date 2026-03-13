@@ -359,6 +359,31 @@ def test_authorization_collector_uses_module_fallback_for_with_auth_siblings() -
     assert "ui/home.py" not in files
 
 
+def test_authorization_collector_excludes_guidance_like_runtime_paths() -> None:
+    ctx = SimpleNamespace(
+        authorization={
+            "route_auth_coverage": {
+                "guidance/auth_examples.py": {
+                    "handlers": 1,
+                    "with_auth": 0,
+                    "without_auth": 1,
+                },
+                "src/routes/admin.py": {"handlers": 1, "with_auth": 0, "without_auth": 1},
+            },
+            "service_role_usage": ["prompts/security_prompt.ts", "src/lib/supabase.ts"],
+            "rls_coverage": {
+                "files": {
+                    "accounts": ["docs/rls_examples.sql", "db/schema.sql"],
+                }
+            },
+        }
+    )
+
+    files = collectors_structure_mod._authorization_files(ctx, max_files=10)
+
+    assert files == ["src/routes/admin.py", "src/lib/supabase.ts", "db/schema.sql"]
+
+
 def test_prepare_batches_core_path_normalization_rules() -> None:
     assert prepare_batches_core_mod._normalize_file_path(" src/app.py ") == "src/app.py"
     assert prepare_batches_core_mod._normalize_file_path('"README",') == "README"

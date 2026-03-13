@@ -164,7 +164,41 @@ def test_queue_with_only_workflow_items_blocks_scan():
             "desloppify.app.commands.scan.preflight.plan_aware_queue_breakdown",
             return_value=breakdown,
         ),
+        patch(
+            "desloppify.app.commands.scan.preflight._only_run_scan_workflow_remaining",
+            return_value=False,
+        ),
         pytest.raises(CommandError),
+    ):
+        mock_state_mod.load_state.return_value = {"issues": {}}
+        scan_queue_preflight(args)
+
+
+def test_queue_with_only_run_scan_workflow_allows_scan():
+    """The synthetic workflow::run-scan item must not block scan execution."""
+    from desloppify.app.commands.helpers.queue_progress import QueueBreakdown
+
+    args = SimpleNamespace(profile=None, force_rescan=False, state=None, lang="python")
+    plan = {"plan_start_scores": {"strict": 80.0}}
+    breakdown = QueueBreakdown(queue_total=1, workflow=1)
+    with (
+        patch(
+            "desloppify.app.commands.scan.preflight.resolve_plan_load_status",
+            return_value=_plan_status(plan),
+        ),
+        patch(
+            "desloppify.app.commands.scan.preflight.state_path",
+            return_value="/tmp/test-state.json",
+        ),
+        patch("desloppify.app.commands.scan.preflight.state_mod") as mock_state_mod,
+        patch(
+            "desloppify.app.commands.scan.preflight.plan_aware_queue_breakdown",
+            return_value=breakdown,
+        ),
+        patch(
+            "desloppify.app.commands.scan.preflight._only_run_scan_workflow_remaining",
+            return_value=True,
+        ),
     ):
         mock_state_mod.load_state.return_value = {"issues": {}}
         scan_queue_preflight(args)

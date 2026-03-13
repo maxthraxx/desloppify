@@ -4,10 +4,30 @@ from __future__ import annotations
 
 import re
 from collections import Counter
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 
 from desloppify.engine._state.schema import StateModel
 from desloppify.intelligence.review._context.models import ReviewContext
+
+
+@dataclass(frozen=True)
+class ReviewContextBuildServices:
+    """Typed dependency bundle for review-context assembly."""
+
+    read_file_text: Callable[[str], str | None]
+    abs_path: Callable[[str], str]
+    rel_path: Callable[[str], str]
+    importer_count: Callable[[dict[str, object]], int]
+    default_review_module_patterns: Callable[[str], list[str] | tuple[str, ...] | set[str]]
+    gather_ai_debt_signals: Callable[..., dict[str, object]]
+    gather_auth_context: Callable[..., dict[str, object]]
+    classify_error_strategy: Callable[[str], str]
+    func_name_re: re.Pattern[str]
+    class_name_re: re.Pattern[str]
+    name_prefix_re: re.Pattern[str]
+    error_patterns: dict[str, re.Pattern[str]]
 
 
 def build_review_context_inner(
@@ -15,33 +35,23 @@ def build_review_context_inner(
     lang: object,
     state: StateModel,
     ctx: ReviewContext,
-    *,
-    read_file_text_fn,
-    abs_path_fn,
-    rel_fn,
-    importer_count_fn,
-    default_review_module_patterns_fn,
-    func_name_re,
-    class_name_re,
-    name_prefix_re,
-    error_patterns: dict[str, re.Pattern[str]],
-    gather_ai_debt_signals_fn,
-    gather_auth_context_fn,
-    classify_error_strategy_fn,
+    services: ReviewContextBuildServices,
 ) -> ReviewContext:
     """Inner context builder (runs with file cache enabled)."""
     file_contents: dict[str, str] = {}
     for filepath in files:
-        content = read_file_text_fn(abs_path_fn(filepath))
+        content = services.read_file_text(services.abs_path(filepath))
         if content is not None:
             file_contents[filepath] = content
 
     prefix_counter: Counter = Counter()
     total_names = 0
     for content in file_contents.values():
-        for name in func_name_re.findall(content) + class_name_re.findall(content):
+        for name in services.func_name_re.findall(content) + services.class_name_re.findall(
+            content
+        ):
             total_names += 1
-            match = name_prefix_re.match(name)
+            match = services.name_prefix_re.match(name)
             if match:
                 prefix_counter[match.group(1)] += 1
     ctx.naming_vocabulary = {
@@ -51,7 +61,7 @@ def build_review_context_inner(
 
     error_counts: Counter = Counter()
     for content in file_contents.values():
-        for pattern_name, pattern in error_patterns.items():
+        for pattern_name, pattern in services.error_patterns.items():
             if pattern.search(content):
                 error_counts[pattern_name] += 1
     ctx.error_conventions = dict(error_counts)
@@ -59,7 +69,7 @@ def build_review_context_inner(
     dir_patterns: dict[str, Counter] = {}
     module_pattern_fn = getattr(lang, "review_module_patterns_fn", None)
     if not callable(module_pattern_fn):
-        module_pattern_fn = default_review_module_patterns_fn
+        module_pattern_fn = services.default_review_module_patterns
     for filepath, content in file_contents.items():
         parts = Path(filepath).parts
         if len(parts) < 2:
@@ -68,7 +78,7 @@ def build_review_context_inner(
         counter = dir_patterns.setdefault(dir_name, Counter())
         pattern_names = module_pattern_fn(content)
         if not isinstance(pattern_names, list | tuple | set):
-            pattern_names = default_review_module_patterns_fn(content)
+            pattern_names = services.default_review_module_patterns(content)
         for pattern_name in pattern_names:
             counter[pattern_name] += 1
         if re.search(r"\bclass\s+\w+", content):
@@ -83,9 +93,9 @@ def build_review_context_inner(
         graph = lang.dep_graph
         importer_counts = {}
         for filepath, entry in graph.items():
-            count = importer_count_fn(entry)
+            count = services.importer_count(entry)
             if count > 0:
-                importer_counts[rel_fn(filepath)] = count
+                importer_counts[services.rel_path(filepath)] = count
         top = sorted(importer_counts.items(), key=lambda item: -item[1])[:20]
         ctx.import_graph_summary = {"top_imported": dict(top)}
 
@@ -93,7 +103,7 @@ def build_review_context_inner(
         ctx.zone_distribution = lang.zone_map.counts()
 
     allowed_review_files = {
-        rel_fn(filepath)
+        services.rel_path(filepath)
         for filepath in file_contents
         if isinstance(filepath, str) and filepath
     }
@@ -105,7 +115,7 @@ def build_review_context_inner(
         issue_file_raw = issue.get("file", "")
         if not isinstance(issue_file_raw, str) or not issue_file_raw:
             continue
-        issue_file = rel_fn(issue_file_raw)
+        issue_file = services.rel_path(issue_file_raw)
         if issue_file not in allowed_review_files:
             continue
         by_file.setdefault(issue_file, []).append(
@@ -133,8 +143,8 @@ def build_review_context_inner(
             continue
         dir_name = parts[-2] + "/"
         counter = dir_functions.setdefault(dir_name, Counter())
-        for name in func_name_re.findall(content):
-            match = name_prefix_re.match(name)
+        for name in services.func_name_re.findall(content):
+            match = services.name_prefix_re.match(name)
             if match:
                 counter[match.group(1)] += 1
     ctx.sibling_conventions = {
@@ -143,14 +153,20 @@ def build_review_context_inner(
         if sum(c.values()) >= 3
     }
 
-    ctx.ai_debt_signals = gather_ai_debt_signals_fn(file_contents, rel_fn=rel_fn)
-    ctx.auth_patterns = gather_auth_context_fn(file_contents, rel_fn=rel_fn)
+    ctx.ai_debt_signals = services.gather_ai_debt_signals(
+        file_contents,
+        rel_fn=services.rel_path,
+    )
+    ctx.auth_patterns = services.gather_auth_context(
+        file_contents,
+        rel_fn=services.rel_path,
+    )
 
     strategies: dict[str, str] = {}
     for filepath, content in file_contents.items():
-        strategy = classify_error_strategy_fn(content)
+        strategy = services.classify_error_strategy(content)
         if strategy:
-            strategies[rel_fn(filepath)] = strategy
+            strategies[services.rel_path(filepath)] = strategy
     ctx.error_strategies = strategies
 
     ctx.normalize_sections(strict=True)
@@ -158,5 +174,6 @@ def build_review_context_inner(
 
 
 __all__ = [
+    "ReviewContextBuildServices",
     "build_review_context_inner",
 ]

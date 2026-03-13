@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from desloppify.app.commands.plan.override_resolve_helpers import (
+from desloppify.app.commands.plan.override.resolve_helpers import (
     _CLUSTER_INDIVIDUAL_THRESHOLD,
     check_cluster_guard as _check_cluster_guard,
 )

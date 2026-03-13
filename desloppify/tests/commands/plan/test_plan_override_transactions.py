@@ -9,8 +9,8 @@ import pytest
 
 from desloppify import state as state_mod
 from desloppify.app.commands.helpers.command_runtime import CommandRuntime
-from desloppify.app.commands.plan import override_io
-from desloppify.app.commands.plan import override_skip
+from desloppify.app.commands.plan.override import io as override_io
+from desloppify.app.commands.plan.override import skip as override_skip
 from desloppify.base.exception_sets import CommandError
 from desloppify.engine.plan_state import empty_plan, load_plan, save_plan
 from desloppify.engine.plan_ops import skip_items

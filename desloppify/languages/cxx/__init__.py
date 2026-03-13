@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from desloppify.base.discovery.paths import get_area
-from desloppify.engine.hook_registry import register_lang_hooks
 from desloppify.languages._framework.base.phase_builders import (
     detector_phase_security,
     detector_phase_signature,
@@ -17,6 +16,7 @@ from desloppify.languages._framework.base.types import (
 )
 from desloppify.languages._framework.generic_parts.tool_factories import make_tool_phase
 from desloppify.languages._framework.registry.registration import register_full_plugin
+from desloppify.languages._framework.registry.state import register_lang_hooks
 from desloppify.languages._framework.treesitter.phases import all_treesitter_phases
 from desloppify.languages.cxx import test_coverage as cxx_test_coverage_hooks
 from desloppify.languages.cxx._helpers import build_cxx_dep_graph

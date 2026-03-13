@@ -8,6 +8,7 @@ from pathlib import Path
 from desloppify.base.exception_sets import CommandError
 
 from ..importing.flags import ReviewImportConfig
+from .execution import CollectBatchResultsRequest
 
 from .scope import (
     collect_reviewed_files_from_batches,
@@ -21,24 +22,16 @@ from .scope import (
 def collect_and_reconcile_results(
     *,
     collect_batch_results_fn,
-    selected_indexes: list[int],
+    request: CollectBatchResultsRequest,
     execution_failures: list[int],
-    output_files: dict,
-    packet: dict,
     batch_positions: dict[int, int],
     batch_status: dict[str, dict[str, object]],
     colorize_fn=None,
 ) -> tuple[list[dict], list[int], list[int], set[int]]:
     """Collect batch results and reconcile per-batch status entries."""
-    allowed_dims = {
-        str(dim) for dim in packet.get("dimensions", []) if isinstance(dim, str)
-    }
-    batch_results, failures = collect_batch_results_fn(
-        selected_indexes=selected_indexes,
-        failures=execution_failures,
-        output_files=output_files,
-        allowed_dims=allowed_dims,
-    )
+    selected_indexes = request.selected_indexes
+    output_files = request.output_files
+    batch_results, failures = collect_batch_results_fn(request)
 
     execution_failure_set = set(execution_failures)
     failure_set = set(failures)

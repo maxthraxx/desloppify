@@ -128,6 +128,7 @@ def remove_from_cluster(
     ensure_plan_defaults(plan)
     cluster = _cluster_or_raise(plan, cluster_name)
     member_ids: list[str] = cluster["issue_ids"]
+    removed_ids = set(issue_ids)
     now = utc_now()
     count = 0
     for fid in issue_ids:
@@ -140,6 +141,21 @@ def remove_from_cluster(
             cluster_name=cluster_name,
             timestamp=now,
         )
+
+    steps = cluster.get("action_steps")
+    if isinstance(steps, list):
+        for step in steps:
+            if not isinstance(step, dict):
+                continue
+            refs = step.get("issue_refs")
+            if not isinstance(refs, list):
+                continue
+            filtered_refs = [
+                ref for ref in refs
+                if isinstance(ref, str) and ref not in removed_ids
+            ]
+            if filtered_refs != refs:
+                step["issue_refs"] = filtered_refs
 
     if count > 0 and cluster.get("auto"):
         cluster["user_modified"] = True

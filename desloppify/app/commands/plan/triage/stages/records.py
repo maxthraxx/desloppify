@@ -74,6 +74,7 @@ class SenseCheckRecord(TypedDict, total=False):
     confirmed_at: str
     confirmed_text: str
     value_decisions: dict[str, str]
+    value_targets: list[str]
 
 
 TriageStages = dict[
@@ -178,12 +179,17 @@ def record_sense_check_stage(
     report: str,
     existing_stage: SenseCheckRecord | None,
     is_reuse: bool,
+    value_targets: list[str] | None = None,
 ) -> list[str]:
     sense_check: SenseCheckRecord = {
         "stage": "sense-check",
         "report": report,
         "timestamp": utc_now(),
     }
+    if value_targets:
+        sense_check["value_targets"] = list(value_targets)
+    elif existing_stage and existing_stage.get("value_targets"):
+        sense_check["value_targets"] = list(existing_stage["value_targets"])
     if is_reuse and existing_stage and existing_stage.get("confirmed_at"):
         sense_check["confirmed_at"] = existing_stage["confirmed_at"]
         sense_check["confirmed_text"] = existing_stage.get("confirmed_text", "")

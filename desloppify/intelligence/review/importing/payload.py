@@ -79,15 +79,9 @@ def parse_review_import_payload(
     if not isinstance(data, dict):
         raise ValueError(f"{mode_name} review import payload must be a JSON object")
 
-    missing_issues_error = f"{mode_name} review import payload must contain 'issues'"
-    key_error = normalize_legacy_findings_alias(
-        data,
-        missing_issues_error=missing_issues_error,
-    )
-    if key_error is not None:
-        raise ValueError(key_error)
-
     issues_list = data.get("issues")
+    if issues_list is None:
+        raise ValueError(f"{mode_name} review import payload must contain 'issues'")
     if not isinstance(issues_list, list):
         raise ValueError(f"{mode_name} review import payload 'issues' must be a list")
     for idx, entry in enumerate(issues_list):

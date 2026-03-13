@@ -74,8 +74,8 @@ def test_prepare_batch_run_returns_none_for_dry_run(tmp_path: Path) -> None:
         "dimension_prompts": {"design_coherence": "prompt"},
     }
 
-    def prepare_run_artifacts_fn(**kwargs):
-        run_dir = kwargs["run_root"] / kwargs["stamp"]
+    def prepare_run_artifacts_fn(request):
+        run_dir = request.run_root / request.stamp
         logs_dir = run_dir / "logs"
         prompts_dir = run_dir / "prompts"
         results_dir = run_dir / "results"
@@ -91,7 +91,7 @@ def test_prepare_batch_run_returns_none_for_dry_run(tmp_path: Path) -> None:
     deps = SimpleNamespace(
         colorize_fn=lambda text, _tone=None: text,
         run_stamp_fn=lambda: "stamp",
-        load_or_prepare_packet_fn=lambda *_a, **_k: (
+        load_or_prepare_packet_fn=lambda _request: (
             packet,
             tmp_path / "packet.json",
             tmp_path / "prompt.json",
